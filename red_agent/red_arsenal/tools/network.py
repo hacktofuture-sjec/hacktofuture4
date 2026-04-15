@@ -6,6 +6,8 @@ rpcclient. Each is an independent subprocess — no sequential chain.
 
 from __future__ import annotations
 
+import socket
+
 from .. import parsers
 from ..config import TOOLS
 from ..runner import run
@@ -17,6 +19,21 @@ def _binary(name: str) -> str:
     if not resolved:
         raise RuntimeError(f"{name} not installed (run install.sh)")
     return resolved
+
+
+def _resolve(target: str) -> str:
+    """Return an IP string for a hostname / IP / CIDR target.
+
+    masscan and a few other raw-socket tools reject hostnames outright,
+    so we do the DNS lookup ourselves. CIDR strings and already-numeric
+    targets pass through unchanged.
+    """
+    if "/" in target or target.replace(".", "").replace(":", "").isdigit():
+        return target
+    try:
+        return socket.gethostbyname(target)
+    except socket.gaierror:
+        return target
 
 
 async def arp_scan_impl(cidr: str | None = None, local_network: bool = True) -> dict:
@@ -51,9 +68,12 @@ async def rustscan_impl(
 async def nmap_advanced_impl(
     target: str,
     scan_type: str = "-sS",
-    os_detection: bool = True,
+    os_detection: bool = False,
     version_detection: bool = True,
 ) -> dict:
+    # OS detection is off by default because `-O` adds 1–3 minutes per
+    # host, which kills interactive responsiveness. The agent can pass
+    # os_detection=True when it actually wants fingerprinting.
     cmd = [_binary("nmap"), *scan_type.split()]
     if os_detection:
         cmd.append("-O")
@@ -69,12 +89,16 @@ async def nmap_advanced_impl(
 async def masscan_impl(
     target: str,
     rate: int = 1000,
-    ports: str = "1-65535",
-    banners: bool = True,
+    ports: str = "80,443,22,21,25,3389,8080,8443",
+    banners: bool = False,
 ) -> dict:
+    # masscan rejects hostnames — resolve to IP first. We also ship a
+    # narrower default port list than the full 1-65535 range; at rate=1000
+    # that was pushing 60+ seconds per host which is bad for smoke tests.
+    ip_target = _resolve(target)
     cmd = [
         _binary("masscan"),
-        target,
+        ip_target,
         "-p", ports,
         "--rate", str(rate),
         "-oJ", "-",
@@ -112,10 +136,12 @@ async def nbtscan_impl(target: str, verbose: bool = True) -> dict:
     return parsers.parse_nbtscan(raw, target)
 
 
-async def smbmap_impl(target: str, recursive: bool = True) -> dict:
-    cmd = [_binary("smbmap"), "-H", target]
-    if recursive:
-        cmd += ["-R", "--depth", "2"]
+async def smbmap_impl(target: str, recursive: bool = False) -> dict:
+    # smbmap 1.10 changed `-R` semantics: it now takes a share name as
+    # argument rather than being a boolean flag. Default to a plain
+    # enumeration; agents that want recursion can pass the share name
+    # via a future param.
+    cmd = [_binary("smbmap"), "-H", target, "-u", "", "-p", ""]
     raw = await run(cmd, timeout=TOOLS["smbmap"].default_timeout)
     return parsers.parse_smbmap(raw, target)
 

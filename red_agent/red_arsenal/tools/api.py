@@ -64,32 +64,23 @@ async def x8_impl(
 
 
 async def paramspider_impl(target: str, level: int = 2) -> dict:
-    # paramspider ignores stdout and writes to results/ by default; use
-    # --quiet --output to pipe a file we can read.
-    with tempfile.NamedTemporaryFile(
-        prefix="ps-", suffix=".txt", delete=False
-    ) as tf:
-        out_path = tf.name
-    try:
-        cmd = [
-            _binary("paramspider"),
-            "-d", target,
-            "-l", str(level),
-            "-o", out_path,
-            "--quiet",
-        ]
-        raw = await run(cmd, timeout=TOOLS["paramspider"].default_timeout)
+    # The devanshbatham/paramspider (git) CLI only accepts `-d DOMAIN`
+    # and writes to `results/<domain>.txt` in the current working dir.
+    # Run it in a temp cwd so we can read back the file without polluting
+    # the MCP server's working directory.
+    import tempfile as _tf
+    with _tf.TemporaryDirectory(prefix="ps-") as cwd:
+        cmd = [_binary("paramspider"), "-d", target]
+        raw = await run(cmd, timeout=TOOLS["paramspider"].default_timeout, cwd=cwd)
+        # Try to read the results file it dropped.
+        results_dir = os.path.join(cwd, "results")
         try:
-            with open(out_path, "rb") as fh:
-                raw.stdout = fh.read()
+            for fname in os.listdir(results_dir):
+                with open(os.path.join(results_dir, fname), "rb") as fh:
+                    raw.stdout = (raw.stdout or b"") + fh.read()
         except FileNotFoundError:
             pass
         return parsers.parse_paramspider(raw, target)
-    finally:
-        try:
-            os.unlink(out_path)
-        except OSError:
-            pass
 
 
 async def ffuf_impl(

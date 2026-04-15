@@ -72,9 +72,12 @@ TOOLS: dict[str, ToolSpec] = {
 }
 
 DEFAULT_WORDLISTS = {
+    # dirb/common.txt is ~4.6K entries — sane default for both dirsearch
+    # and gobuster. directory-list-2.3-medium.txt (220K entries) is
+    # unusable for interactive / smoke-test scans.
     "dirsearch": "/usr/share/wordlists/dirb/common.txt",
-    "gobuster":  "/usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt",
-    "ffuf":      "/usr/share/wordlists/seclists/Discovery/Web-Content/common.txt",
+    "gobuster":  "/usr/share/wordlists/dirb/common.txt",
+    "ffuf":      "/usr/share/wordlists/dirb/common.txt",
     "x8":        "/usr/share/wordlists/x8/params.txt",
 }
 

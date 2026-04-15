@@ -109,7 +109,8 @@ if [[ $SKIP_APT -eq 0 ]]; then
         nmap masscan arp-scan \
         gobuster ffuf nikto \
         enum4linux-ng nbtscan smbmap \
-        samba-common-bin
+        samba-common-bin \
+        wordlists
 else
     echo "[*] apt: skipped"
 fi
@@ -182,6 +183,11 @@ sudo "${PIPX_ENV[@]}" pipx install arjun     2>/dev/null \
     || sudo "${PIPX_ENV[@]}" pipx upgrade arjun     || true
 sudo "${PIPX_ENV[@]}" pipx install dirsearch 2>/dev/null \
     || sudo "${PIPX_ENV[@]}" pipx upgrade dirsearch || true
+
+# dirsearch imports pkg_resources which comes from setuptools. Python
+# 3.12+ stopped bundling setuptools in new venvs, so we have to inject
+# it manually or dirsearch crashes at import time.
+sudo "${PIPX_ENV[@]}" pipx inject dirsearch setuptools 2>/dev/null || true
 
 # paramspider is git-only (not on PyPI) — use the repo URL.
 sudo "${PIPX_ENV[@]}" pipx install git+https://github.com/devanshbatham/paramspider.git 2>/dev/null \

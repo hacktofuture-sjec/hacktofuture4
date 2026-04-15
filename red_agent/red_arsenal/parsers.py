@@ -106,12 +106,26 @@ def parse_httpx(raw: RunResult, target: str) -> dict:
 
 def parse_katana(raw: RunResult, target: str) -> dict:
     out = _base("katana", target, raw)
+    # katana JSONL nests the URL under `request.endpoint`/`request.url` and
+    # the source under `timestamp`/`response.status_code`. Top-level
+    # `endpoint` and `url` keys do NOT exist in recent versions.
     for row in _jsonl(raw.text_out()):
-        if isinstance(row, dict):
-            out["findings"].append({
-                "url": row.get("endpoint") or row.get("url"),
-                "source": row.get("source"),
-            })
+        if not isinstance(row, dict):
+            continue
+        request = row.get("request") or {}
+        response = row.get("response") or {}
+        url = (
+            request.get("endpoint")
+            or request.get("url")
+            or row.get("endpoint")
+            or row.get("url")
+        )
+        out["findings"].append({
+            "url": url,
+            "method": request.get("method"),
+            "source": row.get("source") or row.get("timestamp"),
+            "status_code": response.get("status_code"),
+        })
     # Plain-text fallback
     if not out["findings"]:
         for line in raw.text_out().splitlines():
