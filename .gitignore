@@ -1,35 +1,62 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
-*.pyo
-.env
-venv/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
 .venv/
+venv/
+env/
+
+# Distribution / packaging
 *.egg-info/
+*.egg
 dist/
 build/
 
-# Node
-node_modules/
-package-lock.json
+# UV package manager
+.uv/
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+
+# Environment variables
+.env
+.env.local
+
+# Database
+*.sqlite3
+*.db
+
+# Node
+node_modules/
+frontend/dist/
+frontend/build/
+
+# Logs
+*.log
+logs/
 
 # OS
 .DS_Store
 Thumbs.db
 
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Type checking
+.mypy_cache/
+.ruff_cache/
+
 # Docker
-*.qcow2
-volumes/
+docker-compose.override.yml
 
-# Logs
-*.log
-tmp/
-
-# Ollama
-~/.ollama/
+# Jupyter
+.ipynb_checkpoints/
