@@ -1,0 +1,12 @@
+apiVersion: 1
+datasources:
+  - name: Parseable
+    type: postgres
+    url: parseable:8000
+    user: admin
+    secureJsonData:
+      password: admin
+    jsonData:
+      sslmode: disable
+      database: parseable
+    isDefault: true

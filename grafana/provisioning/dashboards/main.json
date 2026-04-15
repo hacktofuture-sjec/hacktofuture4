@@ -1,0 +1,37 @@
+{
+  "title": "Aegis-DID Security Dashboard",
+  "uid": "aegis_did_main",
+  "reload": false,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Tetragon SIGKILL Intercepts",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "Parseable",
+          "rawSql": "SELECT count(*) FROM tetragon WHERE metadata->>'action' = 'Sigkill'",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Intent Drift Raw Events",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "targets": [
+        {
+          "refId": "B",
+          "datasource": "Parseable",
+          "rawSql": "SELECT time, metadata FROM tetragon ORDER BY time DESC LIMIT 50",
+          "format": "logs"
+        }
+      ]
+    }
+  ],
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  }
+}
