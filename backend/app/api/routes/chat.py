@@ -1,7 +1,10 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from src.controller.controller import ControllerKernel
+
 router = APIRouter()
+kernel = ControllerKernel()
 
 
 class ChatRequest(BaseModel):
@@ -17,8 +20,9 @@ class ChatResponse(BaseModel):
 
 @router.post("/chat", response_model=ChatResponse)
 def chat(payload: ChatRequest) -> ChatResponse:
+    result = kernel.handle_query(query=payload.message, session_id=payload.session_id)
     return ChatResponse(
-        answer=f"Received: {payload.message}",
-        trace_id="trace-dev-0001",
-        needs_approval=False,
+        answer=result.answer,
+        trace_id=result.trace_id,
+        needs_approval=result.needs_approval,
     )
