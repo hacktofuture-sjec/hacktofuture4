@@ -79,11 +79,30 @@ Our approach is unique because it moves beyond simple authentication to dynamic,
 
 ## Features
 
-List the core features of your project:
+# 🛡️ Aegis-DID: Core Features
 
-- Feature 1
-- Feature 2
-- Feature 3
+### 1. Decentralized Identity Plane (DID-Layer)
+Aegis-DID eliminates the "Point-of-Failure" bottleneck of centralized Identity Providers (IdPs) by leveraging self-sovereign identity standards.
+* **W3C-Compliant DIDs & VCs:** Assigns unique Decentralized Identifiers and Verifiable Credentials to every agent, providing an immutable cryptographic anchor.
+* **Local Public-Key Verification:** Enables microservices to authenticate agents at the edge without querying a central server, reducing latency by **50%**.
+* **Hardware Root of Trust:** Integrates with **SPIFFE/SPIRE** to bind identities to specific Kubernetes workloads and hardware signatures.
+
+### 2. Behavioral Biometrics & Causal Inference
+Security that monitors what an agent *does*, not just what it *shows*.
+* **eBPF-Powered Telemetry:** Uses Extended Berkeley Packet Filter technology for zero-instrumentation monitoring of kernel-level API calls and network traffic.
+* **Causal Discovery Engine:** Employs **Neural Granger Causality** to build dynamic StateGraphs of agent behavior. It distinguishes between complex reasoning and malicious "Confused Deputy" attacks or prompt injections.
+* **Real-time Trust Scoring ($T_{a,t}$):** A continuous, mathematically derived score that fluctuates based on behavioral alignment with the agent’s historical MetaGraph.
+
+### 3. Adaptive Ephemeral Governance
+Aegis-DID transitions security from binary "Allow/Deny" to a fluid, risk-adjusted posture.
+* **Dynamic Token TTL:** Access tokens feature a non-linear Time-to-Live. As an agent's Trust Score drops, its token lifespan aggressively shrinks (e.g., from 60s to 5s), forcing high-frequency re-authentication.
+* **MCP Scoping & ABAC:** Native integration with the **Model Context Protocol (MCP)**. It dynamically strips write permissions or restricts tool access via Attribute-Based Access Control if the agent's intent becomes ambiguous.
+
+### 4. Autonomous Containment & Self-Healing
+Immediate, machine-speed response to identity compromise.
+* **Automated Pod Isolation:** Automatically triggers Kubernetes **NetworkPolicies** to "Default-Deny" the moment a trust threshold is breached, preventing lateral movement.
+* **Global Revocation Broadcast:** Instantly invalidates VCs across the entire distributed ledger, terminating all active sessions globally.
+* **Immutable Forensic Snapshots:** Captures the final memory state, prompt history, and execution trace of quarantined agents for cryptographically signed audit trails.
 
 ---
 
