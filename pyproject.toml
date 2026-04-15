@@ -1,0 +1,20 @@
+[project]
+name = "voice-to-action-workspace"
+version = "0.1.0"
+description = "Voice-to-Action Hackathon Workspace"
+requires-python = ">=3.11"
+dependencies = [
+    "black>=24.1.1",
+]
+
+[tool.uv.workspace]
+members = [
+    "backend",
+    "agent-service",
+    "mcp-servers/*",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+include = '\.pyi?$'

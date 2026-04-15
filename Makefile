@@ -1,10 +1,11 @@
-.PHONY: help setup backend agent jira hubspot frontend docker-up docker-down lint format test clean
+.PHONY: help setup install backend agent jira hubspot frontend docker-up docker-down lint format fl test clean
 
 # Default target
 help:
 	@echo "Voice-to-Action Hackathon Project"
 	@echo "=================================="
 	@echo "make setup          - Initialize all services"
+	@echo "make install        - Install uv and dependencies from requirements.txt"
 	@echo "make backend        - Start Django backend"
 	@echo "make agent          - Start Agent service"
 	@echo "make jira           - Start Jira MCP server"
@@ -30,6 +31,19 @@ setup:
 	@echo "Setting up frontend..."
 	cd frontend && npm install
 	@echo "Setup complete!"
+
+# Install uv and dependencies
+install:
+	@echo "Checking for uv..."
+	@if ! command -v uv > /dev/null; then \
+		echo "uv not found, attempting to install via pip..."; \
+		python3 -m pip install uv || echo "Global pip install restricted. Please install uv manually (e.g., curl -LsSf https://astral.sh/uv/install.sh | sh)"; \
+	else \
+		echo "uv is already installed."; \
+	fi
+	@echo "Installing dependencies from requirements.txt..."
+	uv pip install -r requirements.txt
+	@echo "Installation complete!"
 
 # Backend commands
 backend:
@@ -61,15 +75,17 @@ frontend:
 
 # Docker
 docker-up:
-	docker-compose up -d
+	docker compose up -d
 
 docker-down:
-	docker-compose down
+	docker compose down
 
 docker-logs:
-	docker-compose logs -f
+	docker compose logs -f
 
 # Linting & Formatting
+fl: format lint
+
 lint:
 	@echo "Running Black linter..."
 	cd backend && uv run black --check .
@@ -90,7 +106,7 @@ format:
 test:
 	@echo "Running tests..."
 	cd backend && uv run python manage.py test
-	cd agent-service && uv run pytest
+	cd agent-service && uv run python -m unittest discover -s tests
 	@echo "Tests complete!"
 
 # Clean

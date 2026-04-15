@@ -1,7 +1,6 @@
-version: '3.8'
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:14-alpine
     environment:
       POSTGRES_DB: voice_to_action
       POSTGRES_USER: postgres

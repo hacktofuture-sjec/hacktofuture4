@@ -1,15 +1,14 @@
 """HubSpot MCP Server - FastMCP instance with health check."""
 
-from fastapi import FastAPI
+from fastmcp import FastMCP
 
-app = FastAPI(
-    title="HubSpot MCP Server",
+app = FastMCP(
+    name="HubSpot MCP Server",
     description="MCP Server for HubSpot integration",
-    version="0.1.0",
 )
 
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint."""
+@app.tool()
+async def health_check() -> dict:
+    """Health check tool."""
     return {"status": "ok", "service": "hubspot"}
