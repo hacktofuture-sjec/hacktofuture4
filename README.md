@@ -4,12 +4,30 @@
 ## Problem Statement :Agentic AI for Deepfake Detection & Authenticity Verification
 
 
-Clearly describe the problem you are solving.
+What is the problem?
+  Deepfake technology enables the creation of highly realistic yet entirely fabricated audio and video content.  
+  As these synthetic media become more advanced, it is increasingly difficult to distinguish between real and manipulated content.
+  These synthetic media can spread misinformation, impersonate individuals, and manipulate public perception at scale.
 
-- What is the problem?
-- Why is it important?
-- Who are the target users?
+Why is it important?
+   The rise of deepfakes poses a significant threat to **digital trust, security, and public safety**.
 
+  - Fake videos can spread misinformation and influence public opinion  
+  - Synthetic audio can enable identity theft and financial fraud  
+  - Manipulated media can damage reputations and create social unrest  
+
+  Most existing solutions are:
+  - ❌ Cloud-dependent  
+  - ❌ Slow and not real-time  
+  - ❌ Not suitable for on-device or field use  
+
+  There is a clear need for a **fast, reliable, and intelligent system** that can verify authenticity in real time.
+
+Who are the target users?
+   📱 Social Media Platforms
+   📰 News & Media Organizations
+   👮 Law Enforcement & Cybercrime Units 
+   🪖 Defense & Intelligence Agencies  
 ---
 
 ## Proposed Solution
