@@ -1,0 +1,56 @@
+# Copy this folder into a GitHub repo, add secret PIPELINEMEDIC_WEBHOOK_URL, push → fail → webhook → Telegram (+ PR if token set on Vercel).
+
+name: demo-ci-pipelinemedic
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run app (expected to fail until requests is added)
+        id: runapp
+        continue-on-error: true
+        run: python app.py 2>&1 | tee run.log
+
+      - name: Notify PipelineMedic on failure
+        if: steps.runapp.outcome == 'failure'
+        env:
+          WEBHOOK_URL: ${{ secrets.PIPELINEMEDIC_WEBHOOK_URL }}
+        run: |
+          python3 << 'PY'
+          import json, os, urllib.request, pathlib
+          url = (os.environ.get("WEBHOOK_URL") or "").strip()
+          if not url:
+              print("Skip: set repo secret PIPELINEMEDIC_WEBHOOK_URL")
+              raise SystemExit(0)
+          repo = os.environ["GITHUB_REPOSITORY"]
+          log = pathlib.Path("run.log").read_text(encoding="utf-8", errors="replace")
+          if len(log) < 50:
+              log = "ModuleNotFoundError: No module named 'requests'"
+          body = json.dumps({"repository": repo, "log_text": log}).encode("utf-8")
+          req = urllib.request.Request(
+              url,
+              data=body,
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          with urllib.request.urlopen(req, timeout=60) as resp:
+              print(resp.read().decode("utf-8", errors="replace"))
+          PY
+
+      - name: Mark job failed (red X) if app failed
+        if: steps.runapp.outcome == 'failure'
+        run: exit 1
