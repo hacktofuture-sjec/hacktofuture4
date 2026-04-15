@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepTrust AI – Agentic Forensics OS</title>
+    <!-- Use Google Fonts for dynamic modern typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/anti-gravity.css">
+</head>
+<body>
+    {% csrf_token %}
+    <div id="app" class="anti-gravity-os">
+        
+        <header class="os-header">
+            <div class="logo">
+                <span class="neon-cyan">DeepTrust</span> AI 
+                <span class="badge">AGENTIC FORENSICS OS</span>
+            </div>
+            <div class="status-indicator">
+                <span class="pulse-dot"></span> SYSTEM ONLINE
+            </div>
+        </header>
+
+        <div class="os-layout">
+            <!-- NEW SIDEBAR -->
+            <aside class="os-sidebar glassmorphic">
+                <nav class="nav-menu">
+                    <button class="nav-item active" data-tab="dashboard">
+                        <span class="nav-icon">▤</span> Central Dashboard
+                    </button>
+                    <button class="nav-item" data-tab="batch">
+                        <span class="nav-icon">▤</span> Batch Processing <span class="badge-mini">PRO</span>
+                    </button>
+                    <button class="nav-item" data-tab="api">
+                        <span class="nav-icon">▤</span> API Integration
+                    </button>
+                    <button class="nav-item" data-tab="reports">
+                        <span class="nav-icon">▤</span> Report Terminal
+                    </button>
+                </nav>
+                <div class="sidebar-footer">
+                    <div class="agent-count">4 Active Agents</div>
+                    <div class="version-tag">Sec-Ops v2.1.0</div>
+                </div>
+            </aside>
+
+            <main class="os-main">
+                
+                <!-- MULTI-STAGE PIPELINE (Always visible during processing/results) -->
+                <div id="pipeline-tracker" class="pipeline-tracker hidden">
+                    <div class="step" id="step-upload"><div class="circle">1</div> Upload</div>
+                    <div class="step-line"></div>
+                    <div class="step" id="step-detect"><div class="circle">2</div> Detection</div>
+                    <div class="step-line"></div>
+                    <div class="step" id="step-forensics"><div class="circle">3</div> Forensics</div>
+                    <div class="step-line"></div>
+                    <div class="step" id="step-verify"><div class="circle">4</div> Verification</div>
+                    <div class="step-line"></div>
+                    <div class="step" id="step-decision"><div class="circle">5</div> Decision</div>
+                </div>
+
+                <!-- VIEW 1: CENTRAL DASHBOARD -->
+                <div id="view-dashboard" class="tab-view active">
+                    
+                    <!-- STATE 1: UPLOAD BAY -->
+                    <section id="upload-state" class="os-panel glassmorphic active-state">
+                        <div class="panel-header">
+                            <span class="icon">▤</span> Holographic Media Inspection Bay
+                        </div>
+                        
+                        <div class="upload-container">
+                            <div id="drop-zone" class="drop-zone">
+                                <div class="dz-content">
+                                    <div class="dz-icon">
+                                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                            <polyline points="17 8 12 3 7 8"></polyline>
+                                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                                        </svg>
+                                    </div>
+                                    <div class="dz-text">Initialize Authenticity Scan</div>
+                                    <div class="dz-subtext">Drag & Drop <span class="highlight">Video</span>, <span class="highlight">Audio</span>, or Images</div>
+                                </div>
+                                <input type="file" id="file-input" accept="video/*,audio/*,image/*" hidden>
+                            </div>
+
+                            <div class="config-bay">
+                                <div class="sequence-slider">
+                                    <div class="slider-header">
+                                        <label>Frame Sequence Depth</label>
+                                        <span class="slider-val"><span id="seq-val">10</span> FRAMES</span>
+                                    </div>
+                                    <input type="range" id="seq-input" min="0" max="5" value="0" step="1">
+                                </div>
+                                <button id="start-scan-btn" class="cyber-btn" disabled>INITIATE UPLOAD LINK</button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- STATE 2: PROCESSING (AGENTIC SWARM) -->
+                    <section id="processing-state" class="os-panel glassmorphic hidden-state">
+                        <div class="panel-header">
+                            <span class="icon">⚙</span> Agentic Swarm Command Center
+                        </div>
+                        
+                        <div class="swarm-container">
+                            <div class="isometric-grid"></div>
+                            
+                            <div class="swarm-nodes">
+                                <!-- Central File Node -->
+                                <div class="node core-node">
+                                    <div class="core-pulse"></div>
+                                    <div class="node-label" id="processing-media-type">MEDIA CUBE</div>
+                                </div>
+
+                                <!-- Satellite Agents -->
+                                <div class="node agent-node" id="agent-1" style="--angle: 0deg;">
+                                    <div class="agent-core"></div>
+                                    <div class="node-label">Forensic Agent</div>
+                                </div>
+                                <div class="node agent-node" id="agent-2" style="--angle: 90deg;">
+                                    <div class="agent-core"></div>
+                                    <div class="node-label">Detection Agent</div>
+                                </div>
+                                <div class="node agent-node" id="agent-3" style="--angle: 180deg;">
+                                    <div class="agent-core"></div>
+                                    <div class="node-label">Metadata Agent</div>
+                                </div>
+                                <div class="node agent-node" id="agent-4" style="--angle: 270deg;">
+                                    <div class="agent-core"></div>
+                                    <div class="node-label">Verification Agent</div>
+                                </div>
+
+                                <!-- Data streams (SVG connecting lines) -->
+                                <svg class="data-streams" width="100%" height="100%">
+                                    <defs>
+                                        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                                            <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+                                            <feMerge>
+                                                <feMergeNode in="coloredBlur"/>
+                                                <feMergeNode in="SourceGraphic"/>
+                                            </feMerge>
+                                        </filter>
+                                    </defs>
+                                    
+                                    <!-- Static Lines -->
+                                    <line x1="50%" y1="50%" x2="50%" y2="0%" class="stream" id="stream-1" />
+                                    <line x1="50%" y1="50%" x2="100%" y2="50%" class="stream" id="stream-2" />
+                                    <line x1="50%" y1="50%" x2="50%" y2="100%" class="stream" id="stream-3" />
+                                    <line x1="50%" y1="50%" x2="0%" y2="50%" class="stream" id="stream-4" />
+                                    
+                                    <!-- Active Particle Streams -->
+                                    <circle r="3" fill="#00F0FF" filter="url(#glow)" class="packet hidden">
+                                        <animate attributeName="cy" from="50%" to="0%" dur="1s" repeatCount="indefinite" />
+                                        <animate attributeName="cx" values="50%;50%" dur="1s" repeatCount="indefinite" />
+                                    </circle>
+                                    <circle r="3" fill="#00F0FF" filter="url(#glow)" class="packet hidden">
+                                        <animate attributeName="cx" from="50%" to="100%" dur="1.2s" repeatCount="indefinite" />
+                                        <animate attributeName="cy" values="50%;50%" dur="1.2s" repeatCount="indefinite" />
+                                    </circle>
+                                    <circle r="3" fill="#00F0FF" filter="url(#glow)" class="packet hidden">
+                                        <animate attributeName="cy" from="50%" to="100%" dur="0.9s" repeatCount="indefinite" />
+                                        <animate attributeName="cx" values="50%;50%" dur="0.9s" repeatCount="indefinite" />
+                                    </circle>
+                                    <circle r="3" fill="#00F0FF" filter="url(#glow)" class="packet hidden">
+                                        <animate attributeName="cx" from="50%" to="0%" dur="1.1s" repeatCount="indefinite" />
+                                        <animate attributeName="cy" values="50%;50%" dur="1.1s" repeatCount="indefinite" />
+                                    </circle>
+                                </svg>
+                            </div>
+                        </div>
+                        
+                        <div class="status-terminal">
+                            <div class="term-prefix">></div>
+                            <div id="swarm-terminal-output" class="typing-text">Uploading to secure enclave...</div>
+                        </div>
+                    </section>
+
+                    <!-- STATE 3: RESULTS DASHBOARD -->
+                    <section id="result-state" class="hidden-state result-grid">
+                        
+                        <div class="os-panel glassmorphic col-video">
+                            <div class="panel-header" id="media-viewer-header">
+                                <span class="icon">👁</span> Holographic Inspection Viewer
+                            </div>
+                            <!-- VIDEO VIEWER -->
+                            <div class="video-container" id="video-viewer">
+                                <video id="result-video" src="" autoplay muted loop></video>
+                                <div class="holographic-scanner"></div>
+                                <img id="heatmap-overlay" class="heatmap-overlay" src="">
+                            </div>
+
+                            <!-- AUDIO VIEWER (Hidden for Videos) -->
+                            <div class="audio-container hidden" id="audio-viewer">
+                                <div class="spectrogram-header">Audio Spectrogram Analysis</div>
+                                <div class="waveform-visualizer" id="waveform-bars">
+                                    <!-- Bars via JS -->
+                                </div>
+                                <audio id="result-audio" src="" controls></audio>
+                            </div>
+                            
+                            <!-- DYNAMIC GRAPH (Video=Frames, Audio=Frequencies) -->
+                            <div class="threat-graph-container">
+                                <div class="threat-label" id="graph-label">Threat Activity Graph (Frame Variance)</div>
+                                <div class="threat-bars" id="threat-bars">
+                                    <!-- Bars generated by JS -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-stats">
+                            <div class="os-panel glassmorphic">
+                                <div class="panel-header">
+                                    <span class="icon">▚</span> Biometric & Forensic Output Dashboard
+                                </div>
+                                
+                                <div class="verdict-box" id="final-verdict-box">
+                                    <div class="verdict-label">FINAL SYSTEM VERDICT</div>
+                                    <h2 id="final-output" class="neon-text">PROCESSING</h2>
+                                </div>
+                                
+                                <div class="gauge-container">
+                                    <div class="liquid-gauge">
+                                        <div class="liquid" id="liquid-fill" style="height: 0%;"></div>
+                                        <div class="gauge-glass"></div>
+                                        <div class="gauge-value"><span id="confidence-value">0</span><span class="pct">%</span></div>
+                                    </div>
+                                    <div class="gauge-label">Authenticity Score</div>
+                                </div>
+                            </div>
+
+                            <div class="os-panel glassmorphic">
+                                <div class="explainability-terminal">
+                                    <div class="term-header">Chief Authenticity Agent Report</div>
+                                    <div class="term-body">
+                                        <span class="term-prefix">></span>
+                                        <span id="explanation-text" class="typewriter-text"></span>
+                                        <span class="term-cursor">|</span>
+                                    </div>
+                                </div>
+                                
+                                <!-- C2PA Timeline Mock -->
+                                <div class="c2pa-timeline">
+                                    <div class="timeline-step">
+                                        <div class="t-node valid"></div> <div class="t-text">Origin Verified</div>
+                                    </div>
+                                    <div class="timeline-step">
+                                        <div class="t-node valid"></div> <div class="t-text">Hash Integrity Check</div>
+                                    </div>
+                                    <div class="timeline-step" id="t-final-node">
+                                        <div class="t-node alert"></div> <div class="t-text" id="t-final-text">Deepfake Artifacts</div>
+                                    </div>
+                                </div>
+
+                                <button id="reset-btn" class="cyber-btn w-full mt-4">INITIALIZE NEW SCAN</button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+                
+                <!-- VIEW 2: BATCH PROCESSING (MOCK) -->
+                <div id="view-batch" class="tab-view hidden">
+                    <section class="os-panel glassmorphic">
+                        <div class="panel-header">
+                            <span class="icon">▤</span> Neural Batch Processing Queue
+                        </div>
+                        <div class="mock-table">
+                            <div class="table-header">
+                                <span>Filename</span>
+                                <span>Status</span>
+                                <span>Confidence</span>
+                            </div>
+                            <div class="table-row">
+                                <span>congress_speech_720p.mp4</span>
+                                <span class="badge-mini success">VERIFIED</span>
+                                <span>99.2%</span>
+                            </div>
+                            <div class="table-row">
+                                <span>leak_audio_raw.mp3</span>
+                                <span class="badge-mini warning">PROCESSING</span>
+                                <span>--</span>
+                            </div>
+                            <div class="table-row">
+                                <span>anonymous_drop.png</span>
+                                <span class="badge-mini alert">SYNTHETIC</span>
+                                <span>12.4%</span>
+                            </div>
+                        </div>
+                        <button class="cyber-btn w-full mt-4" disabled>UPLOAD BATCH DIRECTORY (TRIAL EXPIRED)</button>
+                    </section>
+                </div>
+
+                <!-- VIEW 3: API INTEGRATION (MOCK) -->
+                <div id="view-api" class="tab-view hidden">
+                    <section class="os-panel glassmorphic">
+                        <div class="panel-header">
+                            <span class="icon">▤</span> Social Media API Gateway
+                        </div>
+                        <p class="text-muted" style="padding:1rem;">Connect your DeepTrust OS Agent directly to Twitter/X, Telegram, or WhatsApp data streams for automated deepfake flagging.</p>
+                        
+                        <div class="api-keys" style="padding:1rem;">
+                            <label>Agentic API Key</label>
+                            <input type="text" value="DT-SEC-8f92-xx-xxx" class="cyber-input" disabled style="width:100%; margin-top:0.5rem; background: rgba(0,0,0,0.5); border: 1px solid var(--neon-cyan); color: var(--neon-cyan); padding: 0.5rem;">
+                        </div>
+
+                        <button class="cyber-btn mt-4" style="margin-left:1rem;">REGENERATE TOKEN</button>
+                    </section>
+                </div>
+
+                <!-- VIEW 4: REPORTS (MOCK) -->
+                <div id="view-reports" class="tab-view hidden">
+                    <section class="os-panel glassmorphic">
+                        <div class="panel-header">
+                            <span class="icon">▤</span> Forensic PDF Report Generator
+                        </div>
+                        <p class="text-muted" style="padding:1rem;">Generate court-admissible, C2PA-compliant documentation of your forensic scans, detailing spectrograms, heatmap anomalies, and timestamp hashes.</p>
+                        <button class="cyber-btn mt-4" style="margin-left:1rem;">GENERATE LATEST REPORT (PDF)</button>
+                    </section>
+                </div>
+
+            </main>
+        </div>
+    </div>
+    <script src="/static/js/agentic-os.js"></script>
+</body>
+</html>
