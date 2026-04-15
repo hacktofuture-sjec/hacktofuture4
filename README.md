@@ -2,6 +2,10 @@
 
 **Push → CI fails → POST log to this API → Groq explains the failure → Telegram alerts your team.**
 
+## Problem & idea
+
+CI failures (deps, config, tests) waste time in manual log triage. PipelineMedic ingests failure logs, analyzes them with Groq (or rules), optionally opens a fix PR, and notifies via Telegram.
+
 ## What ships in the MVP
 
 | Layer | What |
