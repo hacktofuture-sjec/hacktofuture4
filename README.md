@@ -6,7 +6,7 @@
 
 
 
-#### **Project Analysis: Aegis-DID**
+### Project Analysis: Aegis-DID
 
 ## What is the Problem?
 
