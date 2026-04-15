@@ -1,4 +1,4 @@
-# HackToFuture 4.0 — Template
+# Visionaries
 
 Welcome to your official HackToFuture 4 repository.
 
