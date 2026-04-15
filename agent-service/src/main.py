@@ -24,12 +24,15 @@ async def query_endpoint(request: Request):
     async def event_generator():
         yield {
             "event": "reasoning_step",
-            "data": '{"step_id": "1", "agent_name": "primary", "status": "started", "description": "Processing query"}',
+            "data": (
+                '{"step_id": "1", "agent_name": "primary", '
+                '"status": "started", "description": "Processing query"}'
+            ),
         }
         await asyncio.sleep(0.1)
         yield {
             "event": "final_answer",
-            "data": '{"content": "This is a stubbed response", "sources": []}',
+            "data": ('{"content": "This is a stubbed response", "sources": []}'),
         }
 
     return EventSourceResponse(event_generator())

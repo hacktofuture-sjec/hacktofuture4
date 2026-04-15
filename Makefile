@@ -92,6 +92,11 @@ lint:
 	cd agent-service && uv run black --check .
 	cd mcp-servers/jira && uv run black --check .
 	cd mcp-servers/hubspot && uv run black --check .
+	@echo "Running Flake8 linter..."
+	cd backend && uv run flake8 .
+	cd agent-service && uv run flake8 .
+	cd mcp-servers/jira && uv run flake8 .
+	cd mcp-servers/hubspot && uv run flake8 .
 	@echo "Linting complete!"
 
 format:

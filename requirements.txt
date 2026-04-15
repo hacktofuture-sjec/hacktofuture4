@@ -3,6 +3,7 @@
 
 # Linting / Code Quality
 black==24.1.1
+flake8==7.0.0
 
 # Backend (Django)
 django==4.2
