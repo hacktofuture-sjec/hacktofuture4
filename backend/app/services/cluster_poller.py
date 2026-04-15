@@ -3,12 +3,15 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from kubernetes import client, config
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from app.services.observability import ObservabilityService
 
 
 class ClusterPoller:
@@ -267,6 +270,7 @@ class ClusterPoller:
                     ),
                 }
             )
+        summary.sort(key=lambda item: item["last_timestamp"] or "", reverse=True)
         return summary[:50]
 
     async def _fetch_metrics(self) -> Dict[str, Any]:
