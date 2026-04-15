@@ -1,4 +1,4 @@
-# HackToFuture 4.0 — Template
+# Last-Minute I06
 
 Welcome to your official HackToFuture 4 repository.
 
