@@ -105,8 +105,8 @@ if [[ $SKIP_APT -eq 0 ]]; then
     sudo apt update
     sudo apt install -y \
         python3 python3-venv python3-pip pipx \
-        curl unzip tar \
-        nmap masscan arp-scan rustscan \
+        curl unzip tar git \
+        nmap masscan arp-scan \
         gobuster ffuf nikto \
         enum4linux-ng nbtscan smbmap \
         samba-common-bin
@@ -131,9 +131,31 @@ if [[ $SKIP_BINARIES -eq 0 ]]; then
     fetch_github_release lc              gau          "${ARCH}\\.tar\\.gz$" gau
     fetch_github_release tomnomnom       waybackurls  "linux-amd64.*\\.tgz$" waybackurls
 
-    # rustscan is installed via apt above (Kali packages it). Skip any
-    # GitHub fetching — upstream asset naming is inconsistent across
-    # releases and apt is more reliable.
+    # rustscan: optional — Kali does NOT package it and upstream asset
+    # naming varies. Try the GitHub .deb; silently skip on failure since
+    # nmap+masscan already cover port scanning.
+    if ! command -v rustscan >/dev/null 2>&1; then
+        echo "    [+] RustScan (optional, via .deb)"
+        rustscan_url=$(curl -fsSL https://api.github.com/repos/RustScan/RustScan/releases/latest 2>/dev/null \
+            | grep -oE '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]+"' \
+            | cut -d'"' -f4 \
+            | grep -iE 'amd64\.deb$' \
+            | head -1 || true)
+        if [[ -n "$rustscan_url" ]]; then
+            tmp=$(mktemp -d)
+            if curl -fsSL -o "$tmp/pkg.deb" "$rustscan_url" \
+               && sudo dpkg -i "$tmp/pkg.deb" >/dev/null 2>&1; then
+                echo "    [+] installed rustscan from $rustscan_url"
+            else
+                echo "    [!] rustscan .deb install failed — skipping (optional)"
+            fi
+            rm -rf "$tmp"
+        else
+            echo "    [!] rustscan: no .deb asset found — skipping (optional)"
+        fi
+    else
+        echo "    [skip] rustscan already installed at $(command -v rustscan)"
+    fi
 
     # x8: Sh1Yo publishes `x8-<target>.tar.gz` where target is e.g.
     # `x86_64-unknown-linux-gnu`. Match on `linux-gnu.*\.tar\.gz$`.
