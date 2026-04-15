@@ -19,7 +19,7 @@ Traditional authentication mechanisms (such as passwords or Single Sign-On) are 
  ## Why is it important?
 
 This project is critical because it moves beyond static security to a proactive, self-healing defense
-#  Its importance is highlighted by several key factors :
+* **Its importance is highlighted by several key factors :**
 
 * **Credential Security:** It reduces the window of exposure for stolen credentials by 75% through the use of ephemeral, short-lived identities
 
