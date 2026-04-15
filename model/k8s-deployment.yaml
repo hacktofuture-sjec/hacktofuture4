@@ -1,0 +1,63 @@
+---
+# ml-service Kubernetes Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-service
+  labels:
+    app: ml-service
+    component: anomaly-detection
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ml-service
+  template:
+    metadata:
+      labels:
+        app: ml-service
+    spec:
+      containers:
+        - name: ml-service
+          image: ml-service:latest          # update to your registry/tag
+          imagePullPolicy: IfNotPresent     # for Minikube local images
+          ports:
+            - containerPort: 5050
+          env:
+            - name: MODEL_PATH
+              value: "saved_model/isolation_forest.joblib"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5050
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5050
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+# ml-service Kubernetes Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: ml-service
+  labels:
+    app: ml-service
+spec:
+  selector:
+    app: ml-service
+  ports:
+    - name: http
+      port: 5050
+      targetPort: 5050
+  type: ClusterIP

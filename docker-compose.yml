@@ -1,0 +1,88 @@
+services:
+  auth-service:
+    build: ./auth-service
+    container_name: auth-service
+    ports:
+      - "3001:3001"
+    env_file:
+      - ./auth-service/.env
+    environment:
+      - SECURITY_SERVICE_URL=http://security-service:3005
+    depends_on:
+      - mongo
+      - security-service
+
+  messaging-service:
+    build: ./messaging-service
+    container_name: messaging-service
+    ports:
+      - "3002:3002"
+    env_file:
+      - ./messaging-service/.env
+    environment:
+      - SECURITY_SERVICE_URL=http://security-service:3005
+    depends_on:
+      - mongo
+      - security-service
+
+  presence-service:
+    build: ./presence-service
+    container_name: presence-service
+    ports:
+      - "3003:3003"
+    env_file:
+      - ./presence-service/.env
+
+  security-service:
+    build: ./security-service
+    container_name: security-service
+    ports:
+      - "3005:3005"
+    env_file:
+      - ./security-service/.env
+
+  ml-service:
+    build: ./model
+    container_name: ml-service
+    ports:
+      - "5050:5050"
+
+  agent-service:
+    build: ./agent-service
+    container_name: agent-service
+    ports:
+      - "4000:4000"
+    env_file:
+      - ./agent-service/.env
+    environment:
+      - ML_SERVICE_URL=http://ml-service:5050
+    depends_on:
+      - auth-service
+      - messaging-service
+      - presence-service
+      - ml-service
+      - security-service
+
+  frontend:
+    build: ./frontend
+    container_name: frontend
+    ports:
+      - "5173:5173"
+    env_file:
+      - ./frontend/.env
+    depends_on:
+      - auth-service
+      - messaging-service
+      - presence-service
+      - agent-service
+
+  mongo:
+    image: mongo:7
+    container_name: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+volumes:
+  mongo_data:

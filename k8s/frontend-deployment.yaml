@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: nova-chat-frontend
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5173
+          env:
+            - name: VITE_API_URL
+              value: ""
