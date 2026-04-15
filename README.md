@@ -1,42 +1,47 @@
-# Code_Slayers
+# Team: Code_Slayers
 
-Welcome to your official HackToFuture 4 repository.
 
-This repository template will be used for development, tracking progress, and final submission of your project. Ensure that all work is committed here within the allowed hackathon duration.
+## Problem Statement :Agentic AI for Deepfake Detection & Authenticity Verification
 
----
 
-### Instructions for the teams:
+# 🧠 Problem Statement
 
-- Fork the Repository and name the forked repo in this convention: hacktofuture4-team_id (for eg: hacktofuture4-A01)
+## ❓ What is the problem?
 
----
-
-## Rules
-
-- Work must be done ONLY in the forked repository
-- Only Four Contributors are allowed.
-- After 36 hours, Please make PR to the Main Repository. A Form will be sent to fill the required information.
-- Do not copy code from other teams
-- All commits must be from individual GitHub accounts
-- Please provide meaningful commits for tracking.
-- Do not share your repository with other teams
-- Final submission must be pushed before the deadline
-- Any violation may lead to disqualification
+Deepfake technology enables the creation of highly realistic yet entirely fabricated audio and video content.  
+As these synthetic media become more advanced, it is increasingly difficult to distinguish between real and manipulated content.
+This creates a serious challenge in verifying the authenticity of digital media across platforms.
 
 ---
 
-# The Final README Template 
+## ⚠️ Why is it important?
 
-## Problem Statement / Idea
+The rise of deepfakes poses a significant threat to **digital trust, security, and public safety**.
 
-Clearly describe the problem you are solving.
+- Fake videos can spread misinformation and influence public opinion  
+- Synthetic audio can enable identity theft and financial fraud  
+- Manipulated media can damage reputations and create social unrest  
 
-- What is the problem?
-- Why is it important?
-- Who are the target users?
+Most existing solutions are:
+- ❌ Cloud-dependent  
+- ❌ Slow and not real-time  
+- ❌ Not suitable for on-device or field use  
+
+There is a clear need for a **fast, reliable, and intelligent system** that can verify authenticity in real time.
 
 ---
+
+## 🎯 Who are the target users?
+
+- 👮 Law Enforcement & Cybercrime Units  
+- 📱 Social Media Platforms  
+- 📰 News & Media Organizations  
+- 🪖 Defense & Intelligence Agencies  
+
+These users require **real-time, accurate, and explainable deepfake detection systems** to make critical decisions.
+
+---
+
 
 ## Proposed Solution
 
