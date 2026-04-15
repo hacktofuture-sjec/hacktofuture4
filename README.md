@@ -7,11 +7,10 @@ Clearly describe the problem you are solving.
 
 - What is the problem?
 
-Traditional authentication mechanisms, such as passwords or Single Sign-On (SSO), only verify an identity at the initial point of login, which creates a significant security gap for autonomous AI agents that maintain persistent sessions
+Traditional authentication (like passwords or SSO) only verifies identity at the point of login [2]. This creates a massive security gap for **autonomous AI agents** that maintain persistent sessions [2]. 
+*   **Key Risks:** If an agent's token is stolen or its intent is hijacked via **prompt injection** mid-session, attackers can achieve unrestricted lateral movement at machine speed [2].
+*   **Scale:** Non-Human Identities (NHIs) now outnumber human identities by up to **50:1**, making NHI exploitation a top enterprise threat [3].
 
-. If an agent's token is stolen or its intent is hijacked via prompt injection mid-session, attackers can move laterally through a network at machine speed with unrestricted access
-
-. Furthermore, traditional security models are built on the flawed assumption that trust is static, whereas in the modern enterprise, Non-Human Identities (NHIs) now outnumber human identities by as much as 50:1, making them the top cybersecurity threat
 
 
 - Why is it important?
