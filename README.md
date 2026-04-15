@@ -8,7 +8,7 @@ This repository template will be used for development, tracking progress, and fi
 
 ### Instructions for the teams:
 
-- Fork the Repository and name the forked repo in this convention: hacktofuture4-team_id (for eg: hacktofuture4-A01)
+- Fork the Repository and name the forked repo in this convention: hacktofuture4-A10
 
 ---
 
