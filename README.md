@@ -26,6 +26,8 @@ This repository template will be used for development, tracking progress, and fi
 
 ---
 
+# The Final README Template 
+
 ## Problem Statement / Idea
 
 Clearly describe the problem you are solving.
