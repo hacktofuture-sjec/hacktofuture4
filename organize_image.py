@@ -54,4 +54,3 @@ for cls in classes:
     print(f"   Total: {len(images)} → Train: {len(train_images)} | Val: {len(val_images)}")
 
 print("\n🎉 Images organized into train/ and val/ folders!")
-print("   Next step: Run step2_train_model.py")
