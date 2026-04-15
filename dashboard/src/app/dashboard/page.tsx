@@ -92,6 +92,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [clusterHealth, setClusterHealth] = useState<ClusterHealthResponse | null>(null)
   const [clusterSummary, setClusterSummary] = useState<ClusterSummaryResponse | null>(null)
+  const [cpuHistory, setCpuHistory] = useState<number[]>([])
+  const [memHistory, setMemHistory] = useState<number[]>([])
 
   useEffect(() => {
     let active = true
@@ -101,6 +103,16 @@ export default function DashboardPage() {
         if (!active) return
         setClusterHealth(health)
         setClusterSummary(summary)
+
+        const metrics = summary.metrics
+        if (metrics?.cpu_available && metrics.cpu_percentage != null) {
+          const cpuPercentage = metrics.cpu_percentage
+          setCpuHistory((prev) => [...prev.slice(-19), cpuPercentage])
+        }
+        if (metrics?.memory_available && metrics.memory_percentage != null) {
+          const memoryPercentage = metrics.memory_percentage
+          setMemHistory((prev) => [...prev.slice(-19), memoryPercentage])
+        }
       } catch {
         if (!active) return
         setClusterHealth(null)
@@ -123,6 +135,10 @@ export default function DashboardPage() {
   const servicesDown = clusterHealth?.services?.without_ready_endpoints_count ?? 0
   const score = clusterHealth?.score_hint ?? 0
   const activeIncidents = mockIncidents.filter((i) => i.status !== 'resolved').length
+  const cpuValue = clusterSummary?.metrics?.cpu_percentage
+  const memValue = clusterSummary?.metrics?.memory_percentage
+  const cpuAvailable = clusterSummary?.metrics?.cpu_available ?? false
+  const memAvailable = clusterSummary?.metrics?.memory_available ?? false
 
   return (
     <div className="mx-auto flex max-w-[1360px] flex-col gap-8 px-5 py-8 md:px-8 md:py-10">
@@ -156,80 +172,101 @@ export default function DashboardPage() {
         animate="show"
         className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
       >
-        {loading ? (
-          <>
-            {[1, 2, 3, 4].map((k) => (
-              <div
-                key={k}
-                className="rounded-xl border border-border bg-bg-2/90 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-              >
-                <Skeleton className="mb-3 h-3 w-24" />
-                <Skeleton className="h-8 w-28" />
-                <Skeleton className="mt-3 h-3 w-full max-w-[200px]" />
+      {loading ? (
+        <>
+          {[1, 2, 3, 4].map((k) => (
+            <div
+              key={k}
+              className="rounded-xl border border-border bg-bg-2/90 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+            >
+              <Skeleton className="mb-3 h-3 w-24" />
+              <Skeleton className="h-8 w-28" />
+              <Skeleton className="mt-3 h-3 w-full max-w-[200px]" />
+            </div>
+          ))}
+        </>
+      ) : (
+        <>
+          <motion.div variants={item}>
+            <StatCard
+              label="Cluster health"
+              value={clusterHealth?.ok ? 'Good' : 'Check'}
+              sub={`${nodesReady}/${nodesTotal} nodes ready · score ${score}`}
+              valueColor={clusterHealth?.ok ? 'text-lerna-green' : 'text-lerna-red'}
+              glow="blue"
+              icon={<Activity size={18} className="text-lerna-green" />}
+              iconBg="bg-[rgba(16,185,129,0.12)]"
+            />
+          </motion.div>
+
+          <motion.div variants={item}>
+            <StatCard
+              label="Active incidents"
+              value={`${activeIncidents}`}
+              sub="From mock queue · wire to live incidents when ready"
+              valueColor="text-lerna-red"
+              icon={<AlertTriangle size={18} className="text-lerna-red" />}
+              iconBg="bg-[rgba(239,68,68,0.12)]"
+            />
+          </motion.div>
+
+          <motion.div variants={item}>
+            <StatCard
+              label="Services"
+              value={`${Math.max(0, servicesTotal - servicesDown)}/${servicesTotal}`}
+              sub={`${servicesDown} without ready endpoints`}
+              valueColor={servicesDown === 0 ? 'text-lerna-blue2' : 'text-lerna-amber'}
+              glow="blue"
+              icon={<Server size={18} className="text-lerna-blue2" />}
+              iconBg="bg-[rgba(59,130,246,0.12)]"
+            />
+          </motion.div>
+
+          <motion.div variants={item}>
+            <StatCard
+              label="Observation"
+              value={clusterSummary?.available ? 'Live' : 'Offline'}
+              sub={
+                clusterSummary?.available
+                  ? 'Poller connected to cluster'
+                  : clusterSummary?.reason ?? 'Poller unavailable'
+              }
+              valueColor={clusterSummary?.available ? 'text-lerna-purple2' : 'text-lerna-red'}
+              glow="purple"
+              icon={
+                clusterSummary?.available ? (
+                  <Radio size={18} className="text-lerna-purple2" />
+                ) : (
+                  <Bot size={18} className="text-lerna-red" />
+                )
+              }
+              iconBg={
+                clusterSummary?.available
+                  ? 'bg-[rgba(168,85,247,0.12)]'
+                  : 'bg-[rgba(239,68,68,0.12)]'
+              }
+            />
+          </motion.div>
+
+          <motion.div variants={item}>
+            <div className="bg-bg-2 border border-border rounded-2xl p-5">
+              <div className="text-[11px] font-semibold text-[#8A9BBB] font-mono mb-1">
+                Cluster CPU Usage
               </div>
-            ))}
-          </>
-        ) : (
-          <>
-            <motion.div variants={item}>
-              <StatCard
-                label="Cluster health"
-                value={clusterHealth?.ok ? 'Good' : 'Check'}
-                sub={`${nodesReady}/${nodesTotal} nodes ready · score ${score}`}
-                valueColor={clusterHealth?.ok ? 'text-lerna-green' : 'text-lerna-red'}
-                glow="blue"
-                icon={<Activity size={18} className="text-lerna-green" />}
-                iconBg="bg-[rgba(16,185,129,0.12)]"
+              <div className="text-xl font-black text-lerna-blue2 mb-4">
+                {cpuAvailable && cpuValue != null ? `${cpuValue}%` : 'N/A'}
+              </div>
+              <SparklineChart
+                color="#3B82F6"
+                gradientId="cpu"
+                data={cpuHistory}
+                height={100}
+                showTooltip
               />
-            </motion.div>
-            <motion.div variants={item}>
-              <StatCard
-                label="Active incidents"
-                value={`${activeIncidents}`}
-                sub="From mock queue · wire to live incidents when ready"
-                valueColor="text-lerna-red"
-                icon={<AlertTriangle size={18} className="text-lerna-red" />}
-                iconBg="bg-[rgba(239,68,68,0.12)]"
-              />
-            </motion.div>
-            <motion.div variants={item}>
-              <StatCard
-                label="Services"
-                value={`${Math.max(0, servicesTotal - servicesDown)}/${servicesTotal}`}
-                sub={`${servicesDown} without ready endpoints`}
-                valueColor={servicesDown === 0 ? 'text-lerna-blue2' : 'text-lerna-amber'}
-                glow="blue"
-                icon={<Server size={18} className="text-lerna-blue2" />}
-                iconBg="bg-[rgba(59,130,246,0.12)]"
-              />
-            </motion.div>
-            <motion.div variants={item}>
-              <StatCard
-                label="Observation"
-                value={clusterSummary?.available ? 'Live' : 'Offline'}
-                sub={
-                  clusterSummary?.available
-                    ? 'Poller connected to cluster'
-                    : clusterSummary?.reason ?? 'Poller unavailable'
-                }
-                valueColor={clusterSummary?.available ? 'text-lerna-purple2' : 'text-lerna-red'}
-                glow="purple"
-                icon={
-                  clusterSummary?.available ? (
-                    <Radio size={18} className="text-lerna-purple2" />
-                  ) : (
-                    <Bot size={18} className="text-lerna-red" />
-                  )
-                }
-                iconBg={
-                  clusterSummary?.available
-                    ? 'bg-[rgba(168,85,247,0.12)]'
-                    : 'bg-[rgba(239,68,68,0.12)]'
-                }
-              />
-            </motion.div>
-          </>
-        )}
+            </div>
+          </motion.div>
+        </>
+      )}
       </motion.div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12 xl:gap-8">

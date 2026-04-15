@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -20,9 +21,10 @@ from app.services.observability import ObservabilityService
 from app.services.prompt_store import PromptStoreService
 
 obs_service = ObservabilityService()
-cluster_poller = ClusterPoller()
+cluster_poller = ClusterPoller(obs_service=obs_service)
 detection_service = DetectionService(obs_service)
 prompt_store = PromptStoreService()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -51,8 +53,9 @@ async def get_metrics(
 ):
     try:
         return await obs_service.query_metrics(query=query, time=time)
-    except Exception as exc:  # pylint: disable=broad-except
-        raise HTTPException(status_code=502, detail=f"Metrics query failed: {exc}") from exc
+    except Exception:  # pylint: disable=broad-except
+        logger.exception("Metrics query failed")
+        raise HTTPException(status_code=502, detail="Metrics query failed")
 
 
 @app.get("/api/obs/logs")
@@ -65,8 +68,9 @@ async def get_logs(
 ):
     try:
         return await obs_service.query_logs(query=query, limit=limit, start=start, end=end, direction=direction)
-    except Exception as exc:  # pylint: disable=broad-except
-        raise HTTPException(status_code=502, detail=f"Logs query failed: {exc}") from exc
+    except Exception:  # pylint: disable=broad-except
+        logger.exception("Logs query failed")
+        raise HTTPException(status_code=502, detail="Logs query failed")
 
 
 @app.get("/api/obs/traces")
@@ -77,8 +81,9 @@ async def get_traces(
 ):
     try:
         return await obs_service.query_traces(service=service, limit=limit, lookback_minutes=lookback_minutes)
-    except Exception as exc:  # pylint: disable=broad-except
-        raise HTTPException(status_code=502, detail=f"Traces query failed: {exc}") from exc
+    except Exception:  # pylint: disable=broad-except
+        logger.exception("Traces query failed")
+        raise HTTPException(status_code=502, detail="Traces query failed")
 
 
 @app.get("/api/cluster/summary", response_model=ClusterSummary)
