@@ -15,7 +15,7 @@ Traditional authentication mechanisms (such as passwords or Single Sign-On) are 
 . Furthermore, Non-Human Identities (NHIs) now outnumber human identities by a ratio of 50:1, making NHI exploitation the top cybersecurity threat in modern enterprises
 
 
-- ## Why is it important?
+ ## Why is it important?
 
 This project is critical because it moves beyond static security to a proactive, self-healing defense
 * Its importance is highlighted by several key factors :
@@ -28,7 +28,7 @@ Credential Security: It reduces the window of exposure for stolen credentials by
 * System Integrity: It ensures that the safety of enterprise systems depends on rigorous monitoring and autonomous containment rather than just the "intelligence" of the AI itself
 
 
--  ## Who are the target users?
+ ## Who are the target users?
 
  * Enterprises using Autonomous AI: Organizations that deploy AI agents to handle sensitive data or interact with internal APIs and databases
 
@@ -43,7 +43,7 @@ Credential Security: It reduces the window of exposure for stolen credentials by
 
 
 
-- ## What are you building?
+## What are you building?
 
 I am building Aegis-DID (Agentic Ephemeral Governance & Identity System), a decentralized Zero Trust architecture specifically designed for the era of autonomous AI agents
 
@@ -51,7 +51,7 @@ I am building Aegis-DID (Agentic Ephemeral Governance & Identity System), a dece
 
  * It is designed to run in modern orchestration environments like Kubernetes and Docker, ensuring that every AI workload has a verified, verifiable, and temporary identity
 
-- ## How does it solve the problem?
+## How does it solve the problem?
 
 Traditional security models fail because they only verify an identity at the initial login, which is insufficient for AI agents that maintain long, persistent sessions
 * Aegis-DID solves this by shifting to a continuous identity verification model
@@ -66,7 +66,7 @@ Traditional security models fail because they only verify an identity at the ini
 
 * This immediately triggers the Open Policy Agent (OPA) to autonomously strip the agent of its permissions or use Kubernetes NetworkPolicies to physically isolate the compromised pod, "self-healing" the perimeter at machine speed
 
-- ## What makes your solution unique?
+ ## What makes your solution unique?
 Our approach is unique because it moves beyond simple authentication to dynamic, behavior-gated governance
 
 * Zero-Instrumentation Monitoring: By using eBPF, we can monitor an agent's activities at the kernel level without needing to modify the agent's code or adding any performance latency
