@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# Frontend (Vite + React)
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Env & secrets
+.env
+!.env.example
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
