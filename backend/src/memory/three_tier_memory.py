@@ -35,11 +35,29 @@ class ThreeTierMemory:
 
     def summary(self) -> dict[str, Any]:
         documents = self.load_documents()
+        dedup_total_scanned = self._last_dedup_report["documents"]["scanned"] + self._last_dedup_report["transcripts"]["scanned"]
+        dedup_ratio = 0.0
+        if dedup_total_scanned > 0:
+            dedup_ratio = round(self._last_dedup_report["deduped_count"] / dedup_total_scanned, 4)
+
         return {
             "index": self.index_layer,
             "documents": self.docs_layer,
             "transcripts": self.transcript_layer,
             "document_count": len(documents),
+            "dedup_summary": {
+                "documents": {
+                    "scanned": self._last_dedup_report["documents"]["scanned"],
+                    "duplicates": self._last_dedup_report["documents"]["duplicates"],
+                },
+                "transcripts": {
+                    "scanned": self._last_dedup_report["transcripts"]["scanned"],
+                    "duplicates": self._last_dedup_report["transcripts"]["duplicates"],
+                },
+                "deduped_count": self._last_dedup_report["deduped_count"],
+                "duplication_ratio": dedup_ratio,
+                "last_run_at": self._last_dedup_report["last_run_at"],
+            },
         }
 
     def load_documents(self, force_reload: bool = False) -> list[MemoryDocument]:
@@ -75,12 +93,19 @@ class ThreeTierMemory:
         self._documents_cache = collected
         return collected
 
-    def persist_transcript(self, trace_id: str, steps: list[dict[str, Any]]) -> None:
+    def persist_transcript(
+        self,
+        trace_id: str,
+        steps: list[dict[str, Any]],
+        dedup_summary: dict[str, Any] | None = None,
+    ) -> None:
         target = self.transcript_root / f"{trace_id}.json"
         payload = {
             "trace_id": trace_id,
             "steps": steps,
         }
+        if dedup_summary is not None:
+            payload["dedup_summary"] = dedup_summary
         target.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def get_transcript(self, trace_id: str) -> dict[str, Any] | None:
