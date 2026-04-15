@@ -1,6 +1,5 @@
 # Team DOLLAR $IGN (C06)
 
-# The Final README Template 
 
 ## Problem Statement / Idea
 
