@@ -34,14 +34,18 @@ ARCH="linux_amd64"
 # ---------------------------------------------------------------- helpers
 
 fetch_github_release() {
-    # fetch_github_release OWNER REPO ASSET_PATTERN BIN_NAME
+    # fetch_github_release OWNER REPO ASSET_PATTERN BIN_NAME [force]
     #
-    # Finds the latest release, grabs the asset whose filename contains
-    # ASSET_PATTERN, extracts the binary BIN_NAME, and installs it to
-    # /usr/local/bin. Handles .zip and .tar.gz archives.
-    local owner=$1 repo=$2 pattern=$3 binname=$4
+    # Finds the latest release, grabs the asset whose filename matches
+    # ASSET_PATTERN (regex, egrep-style), extracts BIN_NAME, and installs
+    # it to /usr/local/bin. Handles .zip and .tar.gz archives.
+    #
+    # If `force` is "force", re-installs even if the binary is already on
+    # PATH (needed when a distro ships a wrong-upstream binary with the
+    # same name, e.g. Kali's python3-httpx vs ProjectDiscovery httpx).
+    local owner=$1 repo=$2 pattern=$3 binname=$4 force=${5:-}
 
-    if command -v "$binname" >/dev/null 2>&1; then
+    if [[ "$force" != "force" ]] && command -v "$binname" >/dev/null 2>&1; then
         echo "    [skip] $binname already installed at $(command -v "$binname")"
         return 0
     fi
@@ -115,8 +119,11 @@ fi
 if [[ $SKIP_BINARIES -eq 0 ]]; then
     echo "[*] Prebuilt binaries from GitHub releases"
 
-    # ProjectDiscovery — all publish ${tool}_${version}_${ARCH}.zip
-    fetch_github_release projectdiscovery httpx   "${ARCH}\\.zip$"   httpx
+    # ProjectDiscovery. httpx is FORCE-installed because Kali's base
+    # `httpx` package is python3-httpx (different tool, different flags).
+    # We install ProjectDiscovery httpx to /usr/local/bin which takes
+    # PATH precedence over /usr/bin in our systemd unit.
+    fetch_github_release projectdiscovery httpx   "${ARCH}\\.zip$"   httpx  force
     fetch_github_release projectdiscovery katana  "${ARCH}\\.zip$"   katana
     fetch_github_release projectdiscovery nuclei  "${ARCH}\\.zip$"   nuclei
 
@@ -124,17 +131,43 @@ if [[ $SKIP_BINARIES -eq 0 ]]; then
     fetch_github_release lc              gau          "${ARCH}\\.tar\\.gz$" gau
     fetch_github_release tomnomnom       waybackurls  "linux-amd64.*\\.tgz$" waybackurls
 
-    # Rust tools that publish prebuilt releases
-    fetch_github_release RustScan        RustScan     "amd64\\.deb$"        rustscan_pkg || true
-    if [[ -f "$BIN_DIR/rustscan_pkg" ]]; then
-        sudo dpkg -i "$BIN_DIR/rustscan_pkg" || true
-        sudo rm -f "$BIN_DIR/rustscan_pkg"
+    # rustscan: .deb package — patterns vary across releases, try several.
+    if ! command -v rustscan >/dev/null 2>&1; then
+        echo "    [+] bee-san/RustScan (.deb)"
+        rustscan_url=$(curl -fsSL https://api.github.com/repos/bee-san/RustScan/releases/latest \
+            | grep -oE '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]+"' \
+            | cut -d'"' -f4 \
+            | grep -iE '(x86_64|amd64).*\.(deb|tar\.gz|zip)$' \
+            | head -1 || true)
+        if [[ -n "$rustscan_url" ]]; then
+            tmp=$(mktemp -d)
+            curl -fsSL -o "$tmp/pkg" "$rustscan_url"
+            case "$rustscan_url" in
+                *.deb)
+                    sudo dpkg -i "$tmp/pkg" || sudo apt-get -yf install ;;
+                *.tar.gz|*.tgz)
+                    tar -xzf "$tmp/pkg" -C "$tmp"
+                    found=$(find "$tmp" -type f -name rustscan -executable | head -1)
+                    [[ -n "$found" ]] && sudo install -m 0755 "$found" "$BIN_DIR/rustscan" ;;
+                *.zip)
+                    unzip -q -o "$tmp/pkg" -d "$tmp"
+                    found=$(find "$tmp" -type f -name rustscan -executable | head -1)
+                    [[ -n "$found" ]] && sudo install -m 0755 "$found" "$BIN_DIR/rustscan" ;;
+            esac
+            rm -rf "$tmp"
+        else
+            echo "    [!] no rustscan release asset matched" >&2
+        fi
+    else
+        echo "    [skip] rustscan already installed at $(command -v rustscan)"
     fi
-    fetch_github_release Sh1Yo           x8           "x86_64.*linux.*\\.tar\\.gz$|linux.*\\.zip$" x8
+
+    # x8: Sh1Yo publishes linux_x86_64 tar or zip
+    fetch_github_release Sh1Yo x8 "(x86_64|amd64).*(linux|unknown-linux).*\\.(tar\\.gz|zip)$|linux.*\\.(tar\\.gz|zip)$" x8
 
     # Update nuclei templates (small, fast)
     if command -v nuclei >/dev/null 2>&1; then
-        nuclei -update-templates -silent || true
+        HOME="${HOME:-/root}" nuclei -update-templates -silent || true
     fi
 else
     echo "[*] Prebuilt binaries: skipped"
@@ -142,11 +175,16 @@ fi
 
 # ---------------------------------------------------------------- python tools via pipx
 
-echo "[*] Python tooling via pipx"
-pipx install arjun       2>/dev/null || pipx upgrade arjun       || true
-pipx install paramspider 2>/dev/null || pipx upgrade paramspider || true
-pipx install dirsearch   2>/dev/null || pipx upgrade dirsearch   || true
-pipx ensurepath >/dev/null 2>&1 || true
+echo "[*] Python tooling via pipx (installed --global so systemd finds them)"
+# --global puts shims in /usr/local/bin instead of per-user ~/.local/bin,
+# which is critical because the systemd unit runs as root with a PATH
+# that doesn't include /home/<user>/.local/bin.
+sudo PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install arjun       2>/dev/null \
+    || sudo PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx upgrade arjun       || true
+sudo PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install paramspider 2>/dev/null \
+    || sudo PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx upgrade paramspider || true
+sudo PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install dirsearch   2>/dev/null \
+    || sudo PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx upgrade dirsearch   || true
 
 # ---------------------------------------------------------------- deploy server
 

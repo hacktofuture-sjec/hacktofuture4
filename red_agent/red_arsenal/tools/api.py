@@ -99,25 +99,46 @@ async def ffuf_impl(
     wordlist: str | None = None,
 ) -> dict:
     """mode: 'content' (FUZZ in URL) or 'parameter' (FUZZ as POST body)."""
-    wl = wordlist or DEFAULT_WORDLISTS.get("ffuf", "/usr/share/seclists/Discovery/Web-Content/common.txt")
-    if mode == "parameter":
-        cmd = [
-            _binary("ffuf"),
-            "-u", target,
-            "-X", method,
-            "-d", "FUZZ=test",
-            "-w", wl,
-            "-mc", "200,204,301,302,307,401,403",
-            "-of", "json", "-o", "-",
-        ]
-    else:
-        url = target if "FUZZ" in target else target.rstrip("/") + "/FUZZ"
-        cmd = [
-            _binary("ffuf"),
-            "-u", url,
-            "-w", wl,
-            "-of", "json", "-o", "-",
-            "-mc", "200,204,301,302,307,401,403",
-        ]
-    raw = await run(cmd, timeout=TOOLS["ffuf"].default_timeout)
-    return parsers.parse_ffuf(raw, target)
+    wl = wordlist or DEFAULT_WORDLISTS.get(
+        "ffuf", "/usr/share/seclists/Discovery/Web-Content/common.txt"
+    )
+    # ffuf's json output goes to a file, not stdout. Use a temp file and
+    # read it back into the RunResult so the parser sees the JSON document.
+    with tempfile.NamedTemporaryFile(
+        prefix="ffuf-", suffix=".json", delete=False
+    ) as tf:
+        out_path = tf.name
+    try:
+        if mode == "parameter":
+            cmd = [
+                _binary("ffuf"),
+                "-u", target,
+                "-X", method,
+                "-d", "FUZZ=test",
+                "-w", wl,
+                "-mc", "200,204,301,302,307,401,403",
+                "-of", "json", "-o", out_path,
+                "-s",  # silent: no pretty TTY output to stderr
+            ]
+        else:
+            url = target if "FUZZ" in target else target.rstrip("/") + "/FUZZ"
+            cmd = [
+                _binary("ffuf"),
+                "-u", url,
+                "-w", wl,
+                "-of", "json", "-o", out_path,
+                "-mc", "200,204,301,302,307,401,403",
+                "-s",
+            ]
+        raw = await run(cmd, timeout=TOOLS["ffuf"].default_timeout)
+        try:
+            with open(out_path, "rb") as fh:
+                raw.stdout = fh.read()
+        except FileNotFoundError:
+            pass
+        return parsers.parse_ffuf(raw, target)
+    finally:
+        try:
+            os.unlink(out_path)
+        except OSError:
+            pass

@@ -7,9 +7,10 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/opt/red-arsenal
 Environment=PYTHONUNBUFFERED=1
+Environment=HOME=/root
 Environment=RED_ARSENAL_HOST=0.0.0.0
 Environment=RED_ARSENAL_PORT=8765
-Environment=PATH=/opt/red-arsenal/.venv/bin:/root/go/bin:/root/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PATH=/opt/red-arsenal/.venv/bin:/usr/local/sbin:/usr/local/bin:/root/go/bin:/root/.cargo/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/opt/red-arsenal/.venv/bin/python -m red_arsenal.server
 Restart=on-failure
 RestartSec=3
