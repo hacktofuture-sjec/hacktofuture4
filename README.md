@@ -1,86 +1,97 @@
-# HackToFuture 4.0 — Template
-
-Welcome to your official HackToFuture 4 repository.
-
-This repository template will be used for development, tracking progress, and final submission of your project. Ensure that all work is committed here within the allowed hackathon duration.
+# 🚀 PipelineMedic  
+### Self-Learning AI DevOps Agent for CI/CD Failure Diagnosis and Auto-Healing
 
 ---
 
-### Instructions for the teams:
+## 🧩 Problem Statement / Idea
 
-- Fork the Repository and name the forked repo in this convention: hacktofuture4-team_id (for eg: hacktofuture4-A01)
+### What is the problem?
+Modern CI/CD pipelines frequently fail due to dependency issues, configuration errors, missing environment variables, and failing tests. Developers must manually inspect logs and debug issues, which is time-consuming and repetitive.
 
----
+### Why is it important?
+- Debugging CI/CD failures takes **30–60 minutes per issue**
+- Slows down development and deployment cycles  
+- Requires experienced DevOps knowledge  
+- Increases operational overhead  
 
-## Rules
-
-- Work must be done ONLY in the forked repository
-- Only Four Contributors are allowed.
-- After 36 hours, Please make PR to the Main Repository. A Form will be sent to fill the required information.
-- Do not copy code from other teams
-- All commits must be from individual GitHub accounts
-- Please provide meaningful commits for tracking.
-- Do not share your repository with other teams
-- Final submission must be pushed before the deadline
-- Any violation may lead to disqualification
-
----
-
-# The Final README Template 
-
-## Problem Statement / Idea
-
-Clearly describe the problem you are solving.
-
-- What is the problem?
-- Why is it important?
-- Who are the target users?
+### Who are the target users?
+- Software Developers  
+- DevOps Engineers  
+- Site Reliability Engineers (SREs)  
+- Engineering teams using CI/CD pipelines  
 
 ---
 
-## Proposed Solution
+## 💡 Proposed Solution
 
-Explain your approach:
+### What are we building?
+PipelineMedic is an **AI-powered DevOps agent** that automatically detects CI/CD failures, analyzes logs, generates fixes, and creates pull requests.
 
-- What are you building?
-- How does it solve the problem?
-- What makes your solution unique?
+### How does it solve the problem?
+- Detects pipeline failures via GitHub Webhooks  
+- Fetches logs and analyzes them using AI (Llama3 / Mixtral)  
+- Identifies root cause and generates fix  
+- Creates pull request automatically  
+- Re-runs pipeline to validate fix  
 
----
+### What makes it unique?
 
-## Features
+🔥 **Self-Learning Failure Memory**
+- Stores past failures and fixes  
+- Reuses solutions instantly  
 
-List the core features of your project:
+⚡ **Auto-Heal Mode**
+- Automatically resolves repeated failures  
 
-- Feature 1
-- Feature 2
-- Feature 3
+🧠 **Confidence Scoring**
+- Determines reliability of fixes  
 
----
-
-## Tech Stack
-
-Mention all technologies used:
-
-- Frontend:
-- Backend:
-- Database:
-- APIs / Services:
-- Tools / Libraries:
+🛡️ **Risk-Based Automation**
+- Ensures safe deployment decisions  
 
 ---
 
-## Project Setup Instructions
+## ⚙️ Features
 
-Provide clear steps to run your project:
+- 🔍 Automatic CI/CD failure detection  
+- 🧠 AI-based log analysis and root cause detection  
+- 🔧 Automated fix generation  
+- 🔁 Pull request creation  
+- ♻️ Self-learning failure memory *(unique)*  
+- ⚡ Auto-heal for repeated issues *(unique)*  
+- 📊 Confidence scoring  
+- 🛡️ Risk-based governance  
+
+---
+
+## 🧰 Tech Stack
+
+### Frontend
+- (Optional) React / Next.js  
+
+### Backend
+- Python  
+- FastAPI  
+
+### Database
+- SQLite / JSON  
+
+### APIs / Services
+- Groq API (Llama3 / Mixtral)  
+- GitHub REST API  
+- GitHub Webhooks  
+
+### Tools / Libraries
+- Uvicorn  
+- Requests  
+- Ngrok (for webhook testing)  
+
+---
+
+## ⚡ Project Setup Instructions
+
+### 1. Clone the repository
 
 ```bash
-# Clone the repository
 git clone <repo-link>
-
-# Install dependencies
-...
-
-# Run the project
-...
-```
+cd pipeline-medic
