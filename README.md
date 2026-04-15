@@ -1,4 +1,4 @@
-# HackToFuture 4.0 — Template
+# Trailblazers
 
 Welcome to your official HackToFuture 4 repository.
 
