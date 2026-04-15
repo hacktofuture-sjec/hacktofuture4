@@ -106,7 +106,7 @@ if [[ $SKIP_APT -eq 0 ]]; then
     sudo apt install -y \
         python3 python3-venv python3-pip pipx \
         curl unzip tar \
-        nmap masscan arp-scan \
+        nmap masscan arp-scan rustscan \
         gobuster ffuf nikto \
         enum4linux-ng nbtscan smbmap \
         samba-common-bin
@@ -131,39 +131,13 @@ if [[ $SKIP_BINARIES -eq 0 ]]; then
     fetch_github_release lc              gau          "${ARCH}\\.tar\\.gz$" gau
     fetch_github_release tomnomnom       waybackurls  "linux-amd64.*\\.tgz$" waybackurls
 
-    # rustscan: .deb package — patterns vary across releases, try several.
-    if ! command -v rustscan >/dev/null 2>&1; then
-        echo "    [+] bee-san/RustScan (.deb)"
-        rustscan_url=$(curl -fsSL https://api.github.com/repos/bee-san/RustScan/releases/latest \
-            | grep -oE '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]+"' \
-            | cut -d'"' -f4 \
-            | grep -iE '(x86_64|amd64).*\.(deb|tar\.gz|zip)$' \
-            | head -1 || true)
-        if [[ -n "$rustscan_url" ]]; then
-            tmp=$(mktemp -d)
-            curl -fsSL -o "$tmp/pkg" "$rustscan_url"
-            case "$rustscan_url" in
-                *.deb)
-                    sudo dpkg -i "$tmp/pkg" || sudo apt-get -yf install ;;
-                *.tar.gz|*.tgz)
-                    tar -xzf "$tmp/pkg" -C "$tmp"
-                    found=$(find "$tmp" -type f -name rustscan -executable | head -1)
-                    [[ -n "$found" ]] && sudo install -m 0755 "$found" "$BIN_DIR/rustscan" ;;
-                *.zip)
-                    unzip -q -o "$tmp/pkg" -d "$tmp"
-                    found=$(find "$tmp" -type f -name rustscan -executable | head -1)
-                    [[ -n "$found" ]] && sudo install -m 0755 "$found" "$BIN_DIR/rustscan" ;;
-            esac
-            rm -rf "$tmp"
-        else
-            echo "    [!] no rustscan release asset matched" >&2
-        fi
-    else
-        echo "    [skip] rustscan already installed at $(command -v rustscan)"
-    fi
+    # rustscan is installed via apt above (Kali packages it). Skip any
+    # GitHub fetching — upstream asset naming is inconsistent across
+    # releases and apt is more reliable.
 
-    # x8: Sh1Yo publishes linux_x86_64 tar or zip
-    fetch_github_release Sh1Yo x8 "(x86_64|amd64).*(linux|unknown-linux).*\\.(tar\\.gz|zip)$|linux.*\\.(tar\\.gz|zip)$" x8
+    # x8: Sh1Yo publishes `x8-<target>.tar.gz` where target is e.g.
+    # `x86_64-unknown-linux-gnu`. Match on `linux-gnu.*\.tar\.gz$`.
+    fetch_github_release Sh1Yo x8 "linux-gnu\\.tar\\.gz$|linux-musl\\.tar\\.gz$" x8
 
     # Update nuclei templates (small, fast)
     if command -v nuclei >/dev/null 2>&1; then
@@ -179,12 +153,17 @@ echo "[*] Python tooling via pipx (installed --global so systemd finds them)"
 # --global puts shims in /usr/local/bin instead of per-user ~/.local/bin,
 # which is critical because the systemd unit runs as root with a PATH
 # that doesn't include /home/<user>/.local/bin.
-sudo PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install arjun       2>/dev/null \
-    || sudo PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx upgrade arjun       || true
-sudo PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install paramspider 2>/dev/null \
-    || sudo PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx upgrade paramspider || true
-sudo PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install dirsearch   2>/dev/null \
-    || sudo PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx upgrade dirsearch   || true
+PIPX_ENV=(PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin)
+
+# arjun and dirsearch are on PyPI, plain pipx install works.
+sudo "${PIPX_ENV[@]}" pipx install arjun     2>/dev/null \
+    || sudo "${PIPX_ENV[@]}" pipx upgrade arjun     || true
+sudo "${PIPX_ENV[@]}" pipx install dirsearch 2>/dev/null \
+    || sudo "${PIPX_ENV[@]}" pipx upgrade dirsearch || true
+
+# paramspider is git-only (not on PyPI) — use the repo URL.
+sudo "${PIPX_ENV[@]}" pipx install git+https://github.com/devanshbatham/paramspider.git 2>/dev/null \
+    || sudo "${PIPX_ENV[@]}" pipx upgrade paramspider || true
 
 # ---------------------------------------------------------------- deploy server
 

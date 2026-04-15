@@ -23,13 +23,14 @@ class ToolSpec:
     extra_paths: list[str] = field(default_factory=list)
 
     def resolve(self) -> str | None:
-        path = shutil.which(self.binary)
-        if path:
-            return path
+        # Explicit candidates are checked FIRST so a tool with a distro
+        # namespace collision (e.g. ProjectDiscovery httpx vs the Python
+        # httpx CLI that ships in our venv) can be pinned to the right
+        # binary. Falls back to shutil.which when no explicit match.
         for candidate in self.extra_paths:
             if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
                 return candidate
-        return None
+        return shutil.which(self.binary)
 
     @property
     def installed(self) -> bool:
@@ -41,19 +42,28 @@ CARGO_BIN = os.path.expanduser("~/.cargo/bin")
 
 TOOLS: dict[str, ToolSpec] = {
     "nmap":         ToolSpec("nmap", "nmap", LONG_TIMEOUT),
-    "httpx":        ToolSpec("httpx", "httpx", DEFAULT_TIMEOUT, [f"{GO_BIN}/httpx"]),
-    "katana":       ToolSpec("katana", "katana", LONG_TIMEOUT, [f"{GO_BIN}/katana"]),
-    "gau":          ToolSpec("gau", "gau", DEFAULT_TIMEOUT, [f"{GO_BIN}/gau"]),
-    "waybackurls":  ToolSpec("waybackurls", "waybackurls", DEFAULT_TIMEOUT, [f"{GO_BIN}/waybackurls"]),
-    "nuclei":       ToolSpec("nuclei", "nuclei", LONG_TIMEOUT, [f"{GO_BIN}/nuclei"]),
+    # httpx: pin explicit paths so we skip the Python httpx CLI that pip
+    # installs into our venv as a transitive dep of fastmcp/mcp.
+    "httpx":        ToolSpec("httpx", "httpx", DEFAULT_TIMEOUT,
+                             ["/usr/local/bin/httpx", f"{GO_BIN}/httpx"]),
+    "katana":       ToolSpec("katana", "katana", LONG_TIMEOUT,
+                             ["/usr/local/bin/katana", f"{GO_BIN}/katana"]),
+    "gau":          ToolSpec("gau", "gau", DEFAULT_TIMEOUT,
+                             ["/usr/local/bin/gau", f"{GO_BIN}/gau"]),
+    "waybackurls":  ToolSpec("waybackurls", "waybackurls", DEFAULT_TIMEOUT,
+                             ["/usr/local/bin/waybackurls", f"{GO_BIN}/waybackurls"]),
+    "nuclei":       ToolSpec("nuclei", "nuclei", LONG_TIMEOUT,
+                             ["/usr/local/bin/nuclei", f"{GO_BIN}/nuclei"]),
     "dirsearch":    ToolSpec("dirsearch", "dirsearch", LONG_TIMEOUT),
     "gobuster":     ToolSpec("gobuster", "gobuster", LONG_TIMEOUT),
     "arjun":        ToolSpec("arjun", "arjun", DEFAULT_TIMEOUT),
-    "x8":           ToolSpec("x8", "x8", DEFAULT_TIMEOUT, [f"{CARGO_BIN}/x8"]),
+    "x8":           ToolSpec("x8", "x8", DEFAULT_TIMEOUT,
+                             ["/usr/local/bin/x8", f"{CARGO_BIN}/x8"]),
     "paramspider":  ToolSpec("paramspider", "paramspider", DEFAULT_TIMEOUT),
     "ffuf":         ToolSpec("ffuf", "ffuf", LONG_TIMEOUT),
     "arp-scan":     ToolSpec("arp-scan", "arp-scan", DEFAULT_TIMEOUT),
-    "rustscan":     ToolSpec("rustscan", "rustscan", LONG_TIMEOUT, [f"{CARGO_BIN}/rustscan"]),
+    "rustscan":     ToolSpec("rustscan", "rustscan", LONG_TIMEOUT,
+                             ["/usr/local/bin/rustscan", f"{CARGO_BIN}/rustscan"]),
     "masscan":      ToolSpec("masscan", "masscan", LONG_TIMEOUT),
     "enum4linux-ng": ToolSpec("enum4linux-ng", "enum4linux-ng", LONG_TIMEOUT),
     "nbtscan":      ToolSpec("nbtscan", "nbtscan", DEFAULT_TIMEOUT),
