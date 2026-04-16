@@ -35,20 +35,25 @@ from red_agent.agents.tools import (
 
 _logger = logging.getLogger(__name__)
 
-# ── LLM Configuration (NVIDIA NIM via OpenAI-compatible API) ──
+# ── LLM Configuration (Azure OpenAI GPT-4o) ──
 
-NVIDIA_API_KEY = os.environ.get(
-    "NVIDIA_API_KEY",
-    "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",
+AZURE_ENDPOINT = os.environ.get(
+    "AZURE_OPENAI_ENDPOINT",
+    "https://abineshbalasubramaniyam-resource.cognitiveservices.azure.com/",
 )
+AZURE_API_KEY = os.environ.get("AZURE_OPENAI_API_KEY", "")
+AZURE_API_VERSION = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+AZURE_MODEL = os.environ.get("AZURE_OPENAI_MODEL", "gpt-4o")
 
 
-def _get_llm() -> LLM:
-    """Create CrewAI LLM instance pointing to NVIDIA NIM via OpenAI-compatible API."""
+def _get_llm():
+    """Create CrewAI LLM instance pointing to Azure OpenAI GPT-4o."""
+    if not HAS_CREWAI:
+        return None
     return LLM(
-        model="openai/meta/llama-3.1-70b-instruct",
-        base_url="https://integrate.api.nvidia.com/v1",
-        api_key=NVIDIA_API_KEY,
+        model=f"azure/{AZURE_MODEL}",
+        base_url=AZURE_ENDPOINT,
+        api_key=AZURE_API_KEY,
         temperature=0.3,
     )
 

@@ -1,12 +1,13 @@
 from __future__ import annotations
-"""Unified NVIDIA NIM LLM client for all three agents.
+"""Unified Azure OpenAI LLM client for all Red Team agents.
 
 Provides:
 - chat()          → text response (orchestrator chat/analyze/report)
 - chat_json()     → parsed JSON response (orchestrator planning)
 - tool_call()     → function-calling loop (ReconAgent + ExploitAgent)
-"""
 
+Uses Azure OpenAI GPT-4o via the openai SDK.
+"""
 
 import json
 import logging
@@ -14,34 +15,35 @@ import os
 import re
 from typing import Any
 
-import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
 
 _logger = logging.getLogger(__name__)
 
-NVIDIA_API_URL = os.environ.get(
-    "LLM_API_URL",
-    "https://integrate.api.nvidia.com/v1/chat/completions",
+# ── Azure OpenAI Configuration ──
+AZURE_ENDPOINT = os.environ.get(
+    "AZURE_OPENAI_ENDPOINT",
+    "https://abineshbalasubramaniyam-resource.cognitiveservices.azure.com/",
 )
-NVIDIA_API_KEY = os.environ.get(
-    "NVIDIA_API_KEY",
-    "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",
-)
-LLM_MODEL = os.environ.get("LLM_MODEL", "meta/llama-3.1-70b-instruct")
+AZURE_API_KEY = os.environ.get("AZURE_OPENAI_API_KEY", "")
+AZURE_API_VERSION = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+AZURE_MODEL = os.environ.get("AZURE_OPENAI_MODEL", "gpt-4o")
 
-# Red team system prompt for general chat/analysis
+# Red team system prompt
 RED_AGENT_SYSTEM_PROMPT = """You are an autonomous red team AI agent specializing in offensive security.
 Your role is to analyze reconnaissance data, identify vulnerabilities, plan attack strategies, and generate security assessment reports.
 Think step-by-step and provide actionable, structured output. Be concise and technical."""
 
 
-def _headers() -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {NVIDIA_API_KEY}",
-        "Content-Type": "application/json",
-    }
+def _get_client():
+    """Create Azure OpenAI client (lazy import to avoid startup failures)."""
+    from openai import AzureOpenAI
+    return AzureOpenAI(
+        api_version=AZURE_API_VERSION,
+        azure_endpoint=AZURE_ENDPOINT,
+        api_key=AZURE_API_KEY,
+    )
 
 
 def _strip_thinking(text: str) -> str:
@@ -57,27 +59,25 @@ async def chat(
     temperature: float = 0.6,
     max_tokens: int = 4096,
 ) -> str:
-    payload = {
-        "model": LLM_MODEL,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
-        ],
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "top_p": 0.95,
-        "stream": False,
-    }
+    import asyncio
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        resp = await client.post(NVIDIA_API_URL, headers=_headers(), json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-        choices = data.get("choices", [])
-        if choices:
-            content = choices[0].get("message", {}).get("content", "")
-            return _strip_thinking(content).strip()
-        return ""
+    def _sync_call():
+        client = _get_client()
+        resp = client.chat.completions.create(
+            model=AZURE_MODEL,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=0.95,
+        )
+        content = resp.choices[0].message.content or ""
+        return _strip_thinking(content).strip()
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync_call)
 
 
 # ── JSON chat (parsed response) ──
@@ -88,7 +88,7 @@ async def chat_json(
     system: str = RED_AGENT_SYSTEM_PROMPT,
     temperature: float = 0.4,
     max_tokens: int = 4096,
-) -> dict[str, Any]:
+) -> dict:
     json_prompt = prompt + "\n\nRespond ONLY with valid JSON. No markdown, no code fences."
     text = await chat(json_prompt, system=system, temperature=temperature, max_tokens=max_tokens)
     try:
@@ -102,43 +102,61 @@ async def chat_json(
         return {"raw_response": text}
 
 
-# ── Function-calling loop (for ReconAgent + ExploitAgent) ──
+# ── Function-calling (for ReconAgent + ExploitAgent) ──
 
 async def tool_call(
-    messages: list[dict],
-    tools: list[dict],
+    messages: list,
+    tools: list,
     *,
-    model: str | None = None,
+    model: str = None,
     temperature: float = 0,
     max_tokens: int = 2048,
 ) -> dict:
     """Single LLM call with function-calling tools.
 
     Returns the full response choice message (may contain tool_calls).
-    NVIDIA NIM uses the OpenAI-compatible format for function calling.
+    Azure OpenAI GPT-4o supports OpenAI-format function calling natively.
     """
-    payload = {
-        "model": model or LLM_MODEL,
-        "messages": messages,
-        "tools": tools,
-        "tool_choice": "auto",
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "stream": False,
-    }
+    import asyncio
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        resp = await client.post(NVIDIA_API_URL, headers=_headers(), json=payload)
-        resp.raise_for_status()
-        data = resp.json()
+    def _sync_call():
+        client = _get_client()
+        kwargs = {
+            "model": model or AZURE_MODEL,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
 
-        choices = data.get("choices", [])
-        if not choices:
-            return {"role": "assistant", "content": "No response from LLM."}
+        resp = client.chat.completions.create(**kwargs)
 
-        message = choices[0].get("message", {})
-        # Clean thinking tags from content
-        if message.get("content"):
-            message["content"] = _strip_thinking(message["content"])
+        choice = resp.choices[0]
+        msg = choice.message
 
-        return message
+        result = {"role": "assistant", "content": msg.content or ""}
+
+        # Clean thinking tags
+        if result["content"]:
+            result["content"] = _strip_thinking(result["content"])
+
+        # Extract tool calls if present
+        if msg.tool_calls:
+            result["tool_calls"] = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    },
+                }
+                for tc in msg.tool_calls
+            ]
+
+        return result
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync_call)

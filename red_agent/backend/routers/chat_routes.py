@@ -140,30 +140,17 @@ async def chat(req: ChatRequest) -> ChatMessage:
     return ChatMessage(content=clean_response)
 
 
-async def _chat_with_llm(conversation: list[dict[str, str]]) -> str:
-    """Call NVIDIA NIM directly with requests (blocks ~3-5s, acceptable for hackathon)."""
-    import requests
-
-    payload = {
-        "model": llm_client.LLM_MODEL,
-        "messages": [{"role": "system", "content": AGENT_SYSTEM_PROMPT}] + conversation,
-        "max_tokens": 256,
-        "temperature": 0.6,
-        "stream": False,
-    }
-
-    resp = requests.post(
-        llm_client.NVIDIA_API_URL,
-        headers=llm_client._headers(),
-        json=payload,
-        timeout=30,
+async def _chat_with_llm(conversation: list) -> str:
+    """Call Azure OpenAI GPT-4o via the unified llm_client."""
+    full_prompt = "\n".join(
+        f"[{m.get('role', 'user')}]: {m.get('content', '')}" for m in conversation
     )
-    resp.raise_for_status()
-    data = resp.json()
-    choices = data.get("choices", [])
-    if choices:
-        return llm_client._strip_thinking(choices[0]["message"]["content"]).strip()
-    return ""
+    return await llm_client.chat(
+        full_prompt,
+        system=AGENT_SYSTEM_PROMPT,
+        temperature=0.6,
+        max_tokens=512,
+    )
 
 
 def _get_mission_status_context() -> str:
