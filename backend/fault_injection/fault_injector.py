@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import shlex
 import subprocess
 
 from collectors.k8s_events_collector import K8sEventsCollector
@@ -20,7 +21,11 @@ class FaultInjector:
     def apply_fault(self, scenario_id: str) -> None:
         scenario = self.scenarios[scenario_id]
         command = scenario["k8s_fault_action"]
-        result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=60)
+        args = shlex.split(command)
+        if not args or args[0] != "kubectl":
+            raise RuntimeError("Fault command rejected: only kubectl commands are allowed")
+
+        result = subprocess.run(args, shell=False, capture_output=True, text=True, timeout=60)
         if result.returncode != 0:
             raise RuntimeError(f"Fault command failed (exit {result.returncode}): {result.stderr.strip()}")
         return None

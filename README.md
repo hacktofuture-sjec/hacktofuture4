@@ -7,12 +7,8 @@ This repository is now split for 4 parallel contributors with minimum merge conf
 ## Quick Navigation
 
 - Sequential understanding summary: docs/00-sequential-doc-understanding.md
-- Docker, kubectl, kind, helm, vcluster, uv
-- MacOS: `brew install uv`
-- Linux (Ubuntu/Debian): `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- Linux (Arch/EndeavourOS): `pacman -S uv`
 - Team ownership and boundaries: docs/01-team-split-and-boundaries.md
-- Day-1 parallel kickoff checklist: docs/02-day1-start-checklist.md
+- Current implementation status: docs/02-day1-start-checklist.md
 - Shared API contract freeze: shared/contracts/api-contract.md
 - Shared AI JSON shape contract: shared/contracts/ai-prompts-and-json-shapes.md
 
@@ -20,6 +16,18 @@ This repository is now split for 4 parallel contributors with minimum merge conf
 
 ### Prerequisites
 
+- Docker Desktop
+- kubectl
+- kind
+- helm
+- vcluster
+- uv
+
+Install uv:
+
+- macOS: `brew install uv`
+- Linux (Ubuntu/Debian): `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- Linux (Arch/EndeavourOS): `pacman -S uv`
 
 ### Setup & Start
 
@@ -31,15 +39,14 @@ This repository is now split for 4 parallel contributors with minimum merge conf
 # Test fault injection
 curl -X POST http://localhost:8000/inject-fault \
   -H "Content-Type: application/json" \
-The response is the live observability snapshot JSON for the fault.
   -d '{"scenario_id":"oom-kill-001"}'
-  
-The response is the live observability snapshot JSON for the fault.
 
 # Open Grafana UI
 # URL: http://localhost:3300
 # Login: admin / admin
 ```
+
+The response from /inject-fault includes a live observability snapshot built from metrics, logs, events, and traces.
 
 The setup automatically installs Python 3.12 and creates a dedicated venv; no manual Python management needed.
 

@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
+PID_DIR="$ROOT_DIR/.run"
+mkdir -p "$PID_DIR"
 
 command -v uv >/dev/null || { echo "ERROR: uv not found. Install from https://docs.astral.sh/uv/getting-started/"; exit 1; }
 
@@ -51,7 +53,9 @@ cd "$ROOT_DIR"
 
 echo "Backend PID: $BACKEND_PID"
 echo "Frontend PID: $FRONTEND_PID"
+echo "$BACKEND_PID" > "$PID_DIR/backend.pid"
+echo "$FRONTEND_PID" > "$PID_DIR/frontend.pid"
 
 echo "Press Ctrl+C to stop."
-trap "kill $BACKEND_PID $FRONTEND_PID >/dev/null 2>&1; exit 0" SIGINT SIGTERM
+trap "bash \"$ROOT_DIR/scripts/stop.sh\" >/dev/null 2>&1; exit 0" SIGINT SIGTERM
 wait

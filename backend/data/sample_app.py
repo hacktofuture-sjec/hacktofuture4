@@ -18,6 +18,13 @@ PORT = int(os.environ.get("PORT", "8080"))
 request_count = 0
 error_count = 0
 start_time = time.time()
+counter_lock = threading.Lock()
+
+
+def run_cpu_load(duration_seconds: int = 5) -> None:
+    deadline = time.time() + duration_seconds
+    while time.time() < deadline:
+        _ = sum(i * i for i in range(10000))
 
 
 def log(level: str, message: str, **kwargs) -> None:
@@ -62,7 +69,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         global request_count, error_count
-        request_count += 1
+        with counter_lock:
+            request_count += 1
 
         if self.path == "/health":
             self._respond(200, b"ok")
@@ -79,9 +87,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if self.path == "/load":
             log("warn", "CPU load test triggered", duration_seconds=5)
-            deadline = time.time() + 5
-            while time.time() < deadline:
-                _ = sum(i * i for i in range(10000))
+            threading.Thread(target=run_cpu_load, args=(5,), daemon=True).start()
             self._respond(200, b"load complete")
             return
 
@@ -90,7 +96,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             log("info", "root hit", path="/", status=200)
             return
 
-        error_count += 1
+        with counter_lock:
+            error_count += 1
         self._respond(404, b"not found")
         log("error", "route not found", path=self.path, status=404)
 
@@ -112,5 +119,5 @@ if __name__ == "__main__":
     log("info", "starting", port=PORT)
     thread = threading.Thread(target=background_logger, daemon=True)
     thread.start()
-    server = http.server.HTTPServer(("0.0.0.0", PORT), Handler)
+    server = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     server.serve_forever()

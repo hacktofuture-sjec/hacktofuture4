@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from kubernetes import client, config
+try:
+    from kubernetes import client, config
+except ImportError:  # pragma: no cover - exercised in minimal local/test environments
+    client = None
+    config = None
 
 from config import settings
 
@@ -22,6 +26,10 @@ HIGH_SIGNAL_REASONS = {
 
 class K8sEventsCollector:
     def __init__(self) -> None:
+        self.v1 = None
+        if client is None or config is None:
+            return
+
         config.load_kube_config(config_file=settings.kubeconfig)
         self.v1 = client.CoreV1Api()
 
@@ -40,6 +48,9 @@ class K8sEventsCollector:
         }
 
     def get_pod_events(self, namespace: str, pod_name: str, window_minutes: int = 10) -> list[dict[str, str | int]]:
+        if self.v1 is None:
+            return []
+
         events = self.v1.list_namespaced_event(
             namespace=namespace,
             field_selector=f"involvedObject.name={pod_name}",
@@ -58,6 +69,9 @@ class K8sEventsCollector:
         deployment: str,
         window_minutes: int = 10,
     ) -> list[dict[str, str | int]]:
+        if self.v1 is None:
+            return []
+
         pods = self.v1.list_namespaced_pod(namespace=namespace, label_selector=f"app={deployment}")
         all_events: list[dict[str, str | int]] = []
         for pod in pods.items:

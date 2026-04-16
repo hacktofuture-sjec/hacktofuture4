@@ -56,9 +56,9 @@ class LokiCollector:
         for line in lines:
             norm = re.sub(r"\b[0-9a-f]{8,}\b", "<id>", line)
             norm = re.sub(r"\d{4}-\d{2}-\d{2}T\S+", "<ts>", norm)
+            norm = re.sub(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "<ip>", norm)
             norm = re.sub(r"\b\d+\b", "<N>", norm)
             norm = re.sub(r"[\w\.-]+@[\w\.-]+", "<email>", norm)
-            norm = re.sub(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "<ip>", norm)
             normalized.append(norm[:200].strip())
 
         counts = Counter(normalized)

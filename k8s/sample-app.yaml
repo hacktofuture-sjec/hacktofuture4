@@ -38,7 +38,13 @@ data:
     request_count = 0
     error_count = 0
     start_time = time.time()
+    counter_lock = threading.Lock()
     OTEL_EXPORTER_OTLP_ENDPOINT = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://tempo.monitoring.svc.cluster.local:4318/v1/traces")
+
+    def run_cpu_load(duration_seconds=5):
+      end = time.time() + duration_seconds
+      while time.time() < end:
+        _ = sum(i * i for i in range(10000))
 
     def _trace_id():
       return uuid.uuid4().hex
@@ -94,7 +100,8 @@ data:
 
       def do_GET(self):
         global request_count, error_count
-        request_count += 1
+        with counter_lock:
+          request_count += 1
         span_name = f"GET {self.path}"
         span_ctx = TRACER.start_as_current_span(span_name) if TRACER else contextlib.nullcontext()
         with span_ctx as span:
@@ -124,9 +131,7 @@ data:
             return
           if self.path == "/load":
             log("warn", "cpu load test triggered", duration_seconds=5, trace_id=trace_id)
-            end = time.time() + 5
-            while time.time() < end:
-              _ = sum(i * i for i in range(10000))
+            threading.Thread(target=run_cpu_load, args=(5,), daemon=True).start()
             self._respond(200, b"load complete")
             if span:
               span.set_attribute("http.method", "GET")
@@ -141,7 +146,8 @@ data:
               span.set_attribute("http.target", self.path)
               span.set_attribute("http.status_code", 200)
             return
-          error_count += 1
+          with counter_lock:
+            error_count += 1
           self._respond(404, b"not found")
           log("error", "route not found", path=self.path, status=404, trace_id=trace_id)
           if span:
@@ -164,7 +170,7 @@ data:
     if __name__ == "__main__":
       t = threading.Thread(target=background_logger, daemon=True)
       t.start()
-      server = http.server.HTTPServer(("0.0.0.0", PORT), Handler)
+      server = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
       server.serve_forever()
 
 ---

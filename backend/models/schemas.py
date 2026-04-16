@@ -215,3 +215,14 @@ class ApprovalResponse(BaseModel):
     approved: bool
     status: IncidentStatus
     message: str
+
+
+class FaultInjectionRequest(BaseModel):
+    scenario_id: str
+    force: bool = False
+
+
+class FaultInjectionResponse(BaseModel):
+    scenario_id: str
+    snapshot: IncidentSnapshot
+    message: str
