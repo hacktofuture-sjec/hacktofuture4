@@ -289,13 +289,17 @@ def generate_fix_content(
     log_excerpt: str | None = None,
     *,
     strict: bool = False,
+    sandbox_feedback: str | None = None,
 ) -> str | None:
     """Ask Groq to produce the full patched content for `file_path`.
 
     Returns the new file content, or None if the call fails or the
     response is unusable. When ``strict`` is True the prompt is
     reinforced — useful as a second-chance attempt when the first
-    return was unchanged or rejected.
+    return was unchanged or rejected. When ``sandbox_feedback`` is
+    provided (the trimmed pytest output from a previous failed
+    verification), it is injected into the prompt so the model can
+    self-correct based on the real failure.
     """
     api_key = os.getenv("GROQ_API_KEY", "").strip()
     if not api_key:
@@ -342,6 +346,16 @@ def generate_fix_content(
     )
     if log_excerpt:
         user_payload += f"\n=== CI LOG EXCERPT ===\n{log_excerpt[:1500]}\n=== END LOG ===\n"
+    if sandbox_feedback:
+        user_payload += (
+            "\n=== PREVIOUS SANDBOX VERIFICATION FAILED ===\n"
+            "Your last attempted patch was executed against an auto-generated "
+            "regression test inside an ephemeral Vercel Sandbox and the test "
+            "did NOT pass. The relevant pytest output is below. Use it to "
+            "produce a CORRECT patch this time.\n"
+            f"{sandbox_feedback[:1800]}\n"
+            "=== END SANDBOX VERIFICATION ===\n"
+        )
     user_payload += "\nReturn the ENTIRE new file content (all lines) with the fix applied."
 
     body = {
@@ -571,6 +585,216 @@ def _merge_test_into_file(existing: str | None, new_test_code: str) -> str:
         )
     merged = existing.rstrip() + "\n\n\n" + header + "\n" + snippet
     return merged
+
+
+# --- Vercel Sandbox self-verification ------------------------------------------
+#
+# After the LLM generates a fix + regression test, we spin up a fresh Firecracker
+# microVM via the Vercel Sandbox Python SDK, drop both files in, pip-install the
+# runtime deps, and execute the generated pytest. The PR is only marked as
+# "pre-verified" if pytest exits 0. A failure does not block the PR — the human
+# still sees it — but it is surfaced loudly so the reviewer knows the AI's own
+# test did not yet pass. Every run is Langfuse-traced as a span so cost/latency
+# is observable alongside the three Groq generations.
+
+_DEFAULT_SANDBOX_REQUIREMENTS = (
+    "fastapi\n"
+    "httpx\n"
+    "pytest\n"
+    "pydantic\n"
+)
+
+
+def _vercel_sandbox_credentials_present() -> bool:
+    """True when the Vercel SDK has enough env to authenticate (token or OIDC)."""
+    if os.getenv("VERCEL_OIDC_TOKEN", "").strip():
+        return True
+    return bool(
+        os.getenv("VERCEL_TOKEN", "").strip()
+        and os.getenv("VERCEL_TEAM_ID", "").strip()
+        and os.getenv("VERCEL_PROJECT_ID", "").strip()
+    )
+
+
+def _tail(text: str, max_chars: int) -> str:
+    if not text:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    return "…(truncated)…\n" + text[-max_chars:]
+
+
+_VERIFIED_BADGE = {
+    "passed": ("✅", "Pre-verified in Vercel Sandbox"),
+    "failed": ("⚠️", "Sandbox verification failed"),
+    "errored": ("⚠️", "Sandbox verification errored"),
+    "skipped": ("➖", "Sandbox skipped"),
+}
+
+
+def verify_patch_in_vercel_sandbox(
+    *,
+    source_path: str,
+    source_content: str,
+    test_path: str,
+    test_content: str,
+    test_name: str | None,
+    repository: str,
+    incident_token: str,
+) -> dict[str, Any]:
+    """Run the AI-generated fix + regression test in an ephemeral Vercel Sandbox.
+
+    Returns a verdict dict; never raises. Verdict values:
+      - "passed"   pytest exit_code == 0
+      - "failed"   pytest ran but returned non-zero (test caught something)
+      - "errored"  could not even run pytest (pip install failed, SDK error…)
+      - "skipped"  no sandbox credentials available in the environment
+
+    The return shape is stable — callers can surface it in Telegram and PR bodies.
+    """
+    import time as _time
+
+    started_at = _time.monotonic()
+    verdict: dict[str, Any] = {
+        "verdict": "skipped",
+        "reason": "",
+        "runtime": os.getenv("PM_SANDBOX_RUNTIME", "python3.13").strip() or "python3.13",
+        "sandbox_id": None,
+        "exit_code": None,
+        "duration_ms": 0,
+        "stdout_tail": "",
+        "test_name": test_name,
+        "test_path": test_path,
+        "source_path": source_path,
+    }
+
+    if not _vercel_sandbox_credentials_present():
+        verdict["reason"] = "no VERCEL_* credentials"
+        return verdict
+
+    try:
+        from vercel.sandbox import Sandbox, WriteFile
+    except Exception as import_err:
+        verdict["verdict"] = "errored"
+        verdict["reason"] = f"vercel SDK import failed: {import_err!r}"[:300]
+        return verdict
+
+    try:
+        timeout_ms = int(os.getenv("PM_SANDBOX_TIMEOUT_MS", "240000"))
+    except ValueError:
+        timeout_ms = 240_000
+
+    lf = _get_langfuse()
+    span = None
+    trace_id: str | None = None
+    if lf is not None:
+        try:
+            trace_id = lf.create_trace_id()
+            span = lf.start_observation(
+                trace_context=TraceContext(trace_id=trace_id),
+                as_type="span",
+                name="vercel_sandbox_verify",
+                input={
+                    "repository": repository[:200],
+                    "source_path": source_path,
+                    "test_path": test_path,
+                    "test_name": test_name,
+                    "incident_token": incident_token,
+                    "runtime": verdict["runtime"],
+                },
+                metadata={"provider": "vercel-sandbox"},
+            )
+        except Exception as e:
+            print(f"[PipelineMedic] Langfuse sandbox span start failed: {e}", flush=True)
+            span = None
+
+    box = None
+    try:
+        box = Sandbox.create(runtime=verdict["runtime"], timeout=timeout_ms)
+        verdict["sandbox_id"] = box.sandbox_id
+
+        src_rel = source_path.lstrip("/")
+        test_rel = test_path.lstrip("/")
+
+        files: list[dict[str, Any]] = [
+            WriteFile(path=src_rel, content=source_content.encode("utf-8")),
+            WriteFile(path=test_rel, content=test_content.encode("utf-8")),
+            WriteFile(
+                path="requirements-sandbox.txt",
+                content=_DEFAULT_SANDBOX_REQUIREMENTS.encode("utf-8"),
+            ),
+        ]
+        # pytest resolves `tests/` as a package when __init__.py is present;
+        # harmless otherwise, and required for some import styles.
+        if "/" in test_rel:
+            pkg_dir = test_rel.rsplit("/", 1)[0]
+            files.append(WriteFile(path=f"{pkg_dir}/__init__.py", content=b""))
+        box.write_files(files)
+
+        install = box.run_command(
+            "pip",
+            ["install", "-q", "--disable-pip-version-check", "-r", "requirements-sandbox.txt"],
+        )
+        install_out = (install.stdout() or "") + (install.stderr() or "")
+        if install.exit_code != 0:
+            verdict["verdict"] = "errored"
+            verdict["reason"] = f"pip install failed (exit {install.exit_code})"
+            verdict["exit_code"] = install.exit_code
+            verdict["stdout_tail"] = _tail(install_out, 2000)
+            return verdict
+
+        pytest_args: list[str] = ["-m", "pytest", test_rel, "-v", "--tb=short", "-x"]
+        if test_name:
+            pytest_args.extend(["-k", test_name])
+        run = box.run_command(
+            "python",
+            pytest_args,
+            env={"PYTHONDONTWRITEBYTECODE": "1", "PYTHONUNBUFFERED": "1"},
+        )
+        combined = (run.stdout() or "") + "\n" + (run.stderr() or "")
+        verdict["exit_code"] = run.exit_code
+        verdict["stdout_tail"] = _tail(combined.strip(), 2400)
+        verdict["verdict"] = "passed" if run.exit_code == 0 else "failed"
+        if verdict["verdict"] == "failed":
+            verdict["reason"] = f"pytest exit {run.exit_code}"
+        return verdict
+
+    except Exception as e:
+        verdict["verdict"] = "errored"
+        verdict["reason"] = f"sandbox error: {e!r}"[:400]
+        print(f"[PipelineMedic] Vercel Sandbox verification errored: {e!r}", flush=True)
+        return verdict
+    finally:
+        verdict["duration_ms"] = int((_time.monotonic() - started_at) * 1000)
+        if box is not None:
+            try:
+                box.stop()
+            except Exception:
+                pass
+            try:
+                box.client.close()
+            except Exception:
+                pass
+        if span is not None:
+            try:
+                span.update(
+                    output={
+                        "verdict": verdict["verdict"],
+                        "exit_code": verdict["exit_code"],
+                        "duration_ms": verdict["duration_ms"],
+                        "sandbox_id": verdict["sandbox_id"],
+                        "stdout_tail": verdict["stdout_tail"][:1500],
+                        "reason": verdict["reason"],
+                    },
+                    level="DEFAULT" if verdict["verdict"] == "passed" else "WARNING",
+                    status_message=verdict["reason"] or verdict["verdict"],
+                )
+            except Exception:
+                pass
+            try:
+                span.end()
+            except Exception:
+                pass
 
 
 # --- Decision -------------------------------------------------------------------
@@ -1259,6 +1483,19 @@ def build_pr_created_message(
         lines.append(
             f"🧪 <b>Regression test</b> · <code>{_h(reg_qual)}</code>"
         )
+    verification = github_info.get("verification")
+    if isinstance(verification, dict) and verification.get("verdict"):
+        verdict = verification.get("verdict")
+        emoji, label = _VERIFIED_BADGE.get(verdict, _VERIFIED_BADGE["skipped"])
+        duration_ms = verification.get("duration_ms") or 0
+        dur = f"{duration_ms / 1000:.1f}s" if duration_ms else "—"
+        exit_code = verification.get("exit_code")
+        exit_part = f"exit {exit_code}" if exit_code is not None else "no run"
+        self_corrected = bool(verification.get("self_corrected"))
+        detail = f"{_h(dur)} · {_h(exit_part)}"
+        if self_corrected:
+            detail += " · 🔁 self-corrected"
+        lines.append(f"{emoji} <b>{_h(label)}</b> · {detail}")
     if fix:
         lines.append("")
         lines.append("<b>What changed</b>")
@@ -1587,6 +1824,57 @@ def _request_reviewers(
     )
 
 
+def _verification_pr_body_block(verification: dict[str, Any]) -> list[str]:
+    """Render the sandbox-verification section of the PR body."""
+    verdict = verification.get("verdict") or "skipped"
+    headings = {
+        "passed": "### ✅ Sandbox pre-verification (Vercel Sandbox)",
+        "failed": "### ⚠️ Sandbox pre-verification (Vercel Sandbox) — test FAILED",
+        "errored": "### ⚠️ Sandbox pre-verification (Vercel Sandbox) — errored",
+        "skipped": "### ➖ Sandbox pre-verification (Vercel Sandbox) — skipped",
+    }
+    lines: list[str] = [
+        "",
+        headings.get(verdict, headings["skipped"]),
+        "",
+        (
+            "Before opening this PR, PipelineMedic executed the AI-generated "
+            "fix *and* the AI-generated regression test together inside a "
+            "fresh Firecracker microVM (Vercel Sandbox). The verdict below is "
+            "the live output of that run."
+        ),
+        "",
+        f"- **Verdict:** `{verdict}`",
+        f"- **Exit code:** `{verification.get('exit_code')}`",
+        f"- **Duration:** `{verification.get('duration_ms')} ms`",
+        f"- **Runtime:** `{verification.get('runtime')}`",
+        f"- **Sandbox ID:** `{verification.get('sandbox_id') or '—'}`",
+    ]
+    if verification.get("self_corrected"):
+        lines.append(
+            "- **Self-correction:** the AI re-generated the patch after an "
+            "initial sandbox failure and re-ran the test."
+        )
+    reason = (verification.get("reason") or "").strip()
+    if reason:
+        lines.append(f"- **Reason:** `{reason}`")
+    tail = (verification.get("stdout_tail") or "").strip()
+    if tail:
+        lines.extend(
+            [
+                "",
+                "<details><summary>Pytest output (tail)</summary>",
+                "",
+                "```",
+                tail,
+                "```",
+                "",
+                "</details>",
+            ]
+        )
+    return lines
+
+
 def maybe_create_autofix_pr(
     repository: str,
     repository_full_name: str | None,
@@ -1630,8 +1918,16 @@ def maybe_create_autofix_pr(
     # we can ask the LLM to patch the actual source.
     cur_content, _ = _fetch_file(token, owner, repo, target_file, use_base)
 
+    incident_token = str(analysis.get("_incident_token") or "").strip()
+    repo_slug = f"{owner}/{repo}"
+
     patch_source: str = "none"
     new_content: str
+    generated_test: str | None = None
+    test_path: str | None = None
+    existing_test: str | None = None
+    verification: dict[str, Any] | None = None
+
     if cur_content is None:
         # File doesn't exist on base: we only safely handle the
         # "missing requirements.txt" case by creating it.
@@ -1648,9 +1944,8 @@ def maybe_create_autofix_pr(
             }
     else:
         log_excerpt = str(analysis.get("_log_excerpt") or "")
-        repo_slug = f"{owner}/{repo}"
 
-        def _try_llm(strict: bool) -> tuple[str | None, str]:
+        def _try_llm(strict: bool, sandbox_feedback: str | None = None) -> tuple[str | None, str]:
             out = generate_fix_content(
                 cur_content,
                 target_file,
@@ -1658,6 +1953,7 @@ def maybe_create_autofix_pr(
                 repo_slug,
                 log_excerpt=log_excerpt,
                 strict=strict,
+                sandbox_feedback=sandbox_feedback,
             )
             if out is None:
                 return None, "llm_call_failed"
@@ -1693,6 +1989,101 @@ def maybe_create_autofix_pr(
                 cur_content, analysis, reject_reason
             )
 
+        # --- Sandbox self-verification (before any git operations) ---------
+        # We generate the regression test in-memory and then execute the
+        # fix + test together inside a fresh Vercel Sandbox microVM. If the
+        # test fails, we give the AI one chance to self-correct using the
+        # real pytest output as feedback, then re-verify. Whatever the
+        # outcome, we still open the PR — but the reviewer sees an
+        # explicit, traced verdict.
+        if (
+            patch_source == "llm"
+            and target_file.endswith(".py")
+            and cur_content is not None
+        ):
+            try:
+                test_path = _derive_test_path(target_file)
+                existing_test, _ = _fetch_file(token, owner, repo, test_path, use_base)
+                generated_test = generate_regression_test(
+                    cur_content,
+                    new_content,
+                    analysis,
+                    repo_slug,
+                    target_file,
+                    existing_test_content=existing_test,
+                )
+            except Exception as e:
+                print(f"[PipelineMedic] regression test synthesis failed: {e}", flush=True)
+                generated_test = None
+
+            if generated_test:
+                verify_test_code = _merge_test_into_file(existing_test, generated_test)
+                test_name = _parse_test_name(generated_test) or "test_regression"
+                verification = verify_patch_in_vercel_sandbox(
+                    source_path=target_file,
+                    source_content=new_content,
+                    test_path=test_path,
+                    test_content=verify_test_code,
+                    test_name=test_name,
+                    repository=repo_slug,
+                    incident_token=incident_token,
+                )
+
+                # One self-healing retry if the sandbox actually RAN the test
+                # and it failed. Errored/skipped don't retry — the signal is
+                # too noisy to be worth another LLM round-trip.
+                if verification and verification.get("verdict") == "failed":
+                    retry_hint = (
+                        f"test: {test_name}\n"
+                        f"exit_code: {verification.get('exit_code')}\n"
+                        f"sandbox_id: {verification.get('sandbox_id')}\n\n"
+                        f"{verification.get('stdout_tail', '')}"
+                    )
+                    retry_out, retry_reason = _try_llm(
+                        strict=True,
+                        sandbox_feedback=retry_hint,
+                    )
+                    if retry_out is not None:
+                        new_content = retry_out
+                        try:
+                            generated_test_v2 = generate_regression_test(
+                                cur_content,
+                                new_content,
+                                analysis,
+                                repo_slug,
+                                target_file,
+                                existing_test_content=existing_test,
+                            )
+                        except Exception as e:
+                            print(
+                                f"[PipelineMedic] regression test v2 synthesis failed: {e}",
+                                flush=True,
+                            )
+                            generated_test_v2 = None
+                        if generated_test_v2:
+                            generated_test = generated_test_v2
+                            verify_test_code = _merge_test_into_file(
+                                existing_test, generated_test
+                            )
+                            test_name = _parse_test_name(generated_test) or test_name
+                        verification = verify_patch_in_vercel_sandbox(
+                            source_path=target_file,
+                            source_content=new_content,
+                            test_path=test_path,
+                            test_content=verify_test_code,
+                            test_name=test_name,
+                            repository=repo_slug,
+                            incident_token=incident_token,
+                        )
+                        if verification is not None:
+                            verification["self_corrected"] = True
+                    else:
+                        print(
+                            f"[PipelineMedic] self-heal retry rejected: {retry_reason}",
+                            flush=True,
+                        )
+
+    # --- Commit fix + test atomically on a fresh branch --------------------
     ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     branch_name = f"pipelinemedic/autofix-{ts}"
 
@@ -1701,7 +2092,6 @@ def maybe_create_autofix_pr(
         return {"ok": False, "mode": "error", "error": err_b or "branch error"}
 
     file_sha = _get_file_sha(token, owner, repo, target_file, branch_name)
-
     ok_f, err_f = _put_file(
         token,
         owner,
@@ -1715,55 +2105,35 @@ def maybe_create_autofix_pr(
     if not ok_f:
         return {"ok": False, "mode": "error", "error": err_f or "file update error"}
 
-    # --- Regression test synthesis (best-effort, never blocks the PR) -------
-    # We only attempt this on a real LLM-produced patch to a Python source
-    # file. The demo audit-stamp case has no real bug to regression-test, so
-    # we skip it.
     test_info: dict[str, str] | None = None
-    if (
-        patch_source == "llm"
-        and target_file.endswith(".py")
-        and cur_content is not None
-    ):
+    if generated_test and test_path:
         try:
-            test_path = _derive_test_path(target_file)
-            existing_test, existing_test_sha = _fetch_file(
-                token, owner, repo, test_path, branch_name
+            merged_test_file = _merge_test_into_file(existing_test, generated_test)
+            test_name = _parse_test_name(generated_test) or "test_regression"
+            existing_test_sha = _get_file_sha(token, owner, repo, test_path, branch_name)
+            ok_t, err_t = _put_file(
+                token,
+                owner,
+                repo,
+                test_path,
+                branch_name,
+                merged_test_file,
+                f"test: PipelineMedic regression test ({test_name})",
+                existing_test_sha,
             )
-            generated_test = generate_regression_test(
-                cur_content,
-                new_content,
-                analysis,
-                f"{owner}/{repo}",
-                target_file,
-                existing_test_content=existing_test,
-            )
-            if generated_test:
-                test_name = _parse_test_name(generated_test) or "test_regression"
-                merged_test_file = _merge_test_into_file(existing_test, generated_test)
-                ok_t, err_t = _put_file(
-                    token,
-                    owner,
-                    repo,
-                    test_path,
-                    branch_name,
-                    merged_test_file,
-                    f"test: PipelineMedic regression test ({test_name})",
-                    existing_test_sha,
+            if ok_t:
+                test_info = {
+                    "file": test_path,
+                    "name": test_name,
+                    "qualified": f"{test_path}::{test_name}",
+                }
+            else:
+                print(
+                    f"[PipelineMedic] regression test commit failed: {err_t}",
+                    flush=True,
                 )
-                if ok_t:
-                    test_info = {
-                        "file": test_path,
-                        "name": test_name,
-                        "qualified": f"{test_path}::{test_name}",
-                    }
-                else:
-                    print(
-                        f"[PipelineMedic] regression test commit failed: {err_t}",
-                        flush=True,
-                    )
         except Exception as e:
-            print(f"[PipelineMedic] regression test step failed: {e}", flush=True)
+            print(f"[PipelineMedic] regression test commit crashed: {e}", flush=True)
 
     title = f"PipelineMedic autofix: {analysis.get('root_cause', 'CI fix')[:80]}"
     pr_body_parts = [
@@ -1789,6 +2159,8 @@ def maybe_create_autofix_pr(
                 f"- Test: `{test_info['name']}`",
             ]
         )
+    if verification is not None:
+        pr_body_parts.extend(_verification_pr_body_block(verification))
     pr_body = "\n".join(pr_body_parts)
 
     pr_num, err_p = _open_pr(token, owner, repo, title, pr_body, branch_name, use_base)
@@ -1810,6 +2182,7 @@ def maybe_create_autofix_pr(
         "file": target_file,
         "patch_source": patch_source,
         "regression_test": test_info,
+        "verification": verification,
     }
 
 
@@ -1911,7 +2284,7 @@ def health_payload() -> dict[str, Any]:
     return {
         "status": "ok",
         "service": "pipelinemedic",
-        "version": "1.3.0",
+        "version": "1.4.0",
         "groq_configured": bool(os.getenv("GROQ_API_KEY", "").strip()),
         "telegram_configured": bool(
             os.getenv("TELEGRAM_BOT_TOKEN", "").strip() and _telegram_chat_ids()
@@ -1921,6 +2294,7 @@ def health_payload() -> dict[str, Any]:
             os.getenv("LANGFUSE_SECRET_KEY", "").strip()
             and os.getenv("LANGFUSE_PUBLIC_KEY", "").strip()
         ),
+        "vercel_sandbox_configured": _vercel_sandbox_credentials_present(),
     }
 
 
@@ -2125,10 +2499,12 @@ async def handle_telegram_callback(body: dict[str, Any]) -> JSONResponse:
         tg_answer_callback(callback_id, "Creating fix branch and PR…")
         update_incident(tok, status="creating_pr")
         try:
+            analysis_for_pr = dict(inc.get("analysis") or {})
+            analysis_for_pr["_incident_token"] = tok
             github_info = maybe_create_autofix_pr(
                 inc.get("repository", ""),
                 inc.get("repository_full_name"),
-                inc.get("analysis", {}),
+                analysis_for_pr,
                 "auto_fix",
             )
         except Exception as e:

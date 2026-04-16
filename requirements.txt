@@ -3,3 +3,4 @@ uvicorn[standard]==0.34.0
 requests==2.32.3
 python-dotenv==1.1.0
 langfuse==4.2.0
+vercel==0.5.7
