@@ -26,7 +26,6 @@ def test_fingerprint_oom_kill():
     assert result is not None, "OOM fingerprint should match"
     assert result["fingerprint_id"] == "FP-001", f"Expected FP-001, got {result['fingerprint_id']}"
     assert result["confidence"] >= 0.90, "OOM confidence should be high"
-    print("✓ FP-001 (OOM Kill) detection passed")
 
 
 def test_fingerprint_crash_loop():
@@ -39,7 +38,6 @@ def test_fingerprint_crash_loop():
     result = match_fingerprint(snapshot)
     assert result is not None, "CrashLoop fingerprint should match"
     assert result["fingerprint_id"] == "FP-002", f"Expected FP-002, got {result['fingerprint_id']}"
-    print("✓ FP-002 (CrashLoop) detection passed")
 
 
 def test_fingerprint_image_pull():
@@ -52,7 +50,6 @@ def test_fingerprint_image_pull():
     result = match_fingerprint(snapshot)
     assert result is not None, "ImagePull fingerprint should match"
     assert result["fingerprint_id"] == "FP-003", f"Expected FP-003, got {result['fingerprint_id']}"
-    print("✓ FP-003 (ImagePull) detection passed")
 
 
 def test_fingerprint_cpu_starvation():
@@ -65,7 +62,6 @@ def test_fingerprint_cpu_starvation():
     result = match_fingerprint(snapshot)
     assert result is not None, "CPU starvation fingerprint should match"
     assert result["fingerprint_id"] == "FP-004", f"Expected FP-004, got {result['fingerprint_id']}"
-    print("✓ FP-004 (CPU Starvation) detection passed")
 
 
 def test_fingerprint_db_pool_saturation():
@@ -78,7 +74,6 @@ def test_fingerprint_db_pool_saturation():
     result = match_fingerprint(snapshot)
     assert result is not None, "DB pool fingerprint should match"
     assert result["fingerprint_id"] == "FP-005", f"Expected FP-005, got {result['fingerprint_id']}"
-    print("✓ FP-005 (DB Pool Saturation) detection passed")
 
 
 def test_fingerprint_no_match():
@@ -90,7 +85,6 @@ def test_fingerprint_no_match():
     }
     result = match_fingerprint(snapshot)
     assert result is None, "No fingerprint should match for normal conditions"
-    print("✓ No-match test passed")
 
 
 def test_feature_extraction_oom_case():
@@ -104,8 +98,6 @@ def test_feature_extraction_oom_case():
     assert features["memory_pct"] == 92.0, "Memory percent extraction failed"
     assert features["oom_event_count"] > 0, "OOM event count should be > 0"
     assert features["memory_z_score"] > 2.0, "High memory should have high Z-score"
-    print("✓ Feature extraction (OOM) passed")
-    print(f"  Extracted features: {features}")
 
 
 def test_feature_extraction_cpu_case():
@@ -119,8 +111,6 @@ def test_feature_extraction_cpu_case():
     assert features["cpu_pct"] == 88.0, "CPU percent extraction failed"
     assert features["cpu_z_score"] > 3.0, "High CPU should have high Z-score"
     assert features["timeout_log_count"] > 0, "Timeout logs should be detected"
-    print("✓ Feature extraction (CPU) passed")
-    print(f"  Extracted features: {features}")
 
 
 def test_catalog_completeness():
@@ -129,18 +119,3 @@ def test_catalog_completeness():
     expected = ["FP-001", "FP-002", "FP-003", "FP-004", "FP-005"]
     for fp_id in expected:
         assert fp_id in catalog_ids, f"Missing fingerprint {fp_id}"
-    print(f"✓ Catalog completeness check passed ({len(FINGERPRINT_CATALOG)} fingerprints)")
-
-
-if __name__ == "__main__":
-    print("\n=== Diagnosis Phase 1 Tests ===\n")
-    test_fingerprint_oom_kill()
-    test_fingerprint_crash_loop()
-    test_fingerprint_image_pull()
-    test_fingerprint_cpu_starvation()
-    test_fingerprint_db_pool_saturation()
-    test_fingerprint_no_match()
-    test_feature_extraction_oom_case()
-    test_feature_extraction_cpu_case()
-    test_catalog_completeness()
-    print("\n=== ALL TESTS PASSED ===\n")

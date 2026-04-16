@@ -1,3 +1,4 @@
+from string import Formatter
 from typing import Any, Optional
 
 
@@ -78,16 +79,43 @@ POLICY_CATALOG = [
 ]
 
 
+def _format_actions_with_context(
+    actions: list[dict[str, Any]], context: Optional[dict[str, Any]] = None
+) -> list[dict[str, Any]]:
+    """
+    Return action copies with command templates formatted from context when all
+    required placeholders are present. If context is missing or incomplete, the
+    original command template is preserved.
+    """
+    context_data = context or {}
+    formatter = Formatter()
+    formatted_actions: list[dict[str, Any]] = []
+
+    for action in actions:
+        formatted_action = dict(action)
+        command = formatted_action.get("command")
+        if isinstance(command, str):
+            field_names = {
+                field_name
+                for _, field_name, _, _ in formatter.parse(command)
+                if field_name
+            }
+            if field_names and field_names.issubset(context_data.keys()):
+                formatted_action["command"] = command.format_map(context_data)
+        formatted_actions.append(formatted_action)
+
+    return formatted_actions
+
+
 def lookup_policy(fingerprint_id: str, context: Optional[dict[str, Any]] = None) -> Optional[list[dict[str, Any]]]:
     """
     Look up policy actions for a given fingerprint.
     Returns ranked list of actions or None if no policy matches.
     """
-    _ = context or {}
-
     for policy in POLICY_CATALOG:
         if policy["fingerprint_id"] == fingerprint_id:
-            return rank_actions_by_risk(policy["actions"])
+            actions = _format_actions_with_context(policy["actions"], context)
+            return rank_actions_by_risk(actions)
 
     return None
 

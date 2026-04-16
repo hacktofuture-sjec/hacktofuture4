@@ -17,7 +17,6 @@ from diagnosis.llm_fallback import (
     call_llm_api,
     _parse_llm_response,
     should_use_llm_fallback,
-    LLMFallbackError,
 )
 
 
@@ -47,7 +46,6 @@ def test_llm_api_success_valid_json():
     assert result["root_cause"] == "Memory exhaustion due to memory leak"
     assert result["confidence"] == 0.87
     assert result["source"] == "llm_fallback"
-    print("✓ LLM API success (valid JSON) passed")
 
 
 def test_llm_api_success_markdown_json():
@@ -80,7 +78,6 @@ def test_llm_api_success_markdown_json():
     assert result is not None
     assert result["root_cause"] == "Application bug causing repeated crashes"
     assert result["confidence"] == 0.82
-    print("✓ LLM API success (markdown JSON) passed")
 
 
 def test_llm_api_timeout():
@@ -93,7 +90,6 @@ def test_llm_api_timeout():
         result = call_llm_api(snapshot, api_url="https://example.local/api/chat", timeout_seconds=5)
     
     assert result is None, "Should return None on timeout"
-    print("✓ LLM API timeout (graceful fallback) passed")
 
 
 def test_llm_api_connection_error():
@@ -106,7 +102,6 @@ def test_llm_api_connection_error():
         result = call_llm_api(snapshot, api_url="https://example.local/api/chat")
     
     assert result is None, "Should return None on connection error"
-    print("✓ LLM API connection error (graceful fallback) passed")
 
 
 def test_llm_api_invalid_json_response():
@@ -121,7 +116,6 @@ def test_llm_api_invalid_json_response():
         result = call_llm_api(snapshot, api_url="https://example.local/api/chat")
     
     assert result is None, "Should return None on parse failure"
-    print("✓ LLM API invalid JSON (graceful fallback) passed")
 
 
 def test_llm_api_missing_required_fields():
@@ -141,7 +135,6 @@ def test_llm_api_missing_required_fields():
         result = call_llm_api(snapshot, api_url="https://example.local/api/chat")
     
     assert result is None, "Should return None if required fields missing"
-    print("✓ LLM API missing fields (graceful fallback) passed")
 
 
 def test_parse_llm_response_valid():
@@ -161,7 +154,6 @@ def test_parse_llm_response_valid():
     assert result["root_cause"] == "Database connection pool exhausted"
     assert result["confidence"] == 0.91
     assert result["source"] == "llm_fallback"
-    print("✓ Parse LLM response (valid) passed")
 
 
 def test_parse_llm_response_confidence_clamping():
@@ -177,7 +169,6 @@ def test_parse_llm_response_confidence_clamping():
     result = _parse_llm_response(response_data, snapshot)
     
     assert result["confidence"] == 1.0, "Confidence should be clamped to 1.0"
-    print("✓ Parse LLM response (confidence clamping) passed")
 
 
 def test_parse_llm_response_missing_root_cause():
@@ -193,15 +184,12 @@ def test_parse_llm_response_missing_root_cause():
     with pytest.raises(ValueError) as exc_info:
         _parse_llm_response(response_data, snapshot)
     assert "root_cause" in str(exc_info.value)
-    
-    print("✓ Parse LLM response (missing field error) passed")
 
 
 def test_should_use_llm_fallback_low_confidence():
     """Test LLM fallback triggered for low rule confidence."""
     # Rule confidence 0.5 < threshold (0.75) AND budget allows
     assert should_use_llm_fallback(0.5, True)
-    print("✓ LLM fallback decision (low confidence, budget OK) passed")
 
 
 def test_should_use_llm_fallback_high_confidence():
@@ -209,28 +197,9 @@ def test_should_use_llm_fallback_high_confidence():
     # Rule confidence 0.9 >= threshold (0.75)
     assert not should_use_llm_fallback(0.9, True)
     assert not should_use_llm_fallback(0.9, False)
-    print("✓ LLM fallback decision (high confidence) passed")
 
 
 def test_should_use_llm_fallback_no_budget():
     """Test LLM fallback NOT triggered when budget exhausted."""
     # Rule confidence 0.5 < threshold BUT budget_allows=False
     assert not should_use_llm_fallback(0.5, False)
-    print("✓ LLM fallback decision (low confidence, no budget) passed")
-
-
-if __name__ == "__main__":
-    print("\n=== LLM Fallback Layer Tests ===\n")
-    test_llm_api_success_valid_json()
-    test_llm_api_success_markdown_json()
-    test_llm_api_timeout()
-    test_llm_api_connection_error()
-    test_llm_api_invalid_json_response()
-    test_llm_api_missing_required_fields()
-    test_parse_llm_response_valid()
-    test_parse_llm_response_confidence_clamping()
-    test_parse_llm_response_missing_root_cause()
-    test_should_use_llm_fallback_low_confidence()
-    test_should_use_llm_fallback_high_confidence()
-    test_should_use_llm_fallback_no_budget()
-    print("\n=== ALL TESTS PASSED ===\n")

@@ -6,6 +6,7 @@ Handles AI API calls with JSON parsing, graceful error handling, and token budge
 import json
 import logging
 import os
+import re
 from typing import Optional, Dict, Any
 import requests
 
@@ -43,7 +44,9 @@ def call_llm_api(
     # Resolve endpoint from caller input or environment configuration.
     resolved_api_url = api_url or os.getenv("LLM_FALLBACK_API_URL")
     if not resolved_api_url:
-        logger.warning("LLM fallback endpoint is not configured; skipping AI call")
+        logger.warning(
+            f"LLM fallback endpoint is not configured for model '{model}'; skipping AI call"
+        )
         return None
 
     # Construct prompt for LLM
@@ -53,7 +56,7 @@ def call_llm_api(
         # Call LLM API
         response = requests.post(
             resolved_api_url,
-            json={"message": prompt},
+            json={"message": prompt, "model": model},
             timeout=timeout_seconds,
             headers={"Content-Type": "application/json"},
         )
@@ -65,23 +68,37 @@ def call_llm_api(
         # Extract diagnosis from LLM response
         diagnosis = _parse_llm_response(response_data, incident_snapshot)
         
-        logger.info(f"LLM fallback diagnosis: {diagnosis['root_cause']} (confidence: {diagnosis['confidence']})")
+        logger.info(
+            f"LLM fallback diagnosis using model '{model}': "
+            f"{diagnosis['root_cause']} (confidence: {diagnosis['confidence']})"
+        )
         return diagnosis
         
     except requests.exceptions.Timeout:
-        logger.warning(f"LLM API timeout after {timeout_seconds}s - falling back to rule-only")
+        logger.warning(
+            f"LLM API timeout after {timeout_seconds}s for model '{model}' - "
+            "falling back to rule-only"
+        )
         return None
     except requests.exceptions.ConnectionError as e:
-        logger.warning(f"LLM API connection failed - falling back to rule-only: {e}")
+        logger.warning(
+            f"LLM API connection failed for model '{model}' - falling back to "
+            f"rule-only: {e}"
+        )
         return None
     except requests.exceptions.HTTPError as e:
-        logger.warning(f"LLM API HTTP error - falling back to rule-only: {e}")
+        logger.warning(
+            f"LLM API HTTP error for model '{model}' - falling back to rule-only: {e}"
+        )
         return None
     except (ValueError, KeyError, json.JSONDecodeError) as e:
-        logger.warning(f"Failed to parse LLM response - falling back to rule-only: {e}")
+        logger.warning(
+            f"Failed to parse LLM response for model '{model}' - "
+            f"falling back to rule-only: {e}"
+        )
         return None
     except Exception as e:
-        logger.error(f"Unexpected LLM fallback error: {e}")
+        logger.error(f"Unexpected LLM fallback error for model '{model}': {e}")
         raise LLMFallbackError(f"LLM fallback failed unexpectedly: {e}") from e
 
 
@@ -146,21 +163,10 @@ def _parse_llm_response(response_data: Dict[str, Any], snapshot: Dict[str, Any])
     if not message:
         raise ValueError("No message in LLM response")
     
-    # Try to parse JSON from message
     try:
-        # Sometimes LLM wraps JSON in markdown or extra text
-        # Try direct parse first
-        diagnosis = json.loads(message)
-    except json.JSONDecodeError:
-        # Try extracting JSON from text (e.g., ```json ... ```)
-        try:
-            import re
-            json_match = re.search(r'\{.*\}', message, re.DOTALL)
-            if not json_match:
-                raise ValueError("No JSON found in response")
-            diagnosis = json.loads(json_match.group(0))
-        except (json.JSONDecodeError, AttributeError) as e:
-            raise ValueError(f"Failed to parse JSON from LLM response: {e}") from e
+        diagnosis = _parse_llm_message_json(message)
+    except ValueError as e:
+        raise ValueError(f"Failed to parse JSON from LLM response: {e}") from e
     
     # Validate required fields
     required_fields = ["root_cause", "confidence"]
@@ -190,16 +196,80 @@ def _parse_llm_response(response_data: Dict[str, Any], snapshot: Dict[str, Any])
     }
 
 
-def should_use_llm_fallback(rule_confidence: float, budget_allows: bool, confidence_threshold: float = 0.75) -> bool:
+def should_use_llm_fallback(
+    rule_confidence: float,
+    budget_allows: bool,
+    confidence_threshold: float = 0.75,
+    token_governor: Optional[Any] = None,
+    estimated_ai_cost: Optional[float] = None,
+) -> bool:
     """
     Determine if LLM fallback should be used.
     
     Args:
         rule_confidence: Confidence score from rule-based matching (0-1)
-        budget_allows: Whether token budget allows another AI call
+        budget_allows: External budget gate (for compatibility)
+        confidence_threshold: Threshold under which AI fallback is allowed
+        token_governor: Optional TokenGovernor instance for integrated budget checks
+        estimated_ai_cost: Optional cost estimate used with token_governor
     
     Returns:
         True if LLM should be called, False otherwise
     """
-    # Use LLM if rule confidence is low AND budget permits
-    return rule_confidence < confidence_threshold and budget_allows
+    if rule_confidence >= confidence_threshold:
+        return False
+
+    if not budget_allows:
+        return False
+
+    if token_governor is not None:
+        if estimated_ai_cost is None:
+            default_input = token_governor.estimate_tokens("incident snapshot")
+            default_output = token_governor.estimate_tokens("diagnosis summary")
+            estimated_ai_cost = token_governor.estimate_cost(default_input, default_output)
+        return token_governor.can_afford_ai_call(estimated_ai_cost)
+
+    return True
+
+
+def _parse_llm_message_json(message: str) -> Dict[str, Any]:
+    """
+    Parse a JSON object from an LLM message that may contain markdown or extra text.
+    """
+    try:
+        parsed = json.loads(message)
+        if not isinstance(parsed, dict):
+            raise ValueError("LLM response JSON must be an object")
+        return parsed
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pass
+
+    fenced_block_patterns = [
+        r"```json\s*(.*?)\s*```",
+        r"```\s*(.*?)\s*```",
+    ]
+    for pattern in fenced_block_patterns:
+        for match in re.finditer(pattern, message, re.DOTALL | re.IGNORECASE):
+            candidate = match.group(1).strip()
+            if not candidate:
+                continue
+            try:
+                parsed = json.loads(candidate)
+                if not isinstance(parsed, dict):
+                    raise ValueError("LLM response JSON must be an object")
+                return parsed
+            except (json.JSONDecodeError, TypeError, ValueError):
+                continue
+
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", message):
+        candidate = message[match.start():]
+        try:
+            parsed, _ = decoder.raw_decode(candidate)
+            if not isinstance(parsed, dict):
+                continue
+            return parsed
+        except json.JSONDecodeError:
+            continue
+
+    raise ValueError("No valid JSON object found in LLM response")

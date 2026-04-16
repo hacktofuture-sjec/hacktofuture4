@@ -29,6 +29,7 @@ class TokenGovernor:
         self.calls_this_incident = 0
         self.cost_this_incident = 0.0
         self.estimated_tokens_this_incident = 0
+        self.actual_tokens_this_incident = 0
         self.estimated_cost_this_incident = 0.0
 
     def estimate_tokens(self, text: str) -> int:
@@ -46,10 +47,10 @@ class TokenGovernor:
         return round(input_cost + output_cost, 6)
 
     def can_afford_ai_call(self, estimated_cost: float) -> bool:
-        """Check if AI call is within budget."""
+        """Check if AI call is within the estimated-cost budget."""
         if self.calls_this_incident >= self.budget.max_calls_per_incident:
             return False
-        if (self.cost_this_incident + estimated_cost) > self.budget.max_estimated_cost_usd:
+        if (self.estimated_cost_this_incident + estimated_cost) > self.budget.max_estimated_cost_usd:
             return False
         return True
 
@@ -57,6 +58,7 @@ class TokenGovernor:
         """Record AI call metrics."""
         self.calls_this_incident += 1
         self.estimated_tokens_this_incident += estimated_tokens
+        self.actual_tokens_this_incident += actual_tokens
         self.estimated_cost_this_incident += estimated_cost
         self.cost_this_incident += actual_cost
 
@@ -64,6 +66,7 @@ class TokenGovernor:
         """Reset counters for next incident."""
         self.calls_this_incident = 0
         self.estimated_tokens_this_incident = 0
+        self.actual_tokens_this_incident = 0
         self.estimated_cost_this_incident = 0.0
         self.cost_this_incident = 0.0
 

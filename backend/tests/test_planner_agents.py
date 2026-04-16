@@ -20,10 +20,6 @@ def test_policy_lookup_oom():
     assert len(actions) >= 1, "Should have at least one action"
     commands = [action["command"] for action in actions]
     assert any("rollout restart" in command for command in commands), "Expected restart action"
-    print("✓ Policy lookup (FP-001: OOM) passed")
-    print(f"  Actions available: {len(actions)}")
-    for action in actions:
-        print(f"    - {action['action_id']}: {action['description']}")
 
 
 def test_policy_lookup_crash_loop():
@@ -31,14 +27,12 @@ def test_policy_lookup_crash_loop():
     actions = lookup_policy("FP-002")
     assert actions is not None, "FP-002 should have policy actions"
     assert "rollout undo" in actions[0]["command"], "Expected rollback action"
-    print("✓ Policy lookup (FP-002: CrashLoop) passed")
 
 
 def test_policy_lookup_unknown():
     """Test policy lookup for unknown fingerprint."""
     actions = lookup_policy("FP-999")
     assert actions is None, "Unknown fingerprint should return None"
-    print("✓ Policy lookup (unknown) correctly returns None")
 
 
 def test_action_ranking_by_risk():
@@ -52,7 +46,6 @@ def test_action_ranking_by_risk():
     assert ranked[0]["risk"] == "low", "Lowest risk should be first"
     assert ranked[1]["risk"] == "medium", "Medium risk should be second"
     assert ranked[2]["risk"] == "high", "High risk should be last"
-    print("✓ Action ranking by risk passed")
 
 
 def test_token_governor_initialization():
@@ -61,7 +54,6 @@ def test_token_governor_initialization():
     gov = TokenGovernor(budget=budget, model="gpt-3.5-turbo")
     assert gov.calls_this_incident == 0, "Should start with 0 calls"
     assert gov.cost_this_incident == 0.0, "Should start with 0 cost"
-    print("✓ TokenGovernor initialization passed")
 
 
 def test_token_estimation():
@@ -71,7 +63,6 @@ def test_token_estimation():
     tokens = gov.estimate_tokens(text)
     assert tokens > 0, "Token count should be positive"
     assert tokens < len(text), "Token count should be less than char count"
-    print(f"✓ Token estimation passed: {len(text)} chars → {tokens} tokens")
 
 
 def test_cost_calculation():
@@ -82,7 +73,6 @@ def test_cost_calculation():
     cost = gov.estimate_cost(input_tokens, output_tokens)
     assert cost > 0, "Cost should be positive"
     assert cost < 0.01, "Small token count should have low cost"
-    print(f"✓ Cost calculation passed: {input_tokens} input + {output_tokens} output = ${cost:.6f}")
 
 
 def test_budget_gate():
@@ -102,7 +92,6 @@ def test_budget_gate():
 
     # Third call should fail (max calls reached)
     assert not gov.can_afford_ai_call(0.001), "Third call should exceed max_calls limit"
-    print("✓ Budget gate enforcement passed (max calls limit respected)")
 
 
 def test_budget_gate_cost_limit():
@@ -115,7 +104,6 @@ def test_budget_gate_cost_limit():
 
     # Next call should fail (budget exceeded)
     assert not gov.can_afford_ai_call(0.001), "Should exceed cost budget"
-    print("✓ Cost budget enforcement passed")
 
 
 def test_rule_confidence_fallback():
@@ -128,7 +116,6 @@ def test_rule_confidence_fallback():
     # Low confidence but within budget should allow AI
     gov2 = TokenGovernor(budget=TokenBudget(max_calls_per_incident=5, max_estimated_cost_usd=0.50))
     assert not gov2.should_fallback_to_rule_only(0.50), "Low confidence with budget should allow AI"
-    print("✓ Confidence-based fallback passed")
 
 
 def test_reset_incident():
@@ -140,20 +127,3 @@ def test_reset_incident():
     gov.reset_incident()
     assert gov.calls_this_incident == 0, "Should reset to 0"
     assert gov.cost_this_incident == 0.0, "Cost should reset to 0"
-    print("✓ Incident counter reset passed")
-
-
-if __name__ == "__main__":
-    print("\n=== Planner & Token Governance Tests ===\n")
-    test_policy_lookup_oom()
-    test_policy_lookup_crash_loop()
-    test_policy_lookup_unknown()
-    test_action_ranking_by_risk()
-    test_token_governor_initialization()
-    test_token_estimation()
-    test_cost_calculation()
-    test_budget_gate()
-    test_budget_gate_cost_limit()
-    test_rule_confidence_fallback()
-    test_reset_incident()
-    print("\n=== ALL TESTS PASSED ===\n")
