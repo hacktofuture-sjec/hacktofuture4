@@ -6,32 +6,37 @@ from config import FIREBASE_KEY_PATH
 _db = None
 
 try:
-    print("🔍 Checking Firebase key path:", FIREBASE_KEY_PATH)
+    print("Checking Firebase key path:", FIREBASE_KEY_PATH)
 
     if not os.path.exists(FIREBASE_KEY_PATH):
         raise FileNotFoundError(f"Key not found: {FIREBASE_KEY_PATH}")
 
-    print("✅ Key file found")
+    print("Key file found")
 
     cred = credentials.Certificate(FIREBASE_KEY_PATH)
     firebase_admin.initialize_app(cred)
 
     _db = firestore.client()
-    print("🔥 Firestore initialized successfully")
+    print("Firestore initialized successfully")
 
 except Exception as e:
-    print("❌ Firestore INIT FAILED:")
+    print("Firestore INIT FAILED:")
     print(e)
 
 
 def store_event(data):
-    print("👉 store_event FUNCTION CALLED")   # 🔥 ADD THIS
+    print("store_event FUNCTION CALLED")
 
     if _db is not None:
-        print("🔥 Writing to Firestore:", data)
-        _db.collection("events").add(data)
+        try:
+            data["created_at"] = firestore.SERVER_TIMESTAMP
+            print("Writing to Firestore:", data)
+            _db.collection("events").add(data)
+            print("Event stored successfully")
+        except Exception as e:
+            print("Failed to store event:", e)
     else:
-        print("❌ Firestore is None")
+        print("Firestore is None - cannot store event")
 
 
 def get_events():
@@ -39,14 +44,18 @@ def get_events():
         print("Skipping events fetch, Firestore is not initialized.")
         return []
 
-    docs = _db.collection("events").stream()
+    docs = (
+        _db.collection("events")
+        .order_by("created_at", direction=firestore.Query.DESCENDING)
+        .stream()
+    )
     events = []
 
     for doc in docs:
         event = doc.to_dict()
-        event['trust_score'] = event.get('trust_score', 0)
-        event['action'] = event.get('action', 'UNKNOWN')
-        event['id'] = doc.id
+        event["trust_score"] = event.get("trust_score", 0)
+        event["action"] = event.get("action", "UNKNOWN")
+        event["id"] = doc.id
         events.append(event)
 
     return events

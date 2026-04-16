@@ -1,11 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'user_monitoring.dart';
-import 'reports.dart';
-import 'settings.dart';
 import 'api_service.dart';
-import 'auth_service.dart';
-import 'adminlogin.dart';
+import 'auth_service.dart';  // Add this import
+import 'adminlogin.dart';    // Add this import
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -16,15 +13,19 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   List<Map<String, dynamic>> _events = [];
+  bool _loading = false;
+  String? _error;
   Timer? _refreshTimer;
+  int _selectedIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _fetchEvents();
-    // Refresh events every 30 seconds
-    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
-      _fetchEvents();
+    _loadEvents();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (_selectedIndex == 0) {
+        _loadEvents();
+      }
     });
   }
 
@@ -34,260 +35,271 @@ class _DashboardPageState extends State<DashboardPage> {
     super.dispose();
   }
 
-  Future<void> _fetchEvents() async {
+  Future<void> _loadEvents() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
     try {
       final events = await ApiService.getEvents();
-      if (mounted) {
-        setState(() {
-          _events = events;
-        });
-      }
+
+      events.sort((a, b) {
+        final aTs = a['created_at']?.toString() ?? '';
+        final bTs = b['created_at']?.toString() ?? '';
+        return bTs.compareTo(aTs);
+      });
+
+      setState(() {
+        _events = events;
+      });
     } catch (e) {
-      // Handle error
+      setState(() {
+        _error = 'Failed to fetch events: $e';
+      });
+    } finally {
+      setState(() {
+        _loading = false;
+      });
     }
   }
 
-  Future<void> _refreshEvents() async {
-    await _fetchEvents();
+  Widget _buildEventCard(Map<String, dynamic> event) {
+    final email = event['email'] ?? 'Unknown';
+    final ip = event['ip'] ?? 'Unknown';
+    final location = event['location'] ?? 'Unknown';
+    final action = event['event'] ?? 'admin_login';
+    final trustScore = event['trust_score']?.toString() ?? 'N/A';
+
+    final isAdminEvent = action.toString().toLowerCase() == 'admin_login';
+    final userType = isAdminEvent ? 'ADMIN' : 'USER';
+    final typeColor = isAdminEvent ? Colors.red.shade300 : Colors.green.shade300;
+    final actionColor = action.toString().toLowerCase().contains('login')
+        ? Colors.cyan.shade200
+        : Colors.white70;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A1723),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF162737)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'User $email logged in from IP $ip',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            runSpacing: 8,
+            spacing: 12,
+            children: [
+              _buildBadge(userType, color: typeColor),
+              _buildBadge(location),
+              _buildBadge(action.toString().toUpperCase(), color: actionColor),
+              _buildBadge('Score: $trustScore'),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
-  Future<void> _logout() async {
-    try {
-      await AuthService.signOut();
-      if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const AdminLoginPage()),
-          (route) => false,
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to logout')),
-        );
-      }
+  Widget _buildBadge(String text, {Color color = const Color(0xFF1A3045)}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(color: Colors.white, fontSize: 12),
+      ),
+    );
+  }
+
+  void _onTabSelected(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+    if (index == 0) {
+      _loadEvents();
     }
+  }
+
+  Widget _buildMainContent() {
+    if (_selectedIndex == 0) {
+      return _loading
+          ? const Center(child: CircularProgressIndicator(color: Colors.white))
+          : _error != null
+              ? Center(
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: Colors.redAccent),
+                  ),
+                )
+              : _events.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'Waiting for live events...',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: _events.length,
+                      itemBuilder: (context, index) {
+                        return _buildEventCard(_events[index]);
+                      },
+                    );
+    }
+
+    return Center(
+      child: Text(
+        _selectedIndex == 1
+            ? 'User Monitoring'
+            : _selectedIndex == 2
+                ? 'Reports'
+                : 'Settings',
+        style: const TextStyle(color: Colors.white70, fontSize: 22),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isMobile = screenWidth < 800;
-
     return Scaffold(
       backgroundColor: const Color(0xFF001122),
-      body: Row(
-        children: [
-          _buildSidebar(context, screenWidth),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildTopHeader(),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: isMobile ? 16.0 : 40.0, 
-                      vertical: 20.0
+      body: SafeArea(
+        child: Row(
+          children: [
+            Container(
+              width: 240,
+              color: const Color(0xFF05111E),
+              child: Column(
+                children: [
+                  const SizedBox(height: 24),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Cyber Sentinel',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  ),
+                  const SizedBox(height: 32),
+                  _buildSidebarItem(0, Icons.dashboard, 'Dashboard'),
+                  _buildSidebarItem(1, Icons.person_search, 'User Monitoring'),
+                  _buildSidebarItem(2, Icons.bar_chart, 'Reports'),
+                  _buildSidebarItem(3, Icons.settings, 'Settings'),
+                  const Spacer(),
+                  Container(
+                    margin: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0E1F33),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: const [
+                        CircleAvatar(
+                          radius: 20,
+                          backgroundColor: Colors.cyan,
+                          child: Icon(Icons.person, color: Colors.black),
+                        ),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'ADMIN\nSenior Engineer',
+                            style: TextStyle(color: Colors.white70, fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Column(
+                children: [
+                  Container(
+                    height: 100,
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    color: const Color(0xFF02131E),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text(
                           'Live Event Stream',
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 24,
+                            fontSize: 28,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(height: 24),
-                        _buildEventList(),
+                        Row(
+                          children: [
+                            TextButton.icon(
+                              onPressed: _loadEvents,
+                              icon: const Icon(Icons.refresh, color: Colors.white),
+                              label: const Text('REFRESH', style: TextStyle(color: Colors.white)),
+                            ),
+                            const SizedBox(width: 16),
+                            ElevatedButton(
+                              onPressed: () async {
+                                await AuthService.signOut();  // Sign out from Firebase
+                                Navigator.of(context).pushReplacement(
+                                  MaterialPageRoute(builder: (context) => const AdminLoginPage()),
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF132535),
+                              ),
+                              child: const Text('LOGOUT'),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEventList() {
-    if (_events.isEmpty) {
-      return const Text('No events yet', style: TextStyle(color: Colors.white));
-    }
-
-    return Column(
-      children: _events.map((event) {
-        final type = event['trust_score'] < 40 ? 'THREAT' : event['trust_score'] < 60 ? 'SUSPICIOUS' : 'SECURE';
-        final color = type == 'THREAT' ? Colors.red : type == 'SUSPICIOUS' ? Colors.orange : Colors.green;
-        final location = event['location'] ?? 'Unknown';
-        final message = 'User ${event['session_id']} logged in from IP ${event['ip']}';
-
-        return _buildEventCard(
-          type: type,
-          color: color,
-          location: location,
-          message: message,
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _buildSidebar(BuildContext context, double width) {
-    final double sidebarWidth = width < 1000 ? 180 : 240;
-    return Container(
-      width: sidebarWidth,
-      color: const Color(0xFF000D1A),
-      padding: const EdgeInsets.symmetric(vertical: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0),
-            child: Text('Cyber Sentinel', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: sidebarWidth < 200 ? 14 : 18)),
-          ),
-          const SizedBox(height: 48),
-          _buildSidebarItem(context, 'Dashboard', isSelected: true, compact: sidebarWidth < 200, page: const DashboardPage()),
-          _buildSidebarItem(context, 'User Monitoring', isSelected: false, compact: sidebarWidth < 200, page: const UserMonitoringPage()),
-          _buildSidebarItem(context, 'Reports', isSelected: false, compact: sidebarWidth < 200, page: const ReportsPage()),
-          _buildSidebarItem(context, 'Settings', isSelected: false, compact: sidebarWidth < 200, page: const SettingsPage()),
-          const Spacer(),
-          _buildAdminProfile(compact: sidebarWidth < 200),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSidebarItem(BuildContext context, String title, {bool isSelected = false, bool compact = false, required Widget page}) {
-    return InkWell(
-      onTap: () {
-        if (!isSelected) {
-          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => page));
-        }
-      },
-      child: Container(
-        width: double.infinity,
-        padding: EdgeInsets.symmetric(horizontal: 24, vertical: compact ? 12 : 16),
-        decoration: BoxDecoration(
-          border: isSelected ? const Border(left: BorderSide(color: Colors.cyan, width: 3)) : null,
-          color: isSelected ? Colors.cyan.withOpacity(0.05) : Colors.transparent,
-        ),
-        child: Text(
-          title,
-          style: TextStyle(
-            color: isSelected ? Colors.cyan : Colors.white60,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            fontSize: compact ? 12 : 14,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAdminProfile({bool compact = false}) {
-    return Container(
-      margin: const EdgeInsets.all(12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(4)),
-      child: Row(
-        children: [
-          const CircleAvatar(radius: 16, backgroundColor: Colors.white10, child: Icon(Icons.person, size: 18, color: Colors.white70)),
-          if (!compact) ...[
-            const SizedBox(width: 10),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('ADMIN', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                  Text('SENIOR ENGINEER', style: TextStyle(color: Colors.white54, fontSize: 8), overflow: TextOverflow.ellipsis),
+                  Expanded(
+                    child: _buildMainContent(),
+                  ),
                 ],
               ),
             ),
           ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTopHeader() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      child: Row(
-        children: [
-          Expanded(child: Container(height: 40, constraints: const BoxConstraints(maxWidth: 400), decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(4)))),
-          const SizedBox(width: 16),
-          const Text('PROFILE', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.bold)),
-          const SizedBox(width: 8),
-          const Icon(Icons.person_outline, color: Colors.white70, size: 24),
-          const SizedBox(width: 16),
-          TextButton.icon(
-            onPressed: _refreshEvents,
-            icon: const Icon(Icons.refresh, color: Colors.white70, size: 20),
-            label: const Text('REFRESH', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              backgroundColor: Colors.blue.withAlpha(26),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-            ),
-          ),
-          const SizedBox(width: 16),
-          TextButton.icon(
-            onPressed: _logout,
-            icon: const Icon(Icons.logout, color: Colors.white70, size: 20),
-            label: const Text('LOGOUT', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              backgroundColor: Colors.red.withAlpha(26),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEventCard({required String type, required Color color, required String location, required String message}) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(color: const Color(0xFF0A192F), borderRadius: BorderRadius.circular(4)),
-      child: IntrinsicHeight(
-        child: Row(
-          children: [
-            Container(width: 4, decoration: BoxDecoration(color: color, borderRadius: const BorderRadius.horizontal(left: Radius.circular(4)))),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(2)),
-                          child: Text(type, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
-                        ),
-                        const SizedBox(width: 12),
-                        const Icon(Icons.public, color: Colors.white24, size: 14),
-                        const SizedBox(width: 4),
-                        Text(location, style: const TextStyle(color: Colors.white38, fontSize: 11)),
-                        const Spacer(),
-                        const Icon(Icons.more_vert, color: Colors.white38, size: 18),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(message, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500)),
-                  ],
-                ),
-              ),
-            ),
-          ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSidebarItem(int index, IconData icon, String label) {
+    final selected = _selectedIndex == index;
+    return Material(
+      color: selected ? const Color(0xFF0B2A44) : Colors.transparent,
+      child: ListTile(
+        leading: Icon(icon, color: selected ? Colors.cyanAccent : Colors.white54),
+        title: Text(
+          label,
+          style: TextStyle(color: selected ? Colors.cyanAccent : Colors.white54),
+        ),
+        selected: selected,
+        onTap: () => _onTabSelected(index),
       ),
     );
   }

@@ -1,58 +1,55 @@
+import uuid
+import requests
 from flask import Blueprint, request, jsonify
-from services.risk_engine import calculate_risk_score
 from services.firestore_service import store_event, get_events
+from services.ip_service import get_location
 
 session_bp = Blueprint('session', __name__)
 
-@session_bp.route('/analyze', methods=['POST'])
-def analyze():
-    print("ANALYZE ENDPOINT HIT")
-    data = request.json
+def get_public_ip():
+    try:
+        response = requests.get("https://api.ipify.org?format=json", timeout=5)
+        if response.status_code == 200:
+            return response.json().get("ip")
+    except Exception:
+        return None
 
-    # Extract fields
-    # Get real IP from request
-    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    # Optional: if behind proxy, take first IP
-    if ip and ',' in ip:
-        ip = ip.split(',')[0].strip()
-    print("IP:", ip)
-    location = data.get("location")
-    device = data.get("device")
-    event = data.get("event")
-    session_id = data.get("session_id")
-    keystroke_interval = data.get("keystroke_interval")
-
-    # Basic validation (IMPORTANT)
-    if not ip or not session_id:
-        return jsonify({"error": "Invalid input"}), 400
-
-    # Calculate risk
-    score = calculate_risk_score(
-        ip, location, device, event, session_id, keystroke_interval
-    )
-
-    # Decide action
-    if score < 40:
-        action = "BLOCK"
-    elif score < 60:
-        action = "2FA"
+def resolve_client_ip():
+    x_forwarded_for = request.headers.get("X-Forwarded-For", "")
+    if x_forwarded_for:
+        ip = x_forwarded_for.split(",")[0].strip()
     else:
-        action = "ALLOW"
+        ip = request.remote_addr
 
-    # ✅ ADD THIS (CRITICAL FIX)
-    data['trust_score'] = score
-    data['action'] = action
-    data['ip'] = ip
-    print("DATA STORED:", data)
+    if ip in ("127.0.0.1", "::1", "localhost", None):
+        ip = get_public_ip() or ip
 
-    # Store event WITH score
-    store_event(data)
+    return ip or "unknown"
 
-    return jsonify({
-        "trust_score": score,
-        "action": action
-    })
+@session_bp.route('/session', methods=['POST'])
+def handle_session():
+    data = request.json or {}
+    email = data.get("email")
+    device = data.get("device", "unknown")
+    event = data.get("event", "admin_login")
+    keystroke_interval = data.get("keystroke_interval", 0)
 
+    ip = resolve_client_ip()
+    location = get_location(ip)
+
+    session_id = str(uuid.uuid4())
+    event_data = {
+        "session_id": session_id,
+        "email": email,
+        "device": device,
+        "event": event,
+        "ip": ip,
+        "location": location,
+        "keystroke_interval": keystroke_interval,
+    }
+
+    store_event(event_data)
+    return jsonify({"message": "Session stored", "session_id": session_id}), 200
 
 @session_bp.route('/events', methods=['GET'])
 def get_events_route():

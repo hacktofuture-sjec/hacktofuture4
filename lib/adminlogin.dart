@@ -163,22 +163,31 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                                                 }
 
                                                 try {
+                                                  // Call /session to store login data automatically
+                                                  final sessionResult = await ApiService.createSession(
+                                                    email: email,
+                                                    device: 'Android Chrome',  // Or detect dynamically: e.g., Platform.isAndroid ? 'Android' : 'iOS'
+                                                    event: 'admin_login',
+                                                    keystrokeInterval: 15,
+                                                  );
+
+                                                  print('Session created with ID: ${sessionResult['session_id']}');
+
+                                                  // Optional: Still call analyzeEvent if needed for risk scoring
                                                   final result = await ApiService.analyzeEvent(
-                                                    sessionId: sessionId,
-                                                    location: 'India',
+                                                    sessionId: sessionResult['session_id'],  // Use the new session ID
+                                                    location: 'India',  // Or omit if location is fetched server-side
                                                     device: 'Android Chrome',
                                                     event: 'admin_login',
                                                     keystrokeInterval: 15,
                                                   );
 
-                                                  if (!mounted) return;
                                                   setState(() {
-                                                    _statusMessage = 'Backend logged login: ${result['action']} (${result['trust_score']})';
+                                                    _statusMessage = 'Login logged: ${result['action']} (${result['trust_score']})';
                                                   });
                                                 } catch (backendError) {
-                                                  if (!mounted) return;
                                                   setState(() {
-                                                    _statusMessage = 'Authenticated as admin, but backend logging failed.';
+                                                    _statusMessage = 'Authenticated, but logging failed.';
                                                   });
                                                 }
 

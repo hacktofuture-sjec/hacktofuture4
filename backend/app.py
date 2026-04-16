@@ -10,7 +10,7 @@ app.register_blueprint(session_bp)
 
 @app.route("/")
 def home():
-    return "Backend is running 🚀"
+    return "Backend is running"
 
 if __name__ == "__main__":
     app.run(debug=True)
