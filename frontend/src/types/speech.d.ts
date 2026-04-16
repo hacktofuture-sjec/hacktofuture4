@@ -36,7 +36,7 @@ interface SpeechRecognitionErrorEvent extends Event {
   message: string;
 }
 
-declare var SpeechRecognition: {
+declare const SpeechRecognition: {
   new (): SpeechRecognition;
   prototype: SpeechRecognition;
 };
