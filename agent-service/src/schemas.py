@@ -120,3 +120,28 @@ class SyncRequest(BaseModel):
 class SyncResult(BaseModel):
     next_checkpoint: Dict[str, Any]
     records_processed: int
+
+
+class ActionRequest(BaseModel):
+    """POST /pipeline/action — Trigger autonomous action via text input."""
+
+    text: str
+    organization_id: str
+    user_id: Optional[str] = None
+
+
+class ActionItemData(BaseModel):
+    tool: str
+    action: str
+    details: Dict[str, Any]
+    status: str
+    message: str
+
+
+class ActionResult(BaseModel):
+    """Response from /pipeline/action."""
+
+    original_text: str
+    actions_taken: List[ActionItemData]
+    success: bool
+    message: str

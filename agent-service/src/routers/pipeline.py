@@ -15,11 +15,36 @@ from fastapi import APIRouter, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
 from ..graph import run_pipeline
-from ..schemas import PipelineRunRequest, ProcessingResult, SyncRequest, SyncResult
+from ..schemas import (
+    PipelineRunRequest,
+    ProcessingResult,
+    SyncRequest,
+    SyncResult,
+    ActionRequest,
+    ActionResult,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/pipeline", tags=["Pipeline"])
+
+
+@router.post("/action", response_model=ActionResult)
+async def process_natural_language_action(request: ActionRequest) -> ActionResult:
+    """
+    Proactive PM: Takes a natural language request, processes it via LLM,
+    and executes orchestrated autonomous actions (mocked MCP).
+    """
+    from ..agents.action_orchestrator import run_action_orchestrator
+
+    logger.info("Natural language action requested for org=%s", request.organization_id)
+
+    try:
+        result = await run_action_orchestrator(request.text)
+        return result
+    except Exception as exc:
+        logger.exception("Failed to process natural language action: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.post("/run", response_model=ProcessingResult)
