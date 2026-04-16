@@ -6,6 +6,7 @@ import type { User } from '../api/api';
 
 interface AuthContextValue {
   user: User | null;
+  repos: any[];
   isLoading: boolean;
   isAuthenticated: boolean;
   refetch: () => Promise<void>;
@@ -20,15 +21,18 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [repos, setRepos] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const refetch = useCallback(async (): Promise<void> => {
     setIsLoading(true);
     try {
-      const me = await fetchCurrentUser();
-      setUser(me);
+      const data = await fetchCurrentUser();
+      setUser(data.user);
+      setRepos(data.repos || []);
     } catch {
       setUser(null);
+      setRepos([]);
     } finally {
       setIsLoading(false);
     }
@@ -37,8 +41,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = useCallback(async (): Promise<void> => {
     try {
       await apiLogout();
+    } catch (err) {
+      console.error(err);
     } finally {
       setUser(null);
+      setRepos([]);
+      localStorage.removeItem('easyops_auth_token');
+      localStorage.removeItem('easyops_github_id');
+      localStorage.removeItem('easyops_user_roles');
       window.location.href = '/';
     }
   }, []);
@@ -52,6 +62,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <AuthContext.Provider
       value={{
         user,
+        repos,
         isLoading,
         isAuthenticated: user !== null,
         refetch,
