@@ -12,7 +12,7 @@ const LoadingScreen: React.FC = () => (
       <div className="loading-screen__bar">
         <div className="loading-screen__progress" />
       </div>
-      <p className="text-xs font-bold tracking-[0.2em] text-[var(--color-on-surface-variant)] font-mono animate-pulse uppercase">INITIALIZING_SYSTEM_CORE</p>
+      <p className="loading-text">INITIALIZING_SYSTEM_CORE</p>
     </div>
   </div>
 );
