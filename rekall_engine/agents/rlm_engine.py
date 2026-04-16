@@ -25,10 +25,9 @@ import re
 import uuid
 from typing import Any, Dict, List, Optional
 
-from groq import AsyncGroq
-
 from .repl import REPLEnvironment
 from ..config import engine_config
+from ..groq_pool import get_pool
 from ..types import FailureObject, FixSuggestion, FixDetail
 
 log = logging.getLogger("rekall.rlm")
@@ -116,15 +115,7 @@ class RLMEngine:
     """
 
     def __init__(self) -> None:
-        self._client: Optional[AsyncGroq] = None
-        self._trace: List[Dict[str, Any]] = []
-
-    def _get_client(self) -> AsyncGroq:
-        if self._client is None:
-            self._client = AsyncGroq(
-                api_key=engine_config.groq_api_key or None
-            )
-        return self._client
+        pass  # client handled by groq_pool
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -138,7 +129,7 @@ class RLMEngine:
         Returns:
             FixSuggestion with fix details and RLM trace
         """
-        self._trace = []
+        trace_list: List[Dict[str, Any]] = []
         context = self._build_context(failure)
 
         log.info(
@@ -153,6 +144,7 @@ class RLMEngine:
                      f"Error: {failure.error_message}",
                 depth=0,
                 model=engine_config.rlm_model,
+                trace_list=trace_list,
             )
         except Exception as exc:
             log.error("[rlm] RLM loop failed: %s", exc, exc_info=True)
@@ -164,7 +156,7 @@ class RLMEngine:
                 "reasoning": f"The RLM engine encountered an error: {exc}",
             }
 
-        return self._build_suggestion(failure.failure_id, result)
+        return self._build_suggestion(failure.failure_id, result, trace_list)
 
     # ── Agent loop (recursive for sub-agents) ─────────────────────────────────
 
@@ -174,6 +166,7 @@ class RLMEngine:
         task: str,
         depth: int = 0,
         model: Optional[str] = None,
+        trace_list: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         Single RLM agent loop. Each iteration:
@@ -200,21 +193,21 @@ class RLMEngine:
                     "You must solve this task without calling llm_query()."
                 )
             sub_context = context_snippet or context
-            # Run sub-agent synchronously from within the exec() sandbox
-            loop = asyncio.get_event_loop()
             sub_model = engine_config.rlm_subagent_model
-            if loop.is_running():
-                # We're inside an async context — use a new thread
+            try:
+                loop = asyncio.get_running_loop()
+                future = asyncio.run_coroutine_threadsafe(
+                    self._run_agent(sub_context, prompt, depth + 1, model=sub_model, trace_list=trace_list),
+                    loop
+                )
                 import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    future = pool.submit(
-                        asyncio.run,
-                        self._run_agent(sub_context, prompt, depth + 1, model=sub_model),
-                    )
+                try:
                     sub_result = future.result(timeout=60)
-            else:
+                except concurrent.futures.TimeoutError:
+                    return "[ERROR] sub-agent timed out after 60s"
+            except RuntimeError:
                 sub_result = asyncio.run(
-                    self._run_agent(sub_context, prompt, depth + 1, model=sub_model)
+                    self._run_agent(sub_context, prompt, depth + 1, model=sub_model, trace_list=trace_list)
                 )
             # Return as string (symbolic return — not loaded into parent context)
             if isinstance(sub_result, dict):
@@ -247,13 +240,14 @@ class RLMEngine:
             {"role": "user", "content": f"Task: {task}\n\n{init_output}"},
         ]
 
-        self._trace.append({
-            "agent_id": agent_id,
-            "depth": depth,
-            "step": 0,
-            "type": "init",
-            "output": init_output[:2000],
-        })
+        if trace_list is not None:
+            trace_list.append({
+                "agent_id": agent_id,
+                "depth": depth,
+                "step": 0,
+                "type": "init",
+                "output": init_output[:2000],
+            })
 
         # Main REPL loop
         for step in range(1, max_steps + 1):
@@ -264,13 +258,14 @@ class RLMEngine:
                 llm_response = await self._call_llm(messages)
             except Exception as exc:
                 log.error("[rlm] LLM call failed at step %d: %s", step, exc)
-                self._trace.append({
-                    "agent_id": agent_id,
-                    "depth": depth,
-                    "step": step,
-                    "type": "error",
-                    "error": f"LLM call failed: {exc}",
-                })
+                if trace_list is not None:
+                    trace_list.append({
+                        "agent_id": agent_id,
+                        "depth": depth,
+                        "step": step,
+                        "type": "error",
+                        "error": f"LLM call failed: {exc}",
+                    })
                 break
 
             # 2. Extract code from response
@@ -294,15 +289,16 @@ class RLMEngine:
             output = repl.execute(code)
 
             # 4. Record trace
-            self._trace.append({
-                "agent_id": agent_id,
-                "depth": depth,
-                "step": step,
-                "type": "code",
-                "code": code,
-                "output": output[:2000],
-                "done": repl.is_done(),
-            })
+            if trace_list is not None:
+                trace_list.append({
+                    "agent_id": agent_id,
+                    "depth": depth,
+                    "step": step,
+                    "type": "code",
+                    "code": code,
+                    "output": output[:2000],
+                    "done": repl.is_done(),
+                })
 
             # 5. Check if done
             if repl.is_done():
@@ -339,20 +335,21 @@ class RLMEngine:
             code = self._extract_code(llm_response)
             if code:
                 output = repl.execute(code)
-                self._trace.append({
-                    "agent_id": agent_id,
-                    "depth": depth,
-                    "step": max_steps + 1,
-                    "type": "forced_final",
-                    "code": code,
-                    "output": output[:2000],
-                })
+                if trace_list is not None:
+                    trace_list.append({
+                        "agent_id": agent_id,
+                        "depth": depth,
+                        "step": max_steps + 1,
+                        "type": "forced_final",
+                        "code": code,
+                        "output": output[:2000],
+                    })
                 if repl.is_done():
                     result = repl.get_result()
                     if isinstance(result, dict):
                         return result
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("[rlm] agent %s forced-final error: %s", agent_id, exc)
 
         # Absolute fallback
         return {
@@ -366,16 +363,14 @@ class RLMEngine:
     # ── LLM calling ──────────────────────────────────────────────────────────
 
     async def _call_llm(self, messages: List[Dict[str, str]], model: Optional[str] = None) -> str:
-        """Call Groq and return the raw text response."""
-        client = self._get_client()
+        """Call Groq via the key-rotation pool and return the raw text response."""
         target_model = model or engine_config.rlm_model
-        response = await client.chat.completions.create(
+        return await get_pool().call(
             model=target_model,
             messages=messages,
             max_tokens=2048,
-            temperature=0.1,  # low temp for precise code generation
+            temperature=0.1,
         )
-        return response.choices[0].message.content
 
     # ── Code extraction ──────────────────────────────────────────────────────
 
@@ -450,6 +445,7 @@ class RLMEngine:
         self,
         failure_id: str,
         result: Dict[str, Any],
+        trace_list: List[Dict[str, Any]],
     ) -> FixSuggestion:
         """Convert the RLM result dict into a FixSuggestion."""
         fix_detail = FixDetail(
@@ -464,7 +460,7 @@ class RLMEngine:
 
         # Build RLM trace entries for the frontend
         rlm_trace = []
-        for entry in self._trace:
+        for entry in trace_list:
             rlm_trace.append({
                 "depth": entry.get("depth", 0),
                 "step": entry.get("step", 0),
@@ -478,6 +474,6 @@ class RLMEngine:
             failure_id=failure_id,
             suggested_fix=fix_detail,
             alternatives=[],
-            context_used=len(self._trace),
+            context_used=len(trace_list),
             rlm_trace=rlm_trace,
         )
