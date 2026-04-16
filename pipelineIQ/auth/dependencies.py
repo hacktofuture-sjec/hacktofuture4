@@ -1,7 +1,3 @@
-"""
-FastAPI dependencies for authentication / authorisation.
-"""
-
 from datetime import datetime, timedelta, timezone
 
 from beanie import PydanticObjectId
@@ -17,11 +13,6 @@ async def get_current_user(
     response: Response,
     piq_session: str | None = Cookie(default=None),
 ) -> User:
-    """
-    Extract and validate the JWT from the `piq_session` HTTP-only cookie.
-    Auto-refreshes the token when less than 3 days remain.
-    Returns the authenticated User document.
-    """
     if piq_session is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -50,7 +41,6 @@ async def get_current_user(
             detail="User not found or deactivated",
         )
 
-    # --- Token refresh: re-issue if < 3 days remaining ---
     exp = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
     if exp - datetime.now(timezone.utc) < timedelta(days=3):
         new_token = create_access_token(str(user.id))

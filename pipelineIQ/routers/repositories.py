@@ -1,7 +1,3 @@
-"""
-Repository routes — list GitHub repos, connect / disconnect repos to workspaces.
-"""
-
 from datetime import datetime, timezone
 
 import httpx
@@ -34,10 +30,6 @@ async def list_github_repos(
     per_page: int = Query(30, ge=1, le=100),
     user: User = Depends(get_current_user),
 ):
-    """
-    Fetch the authenticated user's GitHub repositories
-    using their stored access token.
-    """
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             GITHUB_REPOS_URL,
@@ -86,12 +78,10 @@ async def connect_repo(
     body: ConnectRepoBody,
     user: User = Depends(get_current_user),
 ):
-    """Connect a GitHub repository to a workspace."""
     ws = await Workspace.get(PydanticObjectId(workspace_id))
     if ws is None or ws.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    # Prevent duplicate connections
     existing = await Repository.find_one(
         Repository.github_repo_id == body.github_repo_id,
         Repository.workspace_id == ws.id,
@@ -131,7 +121,6 @@ async def disconnect_repo(
     repo_id: str,
     user: User = Depends(get_current_user),
 ):
-    """Disconnect a repository from a workspace."""
     ws = await Workspace.get(PydanticObjectId(workspace_id))
     if ws is None or ws.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Workspace not found")

@@ -1,7 +1,3 @@
-"""
-GitHub App helpers for installation setup, installation tokens, and webhooks.
-"""
-
 from __future__ import annotations
 
 import hashlib

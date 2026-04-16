@@ -1,7 +1,3 @@
-"""
-User document — represents a GitHub-authenticated user in MongoDB.
-"""
-
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -18,14 +14,13 @@ class GitHubOrganization(BaseModel):
 
 
 class User(Document):
-    """A PipelineIQ user authenticated via GitHub OAuth."""
 
     github_id: int
     username: str
     display_name: Optional[str] = None
     email: Optional[str] = None
     avatar_url: Optional[str] = None
-    github_access_token: str  # stored server-side only, never exposed to frontend
+    github_access_token: str
     organizations: list[GitHubOrganization] = Field(default_factory=list)
     last_login: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

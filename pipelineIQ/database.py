@@ -1,7 +1,3 @@
-"""
-MongoDB connection lifecycle using motor (async) + beanie (ODM).
-"""
-
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 
@@ -15,7 +11,6 @@ _client: AsyncIOMotorClient | None = None
 
 
 async def connect_db() -> None:
-    """Initialise the MongoDB connection and Beanie document models."""
     global _client
     _client = AsyncIOMotorClient(settings.MONGODB_URI)
     await init_beanie(
@@ -25,7 +20,6 @@ async def connect_db() -> None:
 
 
 async def disconnect_db() -> None:
-    """Gracefully close the MongoDB connection."""
     global _client
     if _client is not None:
         _client.close()

@@ -1,7 +1,3 @@
-"""
-Authentication routes — GitHub OAuth2 flow, session info, and logout.
-"""
-
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 
@@ -17,7 +13,7 @@ from models.user import GitHubOrganization, User
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-# ── GitHub OAuth URLs ──────────────────────────────────────────────
+
 GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
 GITHUB_USER_URL = "https://api.github.com/user"
@@ -26,7 +22,6 @@ GITHUB_USER_ORGS_URL = "https://api.github.com/user/orgs"
 
 @router.get("/github")
 async def github_login():
-    """Redirect the browser to GitHub's OAuth consent screen."""
     params = urlencode(
         {
             "client_id": settings.GITHUB_CLIENT_ID,
@@ -39,12 +34,6 @@ async def github_login():
 
 @router.get("/github/callback")
 async def github_callback(code: str = Query(...), response: Response = None):
-    """
-    GitHub redirects here with a temporary `code`.
-    Exchange it for an access token, upsert the user, issue a JWT cookie,
-    then redirect to the frontend dashboard.
-    """
-    # 1️⃣  Exchange code → access token
     async with httpx.AsyncClient() as client:
         token_resp = await client.post(
             GITHUB_TOKEN_URL,
@@ -62,7 +51,7 @@ async def github_callback(code: str = Query(...), response: Response = None):
     if not access_token:
         return RedirectResponse(url=f"{settings.FRONTEND_URL}?error=oauth_failed")
 
-    # 2️⃣  Fetch GitHub profile + orgs
+    async with httpx.AsyncClient() as client:
     async with httpx.AsyncClient() as client:
         user_resp = await client.get(
             GITHUB_USER_URL,
@@ -92,7 +81,6 @@ async def github_callback(code: str = Query(...), response: Response = None):
         for org in gh_orgs
     ]
 
-    # 3️⃣  Upsert user in MongoDB
     user = await User.find_one(User.github_id == gh_user["id"])
     now = datetime.now(timezone.utc)
 
@@ -118,7 +106,6 @@ async def github_callback(code: str = Query(...), response: Response = None):
         user.organizations = organizations
         await user.save()
 
-    # 4️⃣  Issue JWT session cookie & redirect to dashboard
     jwt_token = create_access_token(str(user.id))
     redirect = RedirectResponse(
         url=f"{settings.FRONTEND_URL}/dashboard", status_code=302
@@ -129,7 +116,6 @@ async def github_callback(code: str = Query(...), response: Response = None):
 
 @router.get("/me")
 async def get_me(user: User = Depends(get_current_user)):
-    """Return the authenticated user's profile (excludes sensitive fields)."""
     return {
         "id": str(user.id),
         "github_id": user.github_id,
@@ -154,6 +140,5 @@ async def get_me(user: User = Depends(get_current_user)):
 
 @router.post("/logout")
 async def logout(response: Response):
-    """Clear the session cookie."""
     clear_session_cookie(response)
     return {"detail": "Logged out"}

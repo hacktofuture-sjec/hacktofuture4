@@ -8,7 +8,6 @@ const api = axios.create({
   },
 });
 
-// Global response interceptor — redirect to login on 401
 api.interceptors.response.use(
   (res) => res,
   (err) => {

@@ -1,7 +1,3 @@
-"""
-Workspace CRUD routes.
-"""
-
 from datetime import datetime, timezone
 
 from beanie import PydanticObjectId
@@ -15,7 +11,7 @@ from models.workspace import RiskProfile, Workspace
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
 
-# ── Request / Response schemas ─────────────────────────────────────
+
 class RiskProfilePayload(BaseModel):
     production_branch: str = "main"
     require_approval_above: int = Field(60, ge=0, le=100)
@@ -63,10 +59,9 @@ def serialize_workspace(ws: Workspace) -> dict:
     }
 
 
-# ── Routes ─────────────────────────────────────────────────────────
+
 @router.get("")
 async def list_workspaces(user: User = Depends(get_current_user)):
-    """Return all workspaces owned by the current user."""
     workspaces = await Workspace.find(Workspace.owner_id == user.id).to_list()
     return [serialize_workspace(ws) for ws in workspaces]
 
@@ -75,7 +70,6 @@ async def list_workspaces(user: User = Depends(get_current_user)):
 async def create_workspace(
     body: WorkspaceCreate, user: User = Depends(get_current_user)
 ):
-    """Create a new workspace for the current user."""
     now = datetime.now(timezone.utc)
     ws = Workspace(
         name=body.name,
@@ -93,7 +87,6 @@ async def create_workspace(
 async def get_workspace(
     workspace_id: str, user: User = Depends(get_current_user)
 ):
-    """Get a single workspace with its connected repositories."""
     ws = await Workspace.get(PydanticObjectId(workspace_id))
     if ws is None or ws.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Workspace not found")
@@ -106,7 +99,6 @@ async def update_workspace(
     body: WorkspaceUpdate,
     user: User = Depends(get_current_user),
 ):
-    """Update a workspace's name or description."""
     ws = await Workspace.get(PydanticObjectId(workspace_id))
     if ws is None or ws.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Workspace not found")
@@ -126,7 +118,6 @@ async def update_workspace(
 async def delete_workspace(
     workspace_id: str, user: User = Depends(get_current_user)
 ):
-    """Delete a workspace and all its connected repositories."""
     ws = await Workspace.get(PydanticObjectId(workspace_id))
     if ws is None or ws.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Workspace not found")

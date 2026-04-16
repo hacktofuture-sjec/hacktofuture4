@@ -1,7 +1,3 @@
-"""
-GitHub App installation and webhook routes.
-"""
-
 from datetime import datetime, timezone
 
 from beanie import PydanticObjectId

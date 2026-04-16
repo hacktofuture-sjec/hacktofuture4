@@ -1,7 +1,3 @@
-"""
-Helpers for setting and clearing the PipelineIQ session cookie.
-"""
-
 from fastapi import Response
 
 from config import settings

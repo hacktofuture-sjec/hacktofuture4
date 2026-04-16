@@ -1,7 +1,3 @@
-"""
-Stored GitHub webhook deliveries for later agent processing.
-"""
-
 from datetime import datetime, timezone
 from typing import Any, Optional
 

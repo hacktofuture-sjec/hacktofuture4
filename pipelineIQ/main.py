@@ -8,7 +8,6 @@ from routers.auth import router as auth_router
 from routers.github_app import router as github_app_router
 from routers.workspaces import router as workspace_router
 
-# ── Lifespan: DB connect / disconnect ─────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_db()
@@ -16,14 +15,12 @@ async def lifespan(app: FastAPI):
     await disconnect_db()
 
 
-# ── Application ───────────────────────────────────────────────────
 app = FastAPI(
     title="PipelineIQ API",
     version="1.0.0",
     lifespan=lifespan,
 )
 
-# ── CORS ──────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.FRONTEND_URL],
@@ -32,7 +29,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Routers ───────────────────────────────────────────────────────
 app.include_router(auth_router)
 app.include_router(workspace_router)
 app.include_router(github_app_router)

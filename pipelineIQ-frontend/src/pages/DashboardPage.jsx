@@ -170,7 +170,6 @@ export default function DashboardPage() {
         )}
       </section>
 
-      {/* Create Workspace Modal */}
       <Modal
         isOpen={showCreate}
         onClose={() => setShowCreate(false)}
