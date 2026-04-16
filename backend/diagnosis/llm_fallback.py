@@ -9,6 +9,7 @@ import os
 import re
 from typing import Optional, Dict, Any
 import requests
+from models.schemas import DiagnosisPayload, IncidentSnapshot, StructuredReasoning
 
 logger = logging.getLogger(__name__)
 
@@ -273,3 +274,67 @@ def _parse_llm_message_json(message: str) -> Dict[str, Any]:
             continue
 
     raise ValueError("No valid JSON object found in LLM response")
+
+
+def rule_only_fallback(snapshot: IncidentSnapshot, features: Dict[str, Any]) -> DiagnosisPayload:
+    return DiagnosisPayload(
+        root_cause="insufficient high-confidence fingerprint; rule fallback applied",
+        confidence=max(0.5, min(0.74, float(snapshot.monitor_confidence))),
+        diagnosis_mode="rule",
+        fingerprint_matched=False,
+        estimated_token_cost=0.0,
+        actual_token_cost=0.0,
+        affected_services=[snapshot.service],
+        evidence=[
+            f"memory={snapshot.metrics.memory}",
+            f"cpu={snapshot.metrics.cpu}",
+            f"restarts={snapshot.metrics.restarts}",
+        ],
+        structured_reasoning=StructuredReasoning(
+            matched_rules=[],
+            conflicting_signals=[],
+            missing_signals=[] if snapshot.trace_summary else ["trace_summary not triggered"],
+        ),
+    )
+
+
+def run_ai_diagnosis(
+    snapshot: IncidentSnapshot,
+    features: Dict[str, Any],
+    token_governor,
+    db,
+    incident_id: str,
+) -> DiagnosisPayload:
+    del db, incident_id
+    if token_governor and token_governor.should_fallback_to_rule_only(float(snapshot.monitor_confidence)):
+        return rule_only_fallback(snapshot, features)
+
+    raw = call_llm_api(
+        {
+            "metrics": {
+                "memory_pct": snapshot.metrics.memory,
+                "cpu_pct": snapshot.metrics.cpu,
+                "restart_count": snapshot.metrics.restarts,
+            },
+            "events": [e.reason for e in snapshot.events],
+            "logs_summary": [l.signature for l in snapshot.logs_summary],
+        }
+    )
+    if not raw:
+        return rule_only_fallback(snapshot, features)
+
+    return DiagnosisPayload(
+        root_cause=raw["root_cause"],
+        confidence=float(raw["confidence"]),
+        diagnosis_mode="ai",
+        fingerprint_matched=False,
+        estimated_token_cost=0.0,
+        actual_token_cost=0.0,
+        affected_services=[snapshot.service],
+        evidence=[str(raw.get("reasoning", ""))],
+        structured_reasoning=StructuredReasoning(
+            matched_rules=[],
+            conflicting_signals=[],
+            missing_signals=[] if snapshot.trace_summary else ["trace_summary not triggered"],
+        ),
+    )

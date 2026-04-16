@@ -1,0 +1,36 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "oom-kill-001",
+      "name": "OOM Kill on payment-api",
+      "description": "Patches memory limit to 30Mi on payment-api to trigger OOM behavior",
+      "failure_class": "resource_exhaustion",
+      "service": "payment-api",
+      "namespace": "prod",
+      "deployment": "payment-api",
+      "severity": "high",
+      "k8s_fault_action": "kubectl patch deployment payment-api -n prod -p '{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"payment-api\",\"resources\":{\"limits\":{\"memory\":\"30Mi\"}}}]}}}}' --type=merge",
+      "k8s_restore_hint": "kubectl rollout restart deployment/payment-api -n prod",
+      "fault_settle_seconds": 30,
+      "expected_fingerprint": "FP-001",
+      "expected_fix": "kubectl rollout restart deployment/payment-api -n prod",
+      "verification_seconds": 120
+    },
+    {
+      "scenario_id": "cpu-spike-001",
+      "name": "CPU Spike on api-service",
+      "description": "Runs CPU stress workload alongside api-service",
+      "failure_class": "resource_exhaustion",
+      "service": "api-service",
+      "namespace": "prod",
+      "deployment": "api-service",
+      "severity": "high",
+      "k8s_fault_action": "kubectl run cpu-stress --image=busybox -n prod --restart=Never -- sh -c 'while true; do :; done'",
+      "k8s_restore_hint": "kubectl delete pod cpu-stress -n prod --ignore-not-found && kubectl scale deployment/api-service --replicas=3 -n prod",
+      "fault_settle_seconds": 20,
+      "expected_fingerprint": "FP-006",
+      "expected_fix": "kubectl scale deployment/api-service --replicas=3 -n prod",
+      "verification_seconds": 90
+    }
+  ]
+}
