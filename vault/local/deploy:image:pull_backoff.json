@@ -1,0 +1,20 @@
+{
+  "failure_signature": "deploy:image:pull_backoff",
+  "failure_type": "deploy",
+  "source": "human",
+  "confidence": 0.88,
+  "fix_description": "ImagePullBackOff \u2014 Kubernetes cannot pull the container image. Check image name/tag, ensure registry credentials are valid, and verify network access from the cluster.",
+  "fix_commands": [
+    "kubectl describe pod -l app=api | grep -A 10 'Events'",
+    "kubectl get secret regcred -o yaml",
+    "docker pull <image:tag>  # verify locally",
+    "kubectl delete pod -l app=api  # force re-pull after creds fix"
+  ],
+  "fix_diff": null,
+  "id": "b2245e43-6c3c-4557-be62-71b9084661f6",
+  "created_at": "2026-04-15T21:42:29.082647",
+  "updated_at": "2026-04-15T21:42:29.082658",
+  "retrieval_count": 0,
+  "success_count": 0,
+  "reward_score": 0.0
+}
