@@ -80,57 +80,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="feature-section" id="architecture">
-        <div className="feature-section__grid">
-          <div className="featured-card group">
-            <img
-              className="featured-card__img"
-              alt="Deterministic Structural Graph"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuAyE2rOSX_HTmDmfPwUwJ5fqP-9ygBzj3ZAZiy0ctSbwYTRikhPH-vkDdymIaepw2SxWRQ98fkHK970cMvVyB5kX7BlaZFfNTPSlif5eE7C_J--AKvad7w6KNMS7UoqHbI7tVxLhjxnmbVise9wC8u47GTNcqrMQMhwSB7CkZtOCaMSEa317pcEj8ts1d76SgiO4RdSMt5wyYrBk9_cDnl1FEhltN_Fvje_ny7nF2KfqeiazXhw6MgD_A109TXLzMBL7G6vth4cz_uM"
-            />
-            <div className="featured-card__gradient" aria-hidden="true" />
-            <div className="featured-card__content">
-              <div className="featured-card__badge">
-                <span className="material-symbols-outlined featured-card__badge-icon text-primary">psychology</span>
-                <span className="featured-card__badge-text text-primary">0.4s Indexing Latency</span>
-              </div>
-              <h3 className="featured-card__title">Deterministic Structural Mapping</h3>
-              <p className="featured-card__desc">Move beyond noisy Vector RAG. A persistent structural graph that maps 10,000+ files in milliseconds, providing surgical code context with zero hallucinations.</p>
-            </div>
-          </div>
 
-          <div className="sidebar-cards">
-            <div className="resource-card">
-              <div>
-                <span className="material-symbols-outlined resource-card__icon">build</span>
-                <h4 className="resource-card__title">Autonomous Pipeline Repair</h4>
-                <p className="resource-card__text">
-                  When a build fails, the agent identifies the root cause, generates a surgical code fix, and opens a Pull Request—instantly.
-                </p>
-              </div>
-              <div className="resource-card__footer">
-                <span className="resource-card__metric">~30s</span>
-                <span className="resource-card__metric-label">MTTR (MEAN TIME TO RECOVERY)</span>
-              </div>
-            </div>
-
-            <div className="security-card">
-              <div className="security-card__icon-wrapper">
-                <div className="security-card__icon">
-                  <span className="material-symbols-outlined">security</span>
-                </div>
-                <div>
-                  <div className="security-card__label">AI-GUARDRAILS ENABLED</div>
-                  <div className="security-card__title">RSI-SENSITIVITY FILTER</div>
-                </div>
-              </div>
-              <p className="security-card__desc">
-                Deterministic blocking of AI edits on critical infrastructure (.tf) and secret stores (.env), ensuring agentic autonomy never compromises security.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
     </main>
   );
 }

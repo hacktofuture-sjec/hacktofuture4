@@ -14,10 +14,7 @@ export default function OAuthScreen() {
         <div className="oauth-page__content">
           <div className="oauth-header">
             <div>
-              <h1 className="oauth-header__title">External Services Protocol</h1>
-              <p className="oauth-header__subtitle">
-                SYSTEM VERIFICATION // UPLINK_STABLE
-              </p>
+              <h1 className="oauth-header__title">Integrations</h1>
             </div>
           </div>
 
@@ -31,10 +28,6 @@ export default function OAuthScreen() {
           <div className="integration-grid">
             {/* GitHub Integration Card */}
             <div className="formal-card">
-              <div className="formal-card__badge-row">
-                <span className="formal-card__id">AUTH_NODE_01</span>
-                <span className="formal-card__status formal-card__status--active">Connected</span>
-              </div>
               <div className="formal-card__main">
                 <div className="formal-card__icon-wrapper bg-primary/10 text-primary">
                   <span className="material-symbols-outlined text-4xl">hub</span>
@@ -46,22 +39,14 @@ export default function OAuthScreen() {
               </div>
               <div className="formal-card__info-box">
                 <div className="info-item">
-                  <span className="info-item__label">UPLINK_IDENTITY</span>
+                  <span className="info-item__label">Connected as</span>
                   <span className="info-item__value">@{user?.login || 'anonymous'}</span>
-                </div>
-                <div className="info-item">
-                  <span className="info-item__label">ACCESS_LEVEL</span>
-                  <span className="info-item__value">READ_WRITE_HOOKS</span>
                 </div>
               </div>
             </div>
 
             {/* Telegram Integration Card */}
             <div className="formal-card formal-card--inactive">
-              <div className="formal-card__badge-row">
-                <span className="formal-card__id">NOTIF_NODE_02</span>
-                <span className="formal-card__status formal-card__status--pending">Awaiting Link</span>
-              </div>
               <div className="formal-card__main">
                 <div className="formal-card__icon-wrapper bg-surface-container-highest text-on-surface-variant">
                   <span className="material-symbols-outlined text-4xl">send</span>

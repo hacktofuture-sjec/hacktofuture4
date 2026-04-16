@@ -15,8 +15,6 @@ export default function InitRepoScreen() {
   const [isFocused, setIsFocused] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [isSearchingServer, setIsSearchingServer] = useState(false);
-
   const filteredRepos = useMemo(() => {
     if (!repos?.length) return [];
     if (!searchQuery) return repos.slice(0, 50); // Show more by default
@@ -143,19 +141,7 @@ export default function InitRepoScreen() {
             </button>
           </div>
 
-          <div className="init-hero">
-            <div className="init-icon-container">
-              <div className="init-icon-ring" />
-              <div className="init-icon-solid" />
-              <div className="init-icon-inner">
-                <span className="material-symbols-outlined init-icon">folder_managed</span>
-              </div>
-            </div>
-            <div className="init-status">
-              <span className="init-status__badge">System Standing By</span>
-              <p className="init-status__text">Choose a repository above to initiate architectural indexing.</p>
-            </div>
-          </div>
+
         </div>
 
       </main>

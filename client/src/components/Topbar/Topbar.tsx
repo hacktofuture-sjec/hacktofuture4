@@ -14,16 +14,9 @@ export default function Topbar({ title, breadcrumb }: TopbarProps) {
       </div>
 
       <div className="topbar__actions">
-        <button className="topbar__notify-btn" aria-label="Notifications" type="button">
-          <span className="material-symbols-outlined topbar__notify-icon">notifications</span>
-        </button>
-
-        <div className="topbar__divider" aria-hidden="true" />
-
         <div className="topbar__profile">
           <div className="topbar__profile-info">
             <div className="topbar__profile-name">{user?.name ?? user?.login ?? 'User'}</div>
-            <div className="topbar__profile-role">Maintainer</div>
           </div>
           {user?.avatar_url ? (
             <img

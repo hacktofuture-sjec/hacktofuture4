@@ -2,12 +2,10 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import {
   fetchMonitoredRepos,
-  fetchJobs,
   connectEventStream,
   removeMonitoredRepo,
   fetchMemoryStats,
   type MonitoredRepo,
-  type Job,
   type SSEEvent,
   type MemoryStats,
 } from '../../api/api';
@@ -40,22 +38,15 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('en-US', { hour12: false });
 }
 
-function statusColor(status: Job['status']) {
-  switch (status) {
-    case 'completed': return 'text-green-600';
-    case 'running':   return 'text-yellow-600';
-    case 'failed':    return 'text-red-600';
-    default:          return 'text-on-surface-variant';
-  }
-}
+// function formatTime(iso: string) {
+//   return new Date(iso).toLocaleTimeString('en-US', { hour12: false });
+// }
 
 export default function MonitorScreen() {
   const { user } = useAuth();
   const [monitoredRepos, setMonitoredRepos] = useState<MonitoredRepo[]>([]);
-  const [jobs, setJobs] = useState<Job[]>([]);
   const [events, setEvents] = useState<SSEEvent[]>([]);
   const [isLoadingRepos, setIsLoadingRepos] = useState(true);
-  const [isLoadingJobs, setIsLoadingJobs] = useState(true);
   const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
   const [removingRepo, setRemovingRepo] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState('all');
@@ -67,11 +58,6 @@ export default function MonitorScreen() {
       .then((data) => setMonitoredRepos(Array.isArray(data) ? data : []))
       .catch(console.error)
       .finally(() => setIsLoadingRepos(false));
-
-    fetchJobs()
-      .then((data) => setJobs(Array.isArray(data) ? data : []))
-      .catch(console.error)
-      .finally(() => setIsLoadingJobs(false));
 
     fetchMemoryStats()
       .then(setMemoryStats)
@@ -106,12 +92,6 @@ export default function MonitorScreen() {
     }
   };
 
-  const safeJobs = Array.isArray(jobs) ? jobs : [];
-  const totalJobs = safeJobs.length;
-  const runningJobs = safeJobs.filter((j) => j.status === 'running').length;
-  const failedJobs = safeJobs.filter((j) => j.status === 'failed').length;
-  const completedJobs = safeJobs.filter((j) => j.status === 'completed').length;
-
   return (
     <div className="monitor-page">
       <main className="monitor-main">
@@ -129,35 +109,8 @@ export default function MonitorScreen() {
                 Monitoring {monitoredRepos.length} active repository · {events.length} events streamed
               </p>
             </div>
-            <div className="monitor-header__score-group">
-              <span className="monitor-header__score-label">JOBS_TOTAL</span>
-              <div className="monitor-header__score">
-                <span className="monitor-header__score-value">{totalJobs}</span>
-                <span className="monitor-header__score-max"> runs</span>
-              </div>
-            </div>
           </div>
         </header>
-
-        {/* Stats bar */}
-        <div className="monitor-stats-bar">
-          <div className="monitor-stat-chip monitor-stat-chip--running">
-            <span className="monitor-stat-chip__dot" />
-            <span>{runningJobs} Running</span>
-          </div>
-          <div className="monitor-stat-chip monitor-stat-chip--ok">
-            <span className="monitor-stat-chip__dot" />
-            <span>{completedJobs} Completed</span>
-          </div>
-          <div className="monitor-stat-chip monitor-stat-chip--fail">
-            <span className="monitor-stat-chip__dot" />
-            <span>{failedJobs} Failed</span>
-          </div>
-          <div className="monitor-stat-chip">
-            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>hub</span>
-            <span>{monitoredRepos.length} Monitored</span>
-          </div>
-        </div>
 
         <div className="monitor-grid">
           {isLoadingRepos ? (
@@ -201,12 +154,12 @@ export default function MonitorScreen() {
                   </div>
 
                   {/* Filter Tabs - Functionality like client2 */}
-                  <div className="flex bg-surface-container-highest/30 border-b border-outline-variant px-2">
+                  <div className="flex gap-2 bg-surface-container-highest/30 border-b border-outline-variant px-2 pt-2">
                     {CATEGORIES.map(cat => (
                       <button
                         key={cat.id}
                         onClick={() => setActiveFilter(cat.id)}
-                        className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${
+                        className={`px-4 py-2 text-[11px] font-black uppercase tracking-widest transition-all border-b-2 ${
                           activeFilter === cat.id 
                             ? 'border-primary text-primary bg-primary/5' 
                             : 'border-transparent text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
@@ -219,7 +172,7 @@ export default function MonitorScreen() {
 
                   <div className="log-panel__list">
                     {filteredEvents.length === 0 ? (
-                      <div className="opacity-50 italic font-mono text-xs flex flex-col items-center justify-center h-full py-10">
+                      <div className="opacity-70 italic font-mono text-xs flex flex-col items-center justify-center h-full py-10">
                         <span className="material-symbols-outlined mb-2 text-2xl">search_off</span>
                         [SYSTEM] No {activeFilter !== 'all' ? activeFilter.toUpperCase() : ''} events captured.
                       </div>
@@ -228,24 +181,24 @@ export default function MonitorScreen() {
                         const meta = EVENT_META[ev.type] || { label: ev.type, category: 'ci', icon: 'webhook' };
                         return (
                           <div key={i} className="flex gap-4 p-2 hover:bg-surface-container-high/50 rounded-lg transition-colors group">
-                            <span className="w-20 shrink-0 opacity-40 font-mono text-[10px] mt-0.5">
+                            <span className="w-20 shrink-0 opacity-70 font-mono text-[11px] mt-0.5">
                               [{ev.timestamp ? formatTime(ev.timestamp) : '??:??:??'}]
                             </span>
                             <div className="flex flex-col gap-1 flex-1">
                               <div className="flex items-center gap-2">
-                                <span className="material-symbols-outlined text-sm text-primary opacity-70">
+                                <span className="material-symbols-outlined text-sm text-primary opacity-80">
                                   {meta.icon}
                                 </span>
-                                <span className="text-primary-fixed font-black uppercase text-[10px] tracking-tight whitespace-nowrap">
+                                <span className="text-primary-fixed font-black uppercase text-[11px] tracking-tight whitespace-nowrap">
                                   {meta.label}
                                 </span>
                                 {ev.repo_full_name && (
-                                  <span className="px-1.5 py-0.5 rounded bg-surface-container-highest text-[9px] font-mono text-on-surface-variant">
+                                  <span className="px-1.5 py-0.5 rounded bg-surface-container-highest text-[10px] font-mono text-on-surface-variant">
                                     {ev.repo_full_name}
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[11px] text-on-surface leading-tight">
+                              <span className="text-[12px] font-medium text-on-surface leading-tight">
                                 {ev.message || (ev.data as any)?.detail || JSON.stringify(ev.data || {})}
                               </span>
                             </div>
@@ -256,47 +209,18 @@ export default function MonitorScreen() {
                     <div ref={logEndRef} />
                   </div>
                 </section>
-
-                {/* Jobs list */}
-                <section className="log-panel mt-6">
-                  <div className="log-panel__header">
-                    <div className="log-panel__controls">
-                      <div className="log-panel__dots">
-                        <div className="log-panel__dot1" />
-                        <div className="log-panel__dot2" />
-                        <div className="log-panel__dot3" />
-                      </div>
-                      <span className="log-panel__title">RECENT_JOBS</span>
-                    </div>
-                  </div>
-                  <div className="log-panel__list" style={{ maxHeight: '220px' }}>
-                    {isLoadingJobs ? (
-                      <div className="opacity-50 italic">Loading jobs...</div>
-                    ) : jobs.length === 0 ? (
-                      <div className="opacity-50 italic">No jobs yet. Initialize a repo and push a commit to trigger the agent.</div>
-                    ) : (
-                      jobs.slice(0, 20).map((job) => (
-                        <div key={job.id} className="flex items-center gap-4 py-1 border-b border-white/5">
-                          <span className="w-24 shrink-0 opacity-50 font-mono text-[11px]">
-                            {formatTime(job.created_at)}
-                          </span>
-                          <span className="flex-1 truncate">{job.repo_full_name}</span>
-                          <span className={`text-[10px] font-bold uppercase ${statusColor(job.status)}`}>
-                            {job.status.replace(/_/g, ' ')}
-                          </span>
-                          <span className="opacity-40 text-[10px]">{job.type}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </section>
               </div>
 
               {/* Sidebar: Monitored Repos & Stats */}
               <div className="monitor-sidebar">
-                <div className="stats-card">
-                  <h3 className="stats-card__title">Monitored Repositories</h3>
-                  <div className="stats-card__content">
+                <div className="stats-card flex-1 flex flex-col min-h-0">
+                  <div className="flex items-center justify-between mb-6 shrink-0">
+                    <h3 className="stats-card__title !mb-0">Monitored Repositories</h3>
+                    <span className="bg-surface-container-high text-on-surface-variant px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase border border-outline-variant">
+                      {monitoredRepos.length} Monitored
+                    </span>
+                  </div>
+                  <div className="stats-card__content flex-1 overflow-y-auto pr-2">
                     {monitoredRepos.map((repo) => (
                       <div key={repo.full_name} className="monitor-repo-item">
                         <div className="monitor-repo-item__info">
@@ -318,69 +242,6 @@ export default function MonitorScreen() {
                         </button>
                       </div>
                     ))}
-                  </div>
-                </div>
-
-                {/* Agent Index Stats */}
-                <div className="stats-card">
-                  <h3 className="stats-card__title">Neural Core Index</h3>
-                  <div className="stats-card__content">
-                    <div className="stat-row">
-                      <div className="stat-row__header">
-                        <span className="stat-row__label">INDEXED_DOCUMENTS</span>
-                        <span className="stat-row__value--primary">
-                          {memoryStats?.total_documents ?? 0}
-                        </span>
-                      </div>
-                      <div className="stat-bar">
-                        <div
-                          className="stat-bar__fill--primary"
-                          style={{ width: `${Math.min(100, (memoryStats?.total_documents || 0) / 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                    <div className="stat-row">
-                      <div className="stat-row__header">
-                        <span className="stat-row__label">ACTIVE_REPOSITORIES</span>
-                        <span className="stat-row__value--tertiary">
-                          {memoryStats?.total_repos ?? 0}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="stats-card">
-                  <h3 className="stats-card__title">Pipeline Health</h3>
-                  <div className="stats-card__content">
-                    <div className="stat-row">
-                      <div className="stat-row__header">
-                        <span className="stat-row__label">SUCCESS RATE</span>
-                        <span className="stat-row__value--primary">
-                          {totalJobs > 0 ? Math.round((completedJobs / totalJobs) * 100) : 0}%
-                        </span>
-                      </div>
-                      <div className="stat-bar">
-                        <div
-                          className="stat-bar__fill--primary"
-                          style={{ width: totalJobs > 0 ? `${(completedJobs / totalJobs) * 100}%` : '0%' }}
-                        />
-                      </div>
-                    </div>
-                    <div className="stat-row">
-                      <div className="stat-row__header">
-                        <span className="stat-row__label">FAILURE RATE</span>
-                        <span className="stat-row__value--tertiary">
-                          {totalJobs > 0 ? Math.round((failedJobs / totalJobs) * 100) : 0}%
-                        </span>
-                      </div>
-                      <div className="stat-bar">
-                        <div
-                          className="stat-bar__fill--tertiary"
-                          style={{ width: totalJobs > 0 ? `${(failedJobs / totalJobs) * 100}%` : '0%' }}
-                        />
-                      </div>
-                    </div>
                   </div>
                 </div>
               </div>

@@ -25,7 +25,6 @@ const PostAuthRedirectHandler: React.FC = () => {
     const target = sessionStorage.getItem('postAuthRedirect');
     if (isAuthenticated && target) {
       sessionStorage.removeItem('postAuthRedirect');
-      sessionStorage.setItem('firstLogin', 'true'); // triggers TelegramModal on /init
       navigate(target, { replace: true });
     }
   }, [isAuthenticated, isLoading, navigate, location]);

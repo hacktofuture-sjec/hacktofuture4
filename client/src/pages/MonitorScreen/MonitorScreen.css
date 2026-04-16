@@ -5,11 +5,11 @@
 }
 
 .monitor-main {
-  @apply flex-1 p-8 overflow-y-auto;
+  @apply flex-1 p-10 flex flex-col min-h-0;
 }
 
 .monitor-header {
-  @apply mb-8;
+  @apply shrink-0 mb-10;
 }
 
 .monitor-header__content {
@@ -53,15 +53,15 @@
 }
 
 .monitor-grid {
-  @apply grid grid-cols-12 gap-6;
+  @apply grid grid-cols-12 gap-8 flex-1 min-h-0;
 }
 
 .monitor-logs {
-  @apply col-span-12 lg:col-span-8 space-y-6 flex-col gap-6;
+  @apply col-span-12 lg:col-span-8 flex flex-col min-h-0;
 }
 
 .log-panel {
-  @apply bg-surface-container-high text-on-surface rounded-xl overflow-hidden border border-outline-variant shadow-lg;
+  @apply bg-surface-container-high text-on-surface rounded-xl overflow-hidden border border-outline-variant shadow-lg flex flex-col flex-1 min-h-0;
 }
 
 
@@ -91,7 +91,7 @@
 }
 
 .log-panel__title {
-  @apply text-[11px] font-bold tracking-widest uppercase opacity-70;
+  @apply text-[11px] font-bold tracking-widest uppercase opacity-90;
 }
 
 .log-panel__status {
@@ -111,19 +111,19 @@
 }
 
 .log-panel__status-text {
-  @apply text-[10px] font-mono opacity-50;
+  @apply text-[10px] font-mono opacity-80;
 }
 
 .log-panel__list {
-  @apply p-6 h-[480px] overflow-y-auto font-mono text-xs leading-relaxed space-y-2;
+  @apply p-6 flex-1 overflow-y-auto font-mono text-xs leading-relaxed space-y-3;
 }
 
 .monitor-sidebar {
-  @apply col-span-12 lg:col-span-4 space-y-6 flex-col gap-6 flex;
+  @apply col-span-12 lg:col-span-4 flex flex-col min-h-0 overflow-y-auto gap-6;
 }
 
 .stats-card {
-  @apply bg-surface-container-low p-6 border border-outline-variant rounded-xl;
+  @apply bg-surface-container-low p-7 border border-outline-variant rounded-xl;
 }
 
 .stats-card__title {
@@ -134,70 +134,10 @@
   @apply space-y-6;
 }
 
-.stat-row {
-  @apply relative pt-1;
-}
-
-.stat-row__header {
-  @apply flex items-center justify-between mb-2;
-}
-
-.stat-row__label {
-  @apply text-[11px] font-bold text-on-surface;
-}
-
-.stat-row__value--primary {
-  @apply text-[11px] font-bold text-primary;
-}
-
-.stat-row__value--tertiary {
-  @apply text-[11px] font-bold text-tertiary;
-}
-
-.stat-bar {
-  @apply overflow-hidden h-2 text-xs flex bg-outline-variant rounded-full;
-}
-
-.stat-bar__fill--primary {
-  @apply shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-primary rounded-full;
-}
-
-.stat-bar__fill--tertiary {
-  @apply shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-tertiary rounded-full;
-}
-
-.leads-card {
-  @apply bg-surface-bright p-6 border border-outline-variant rounded-xl;
-}
-
-.leads-card__title {
-  @apply text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-4 m-0;
-}
-
-.leads-card__content {
-  @apply space-y-4;
-}
-
-.lead-item {
-  @apply flex items-center gap-3;
-}
-
-.lead-item__img {
-  @apply w-10 h-10 rounded-md object-cover;
-}
-
-.lead-item__name {
-  @apply text-sm font-bold text-on-surface m-0;
-}
-
-.lead-item__role {
-  @apply text-[10px] text-on-surface-variant font-medium m-0;
-}
-
 /* ── New live-data classes ───────────────────────────────────────────── */
 
 .monitor-stats-bar {
-  @apply flex flex-wrap gap-3 mb-6;
+  @apply flex flex-wrap gap-4 mb-8;
 }
 
 .monitor-stat-chip {
@@ -206,18 +146,6 @@
 
 .monitor-stat-chip__dot {
   @apply w-2 h-2 rounded-full bg-outline;
-}
-
-.monitor-stat-chip--running .monitor-stat-chip__dot {
-  @apply bg-yellow-500 animate-pulse;
-}
-
-.monitor-stat-chip--ok .monitor-stat-chip__dot {
-  @apply bg-green-500;
-}
-
-.monitor-stat-chip--fail .monitor-stat-chip__dot {
-  @apply bg-red-500;
 }
 
 .monitor-repo-item {
