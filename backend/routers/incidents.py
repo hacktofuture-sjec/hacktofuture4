@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import math
 from types import SimpleNamespace
 from typing import Any
 
@@ -56,12 +57,16 @@ def _parse_window_seconds(payload: dict[str, Any]) -> int:
     return value
 
 
-def _coerce_percent(value: Any) -> str:
+def _coerce_percent(value: Any, *, required: bool) -> str:
     if value is None:
+        if required:
+            raise HTTPException(status_code=400, detail="metric values must be valid percentages")
         return "0%"
 
     text = str(value).strip()
     if not text:
+        if required:
+            raise HTTPException(status_code=400, detail="metric values must be valid percentages")
         return "0%"
 
     if text.endswith("%"):
@@ -71,22 +76,59 @@ def _coerce_percent(value: Any) -> str:
 
     try:
         numeric = float(text)
+        if not math.isfinite(numeric):
+            raise HTTPException(status_code=400, detail="metric values must be valid percentages")
+        if numeric < 0:
+            raise HTTPException(status_code=400, detail="metric values must be non-negative percentages")
         return f"{numeric:.0f}%"
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="metric values must be valid percentages") from exc
 
 
 def _build_verifier_snapshot(incident: dict[str, Any], payload: dict[str, Any]) -> Any:
-    metrics = payload.get("metrics") or incident.get("snapshot", {}).get("metrics", {})
-    memory = metrics.get("memory")
+    request_metrics = payload.get("metrics")
+    if request_metrics is not None:
+        if not isinstance(request_metrics, dict):
+            raise HTTPException(status_code=400, detail="metrics must be an object")
+
+        has_memory = "memory" in request_metrics or "memory_pct" in request_metrics
+        has_cpu = "cpu" in request_metrics or "cpu_pct" in request_metrics
+        if not has_memory or not has_cpu:
+            raise HTTPException(
+                status_code=400,
+                detail="metrics must include memory/memory_pct and cpu/cpu_pct",
+            )
+
+        memory = request_metrics.get("memory")
+        if memory is None:
+            memory = request_metrics.get("memory_pct")
+
+        cpu = request_metrics.get("cpu")
+        if cpu is None:
+            cpu = request_metrics.get("cpu_pct")
+
+        return SimpleNamespace(
+            metrics=SimpleNamespace(
+                memory=_coerce_percent(memory, required=True),
+                cpu=_coerce_percent(cpu, required=True),
+            )
+        )
+
+    snapshot_metrics = incident.get("snapshot", {}).get("metrics", {})
+    memory = snapshot_metrics.get("memory")
     if memory is None:
-        memory = metrics.get("memory_pct", 0)
+        memory = snapshot_metrics.get("memory_pct", 0)
 
-    cpu = metrics.get("cpu")
+    cpu = snapshot_metrics.get("cpu")
     if cpu is None:
-        cpu = metrics.get("cpu_pct", 0)
+        cpu = snapshot_metrics.get("cpu_pct", 0)
 
-    return SimpleNamespace(metrics=SimpleNamespace(memory=_coerce_percent(memory), cpu=_coerce_percent(cpu)))
+    return SimpleNamespace(
+        metrics=SimpleNamespace(
+            memory=_coerce_percent(memory, required=False),
+            cpu=_coerce_percent(cpu, required=False),
+        )
+    )
 
 
 @router.get("")
@@ -199,7 +241,7 @@ def approve_incident_action(incident_id: str) -> dict:
     return {
         "incident_id": incident_id,
         "status": incident["status"],
-        "message": "Approval accepted. Executor integration is next.",
+        "message": "Approval accepted. Execute the approved action next.",
     }
 
 

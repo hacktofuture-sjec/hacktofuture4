@@ -278,3 +278,65 @@ def test_incident_verify_endpoint_rejects_invalid_window_seconds() -> None:
     response = client.post("/incidents/inc-001/verify", json={"window_seconds": "abc"})
     assert response.status_code == 400
     assert "window_seconds" in response.json()["detail"]
+
+
+def test_incident_verify_endpoint_rejects_missing_metric_keys() -> None:
+    plan_payload = {
+        "diagnosis": {
+            "fingerprint_id": "FP-001",
+            "confidence": 0.95,
+            "suggested_actions": [],
+        },
+        "context": {
+            "deployment": "payment-api",
+            "namespace": "default",
+            "container": "payment-api",
+            "image": "payment-api",
+        },
+    }
+    client.post("/incidents/inc-001/plan", json=plan_payload)
+    client.post("/incidents/inc-001/approve")
+    client.post("/incidents/inc-001/execute", json={"action_index": 0})
+
+    response = client.post(
+        "/incidents/inc-001/verify",
+        json={"metrics": {"memory": "55%"}},
+    )
+    assert response.status_code == 400
+    assert "metrics must include" in response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "metrics",
+    [
+        {"memory": "", "cpu": "40%"},
+        {"memory": "nan", "cpu": "40%"},
+        {"memory": "inf", "cpu": "40%"},
+        {"memory": "55%", "cpu": "nan"},
+        {"memory": "55%", "cpu": "-5%"},
+    ],
+)
+def test_incident_verify_endpoint_rejects_invalid_metric_values(metrics: dict[str, str]) -> None:
+    plan_payload = {
+        "diagnosis": {
+            "fingerprint_id": "FP-001",
+            "confidence": 0.95,
+            "suggested_actions": [],
+        },
+        "context": {
+            "deployment": "payment-api",
+            "namespace": "default",
+            "container": "payment-api",
+            "image": "payment-api",
+        },
+    }
+    client.post("/incidents/inc-001/plan", json=plan_payload)
+    client.post("/incidents/inc-001/approve")
+    client.post("/incidents/inc-001/execute", json={"action_index": 0})
+
+    response = client.post(
+        "/incidents/inc-001/verify",
+        json={"window_seconds": 60, "metrics": metrics},
+    )
+    assert response.status_code == 400
+    assert "metric values" in response.json()["detail"]

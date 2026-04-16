@@ -3,17 +3,33 @@
 ## Prerequisites
 
 - Python 3.13
+- pip package manager
+- Git
 - Node.js + npm
 - PowerShell (Windows) or bash-compatible shell
 
 ## Setup
 
-```powershell
+```bash
 git clone https://github.com/VivekNeer/hacktofuture4-A07.git
 cd hacktofuture4-A07
+```
+
+### Windows (PowerShell)
+
+```powershell
 python -m venv venv
 venv\Scripts\Activate.ps1
 pip install -r backend\requirements.txt
+npm --prefix frontend install
+```
+
+### macOS/Linux (bash)
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r backend/requirements.txt
 npm --prefix frontend install
 ```
 

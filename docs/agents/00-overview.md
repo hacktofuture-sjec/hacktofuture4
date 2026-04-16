@@ -28,7 +28,7 @@ This project currently implements the core incident-response loop through planni
 
 Status transitions in the implemented flow:
 
-- pending_approval -> approved -> executing -> verifying -> resolved|failed
+- planned|pending_approval -> approved -> executing -> verifying -> resolved|failed
 
 ### Execution and Verification
 
