@@ -57,6 +57,9 @@ def plan_incident(incident_id: str, payload: dict[str, Any] | None = None) -> di
     )
     context["has_rollback_revision"] = body.get("has_rollback_revision", True)
 
+    # Persist planner context used for downstream simulation calls.
+    incident["dependency_graph_summary"] = context["dependency_graph_summary"]
+
     snapshot = body.get("snapshot") or collect_monitor_snapshot()
     diagnosis = body.get("diagnosis") or diagnose_snapshot(snapshot)
 
@@ -116,7 +119,7 @@ def simulate_incident_action(incident_id: str, payload: dict[str, Any] | None = 
             "has_rollback_revision": bool(body.get("has_rollback_revision", True)),
         },
     )
-    action["simulation_result"] = simulated.model_dump()
+    action["simulation_result"] = simulated.model_dump(mode="json")
 
     return {
         "incident_id": incident_id,
