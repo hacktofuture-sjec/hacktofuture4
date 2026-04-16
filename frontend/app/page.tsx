@@ -1,32 +1,62 @@
-import { ConnectionBadge } from "../components/ConnectionBadge";
-import { type Incident } from "../lib/types";
+"use client";
+import { useState, useCallback } from "react";
+import { useIncidents } from "@/hooks/useIncidents";
+import { useWebSocket } from "@/hooks/useWebSocket";
+import { WSMessage } from "@/lib/types";
+import IncidentFeed from "@/components/dashboard/IncidentFeed";
+import StatsBar from "@/components/dashboard/StatsBar";
+import ConnectionBadge from "@/components/dashboard/ConnectionBadge";
+import FaultInjector from "@/components/controls/FaultInjector";
+import IncidentDrawer from "@/components/incident/IncidentDrawer";
+import styles from "./page.module.css";
 
-const mockIncidents: Incident[] = [
-  {
-    incidentId: "inc-001",
-    service: "payment-api",
-    status: "open",
-    failureClass: "resource",
-    createdAt: new Date().toISOString(),
-  },
-];
+export default function Dashboard() {
+  const { incidents, reload } = useIncidents();
+  const [selected, setSelected] = useState<string | null>(null);
 
-export default function HomePage() {
+  const onMessage = useCallback(
+    (msg: WSMessage) => {
+      if (
+        [
+          "incident_event",
+          "status_change",
+          "diagnosis_complete",
+          "plan_ready",
+          "execution_update",
+          "incident_resolved",
+        ].includes(msg.type)
+      ) {
+        reload();
+      }
+    },
+    [reload]
+  );
+
+  const { connected } = useWebSocket(onMessage);
+
+  const resolved = incidents.filter((i) => i.status === "resolved").length;
+  const open = incidents.filter((i) => !["resolved", "failed"].includes(i.status)).length;
+
   return (
-    <main style={{ padding: "24px", fontFamily: "ui-sans-serif, system-ui" }}>
-      <h1 style={{ marginBottom: "12px" }}>RanOutOfTokens Ops Console</h1>
-      <ConnectionBadge connected={true} />
+    <div className={`${styles.page} dashboard`}>
+      <header className="header">
+        <div className="header-left">
+          <span className="logo">T3PS2</span>
+          <span className="header-sub">Autonomous Kubernetes Incident Response</span>
+        </div>
+        <div className="header-right">
+          <ConnectionBadge connected={connected} />
+          <FaultInjector onInjected={reload} />
+        </div>
+      </header>
 
-      <section style={{ marginTop: "24px" }}>
-        <h2>Incident Feed</h2>
-        <ul>
-          {mockIncidents.map((inc) => (
-            <li key={inc.incidentId}>
-              {inc.incidentId} | {inc.service} | {inc.status}
-            </li>
-          ))}
-        </ul>
-      </section>
-    </main>
+      <StatsBar total={incidents.length} open={open} resolved={resolved} />
+
+      <main className="main">
+        <IncidentFeed incidents={incidents} onSelect={setSelected} selected={selected} />
+      </main>
+
+      {selected && <IncidentDrawer incidentId={selected} onClose={() => setSelected(null)} />}
+    </div>
   );
 }
