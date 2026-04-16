@@ -298,11 +298,11 @@ export default function MonitorScreen() {
                   <h3 className="stats-card__title">Monitored Repositories</h3>
                   <div className="stats-card__content">
                     {monitoredRepos.map((repo) => (
-                      <div key={repo.id} className="monitor-repo-item">
+                      <div key={repo.full_name} className="monitor-repo-item">
                         <div className="monitor-repo-item__info">
                           <p className="monitor-repo-item__name">{repo.full_name}</p>
                           <p className="monitor-repo-item__meta">
-                            Initialized {new Date(repo.initialized_at).toLocaleDateString()}
+                            {repo.webhook_active ? 'Webhook active' : 'No webhook'}
                           </p>
                         </div>
                         <button

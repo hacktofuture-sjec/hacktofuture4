@@ -1,52 +1,10 @@
-import { useEffect, useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Topbar from '../../components/Topbar/Topbar';
 import './OAuthScreen.css';
 
-const API_BASE = 'http://localhost:8000';
-
 export default function OAuthScreen() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { user, refetch } = useAuth();
-  const [isProcessing, setIsProcessing] = useState(() => {
-    const params = new URLSearchParams(location.search);
-    return !!(params.get('github_id') && params.get('session_id'));
-  });
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const githubId = params.get('github_id');
-    const sessionId = params.get('session_id');
-
-    if (githubId && sessionId) {
-      localStorage.setItem('easyops_auth_token', sessionId);
-      localStorage.setItem('easyops_github_id', githubId);
-
-      fetch(`${API_BASE}/api/auth/me`, {
-        headers: {
-          'Authorization': `Bearer ${sessionId}`,
-        },
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error('Failed to fetch user context');
-          return res.json();
-        })
-        .then(() => {
-          void refetch();
-          const redirectTo = sessionStorage.getItem('postAuthRedirect') || '/monitor';
-          sessionStorage.removeItem('postAuthRedirect');
-          setTimeout(() => navigate(redirectTo), 800);
-        })
-        .catch((err) => {
-          console.error(err);
-          setError('Failed to establish user context. Please retry.');
-          setIsProcessing(false);
-        });
-    }
-  }, [location, navigate, refetch]);
+  const { user } = useAuth();
+  const error = null;
 
   return (
     <div className="oauth-page">
@@ -58,7 +16,7 @@ export default function OAuthScreen() {
             <div>
               <h1 className="oauth-header__title">External Services Protocol</h1>
               <p className="oauth-header__subtitle">
-                SYSTEM VERIFICATION // {isProcessing ? 'HANDSHAKE_IN_PROGRESS' : 'UPLINK_STABLE'}
+                SYSTEM VERIFICATION // UPLINK_STABLE
               </p>
             </div>
           </div>

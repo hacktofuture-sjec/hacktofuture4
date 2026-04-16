@@ -39,12 +39,10 @@ export interface HealthStatus {
 }
 
 export interface MonitoredRepo {
-  id: string;
   full_name: string;
-  owner: string;
-  name: string;
-  initialized_at: string;
-  webhook_id?: number;
+  has_rsi: boolean;
+  webhook_id?: number | null;
+  webhook_active: boolean;
 }
 
 export interface MemoryStats {
@@ -110,7 +108,8 @@ export async function logout(): Promise<void> {
 export async function fetchJobs(): Promise<Job[]> {
   const res = await fetch(`${API_BASE}/api/jobs`, fetchOpts);
   if (!res.ok) throw new Error(`Failed to fetch jobs: ${res.status}`);
-  return res.json() as Promise<Job[]>;
+  const data = await res.json() as { jobs: Job[] } | Job[];
+  return Array.isArray(data) ? data : (data as { jobs: Job[] }).jobs ?? [];
 }
 
 // ── Health ─────────────────────────────────────────────────────────────────
@@ -141,7 +140,8 @@ export async function initializeRepo(repoFullName: string): Promise<MonitoredRep
 export async function fetchMonitoredRepos(): Promise<MonitoredRepo[]> {
   const res = await fetch(`${API_BASE}/api/repos/monitored`, fetchOpts);
   if (!res.ok) throw new Error(`Failed to fetch monitored repos: ${res.status}`);
-  return res.json() as Promise<MonitoredRepo[]>;
+  const data = await res.json() as { repos: MonitoredRepo[] } | MonitoredRepo[];
+  return Array.isArray(data) ? data : (data as { repos: MonitoredRepo[] }).repos ?? [];
 }
 
 export async function removeMonitoredRepo(repoFullName: string): Promise<{ message: string }> {

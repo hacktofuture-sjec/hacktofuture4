@@ -48,9 +48,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setUser(null);
       setRepos([]);
-      localStorage.removeItem('easyops_auth_token');
-      localStorage.removeItem('easyops_github_id');
-      localStorage.removeItem('easyops_user_roles');
       window.location.href = '/';
     }
   }, []);

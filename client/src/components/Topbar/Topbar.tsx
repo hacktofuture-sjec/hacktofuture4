@@ -1,7 +1,10 @@
 import type { TopbarProps } from '../../types';
+import { useAuth } from '../../context/AuthContext';
 import './Topbar.css';
 
 export default function Topbar({ title, breadcrumb }: TopbarProps) {
+  const { user } = useAuth();
+
   return (
     <header className="topbar">
       <div className="topbar__breadcrumb">
@@ -19,14 +22,20 @@ export default function Topbar({ title, breadcrumb }: TopbarProps) {
 
         <div className="topbar__profile">
           <div className="topbar__profile-info">
-            <div className="topbar__profile-name">Admin User</div>
+            <div className="topbar__profile-name">{user?.name ?? user?.login ?? 'User'}</div>
             <div className="topbar__profile-role">Maintainer</div>
           </div>
-          <img
-            alt="User Profile"
-            className="topbar__profile-img"
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuAs_hjHTg4fd2ru7jeqCNEQl2OfB-wPLlVZIwWStxwPu-OoynKZIRPJoyvQV1ctO16LiFkKWqgr5BaOpWSva_3OSniMYGy_yUVyI4YtP-7EwyuEHAOzlzecxIvixJqPP8Q_ArzJYZ-EKqjsq0odjJQ3tzayOLmGSvxcLKM8CcfxKj2186O5soZ7mf4BTwqo-Z3BNQw2J87jZGW2JCm0dbLi2zejwcwe6lDbBVMKjcKbbi_5K5WMsQKhSliCLMsmEQLwK_NOL3iep28d"
-          />
+          {user?.avatar_url ? (
+            <img
+              alt={user.login}
+              className="topbar__profile-img"
+              src={user.avatar_url}
+            />
+          ) : (
+            <div className="topbar__profile-img" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-surface-container-high)' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>person</span>
+            </div>
+          )}
         </div>
       </div>
     </header>
