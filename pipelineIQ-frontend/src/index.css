@@ -783,6 +783,45 @@ input, textarea {
   margin-bottom: 20px;
 }
 
+.workspace-overview-grid {
+  display: grid;
+  gap: 20px;
+}
+
+.dashboard-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.kpi-card {
+  padding: 18px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-glow);
+}
+
+.kpi-card span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  margin-bottom: 8px;
+}
+
+.kpi-card strong {
+  display: block;
+  font-size: 1.4rem;
+  margin-bottom: 8px;
+}
+
+.kpi-card p {
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
 .panel-heading {
   margin-bottom: 18px;
 }
@@ -831,6 +870,30 @@ input, textarea {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 14px;
+}
+
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+}
+
+.health-card {
+  padding: 18px;
+  border-radius: var(--radius-md);
+  background: var(--bg-soft);
+  border: 1px solid var(--border-subtle);
+}
+
+.health-card span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin-bottom: 8px;
+}
+
+.health-card strong {
+  font-size: 1.2rem;
 }
 
 .risk-card {
@@ -887,6 +950,146 @@ input, textarea {
 .event-card time {
   color: var(--text-secondary);
   font-size: 0.88rem;
+}
+
+.dashboard-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.dashboard-tab {
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-soft);
+  color: var(--text-secondary);
+  text-transform: capitalize;
+  transition: all 0.2s ease;
+}
+
+.dashboard-tab:hover,
+.dashboard-tab.active {
+  background: var(--gradient-btn);
+  color: #fff;
+  border-color: transparent;
+}
+
+.tab-panel {
+  min-height: 220px;
+}
+
+.dashboard-feed {
+  display: grid;
+  gap: 16px;
+}
+
+.feed-card {
+  padding: 18px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-soft);
+  border: 1px solid var(--border-subtle);
+}
+
+.feed-card.error {
+  border-color: rgba(239, 68, 68, 0.26);
+}
+
+.feed-card.diagnosis {
+  border-color: rgba(59, 130, 246, 0.24);
+}
+
+.feed-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.feed-card-top h3 {
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+
+.feed-card-top p {
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.status-pill.healthy,
+.status-pill.success,
+.status-pill.completed {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+}
+
+.status-pill.degraded,
+.status-pill.cancelled,
+.status-pill.skipped {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+}
+
+.status-pill.failing,
+.status-pill.failure,
+.status-pill.failed {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+.status-pill.pending,
+.status-pill.queued,
+.status-pill.unknown {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--text-secondary);
+}
+
+.feed-summary {
+  color: var(--text-primary);
+  line-height: 1.6;
+  margin-bottom: 12px;
+  white-space: pre-wrap;
+}
+
+.feed-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  margin-top: 12px;
+}
+
+.log-preview,
+.report-markdown {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: rgba(2, 6, 23, 0.08);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  line-height: 1.55;
+  overflow-x: auto;
+}
+
+.inline-error {
+  color: #ef4444;
+  margin-top: 8px;
 }
 
 /* Repo list */
@@ -1285,6 +1488,11 @@ input, textarea {
   }
 
   .workspace-header {
+    flex-direction: column;
+  }
+
+  .feed-card-top,
+  .feed-meta {
     flex-direction: column;
   }
 }

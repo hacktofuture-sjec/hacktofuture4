@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import hmac
 import time
+import zipfile
 from typing import Any
 
 import httpx
@@ -103,6 +105,35 @@ async def list_installation_repositories(installation_id: int) -> list[dict[str,
         token=installation_token,
     )
     return repos_response.get("repositories", [])
+
+
+async def download_workflow_logs(
+    installation_id: int,
+    repository_full_name: str,
+    run_id: int,
+) -> str:
+    installation_token = await get_installation_access_token(installation_id)
+    owner, repo = repository_full_name.split("/", 1)
+
+    async with httpx.AsyncClient(follow_redirects=True) as client:
+        response = await client.get(
+            f"{GITHUB_API_BASE}/repos/{owner}/{repo}/actions/runs/{run_id}/logs",
+            headers={
+                "Authorization": f"Bearer {installation_token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            timeout=60.0,
+        )
+        response.raise_for_status()
+
+    archive = zipfile.ZipFile(io.BytesIO(response.content))
+    chunks: list[str] = []
+    for name in archive.namelist():
+        with archive.open(name) as handle:
+            content = handle.read().decode("utf-8", errors="replace")
+            chunks.append(f"===== {name} =====\n{content}")
+    return "\n\n".join(chunks)
 
 
 def verify_webhook_signature(body: bytes, signature_header: str | None) -> bool:

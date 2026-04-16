@@ -27,6 +27,30 @@ class Settings(BaseSettings):
     MONGODB_URI: str
     MONGODB_DB_NAME: str = "pipelineiq"
 
+    KAFKA_ENABLED: bool = True
+    KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
+    KAFKA_PIPELINE_EVENTS_TOPIC: str = "pipeline-events"
+    KAFKA_DIAGNOSIS_REQUIRED_TOPIC: str = "diagnosis-required"
+    KAFKA_MONITOR_GROUP_ID: str = "pipelineiq-monitor-agent"
+    KAFKA_DIAGNOSIS_GROUP_ID: str = "pipelineiq-diagnosis-agent"
+
+    OPENAI_API_KEY: str | None = None
+    OPENAI_API_BASE_URL: str = "https://api.openai.com/v1"
+    GROQ_API_KEY: str | None = None
+    GROQ_API_BASE_URL: str = "https://api.groq.com/openai/v1"
+    GITHUB_TOKEN: str | None = None
+    GITHUB_MODELS_API_BASE_URL: str = "https://models.github.ai/inference"
+
+    MONITOR_AGENT_PRIMARY_PROVIDER: str = "github_models"
+    MONITOR_AGENT_PRIMARY_MODEL: str = "openai/gpt-4o-mini"
+    MONITOR_AGENT_FALLBACK_PROVIDER: str = "groq"
+    MONITOR_AGENT_FALLBACK_MODEL: str = "llama-3.3-70b-versatile"
+
+    DIAGNOSIS_AGENT_PRIMARY_PROVIDER: str = "groq"
+    DIAGNOSIS_AGENT_PRIMARY_MODEL: str = "openai/gpt-oss-120b"
+    DIAGNOSIS_AGENT_FALLBACK_PROVIDER: str = "github_models"
+    DIAGNOSIS_AGENT_FALLBACK_MODEL: str = "openai/gpt-4.1"
+
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
     SESSION_EXPIRY_DAYS: int = 15

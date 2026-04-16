@@ -16,6 +16,7 @@ from services.github_app import (
     list_installation_repositories,
     verify_webhook_signature,
 )
+from services.pipeline_runtime import pipeline_runtime
 
 from config import settings
 
@@ -146,6 +147,7 @@ async def list_workspace_events(
 
 
 @router.post("/api/github/webhooks", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/webhook/github", status_code=status.HTTP_202_ACCEPTED)
 async def github_webhook(request: Request):
     body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256")
@@ -158,18 +160,20 @@ async def github_webhook(request: Request):
     delivery_id = request.headers.get("X-GitHub-Delivery", "")
     installation_id = payload.get("installation", {}).get("id")
     repo_full_name = payload.get("repository", {}).get("full_name")
+    action = payload.get("action")
 
     existing = await WebhookEvent.find_one(WebhookEvent.delivery_id == delivery_id)
     if existing is None:
         await WebhookEvent(
             delivery_id=delivery_id,
             event_type=event_type,
-            action=payload.get("action"),
+            action=action,
             installation_id=installation_id,
             repository_full_name=repo_full_name,
             payload=payload,
         ).insert()
 
+    workspace = None
     if installation_id is not None:
         workspace = await Workspace.find_one(
             Workspace.github_installation_id == installation_id
@@ -179,4 +183,26 @@ async def github_webhook(request: Request):
             workspace.updated_at = datetime.now(timezone.utc)
             await workspace.save()
 
-    return {"received": True, "event_type": event_type, "delivery_id": delivery_id}
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Workspace not found for installation")
+
+    pipeline_run = await pipeline_runtime.queue_event(
+        workspace=workspace,
+        event_type=event_type,
+        delivery_id=delivery_id,
+        payload=payload,
+    )
+
+    return {
+        "received": True,
+        "event_type": event_type,
+        "delivery_id": delivery_id,
+        "workspace_id": str(workspace.id),
+        "repo": repo_full_name or workspace.github_repo_full_name,
+        "run_id": pipeline_run.run_id,
+        "conclusion": pipeline_run.conclusion,
+        "branch": pipeline_run.branch,
+        "commit_sha": pipeline_run.commit_sha,
+        "triggered_by": pipeline_run.triggered_by,
+        "kafka_topic": settings.KAFKA_PIPELINE_EVENTS_TOPIC,
+    }

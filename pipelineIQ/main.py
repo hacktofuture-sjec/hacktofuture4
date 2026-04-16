@@ -7,11 +7,14 @@ from database import connect_db, disconnect_db
 from routers.auth import router as auth_router
 from routers.github_app import router as github_app_router
 from routers.workspaces import router as workspace_router
+from services.pipeline_runtime import pipeline_runtime
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_db()
+    await pipeline_runtime.start()
     yield
+    await pipeline_runtime.stop()
     await disconnect_db()
 
 
