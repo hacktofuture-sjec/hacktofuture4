@@ -51,6 +51,22 @@ class Settings(BaseSettings):
     DIAGNOSIS_AGENT_FALLBACK_PROVIDER: str = "github_models"
     DIAGNOSIS_AGENT_FALLBACK_MODEL: str = "openai/gpt-4.1"
 
+    RISK_AGENT_PRIMARY_PROVIDER: str = "github_models"
+    RISK_AGENT_PRIMARY_MODEL: str = "gpt-4o-mini"
+    RISK_AGENT_FALLBACK_PROVIDER: str = "groq"
+    RISK_AGENT_FALLBACK_MODEL: str = "llama-3.3-70b-versatile"
+
+    AUTOFIX_AGENT_PRIMARY_PROVIDER: str = "github_models"
+    AUTOFIX_AGENT_PRIMARY_MODEL: str = "gpt-4o-mini"
+    AUTOFIX_AGENT_FALLBACK_PROVIDER: str = "groq"
+    AUTOFIX_AGENT_FALLBACK_MODEL: str = "llama-3.3-70b-versatile"
+    AUTOFIX_REPORT_EXPIRY_HOURS: int = 168
+
+    SLACK_ENABLED: bool = False
+    SLACK_WEBHOOK_URL: str | None = None
+    SLACK_DEFAULT_CHANNEL: str | None = None
+    SLACK_DEVOPS_MENTION_DEFAULT: str | None = None
+
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
     SESSION_EXPIRY_DAYS: int = 15

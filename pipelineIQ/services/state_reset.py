@@ -16,6 +16,8 @@ async def clear_backend_state() -> None:
             "repositories",
             "webhook_events",
             "pipeline_runs",
+            "autofix_executions",
+            "autofix_memories",
         ):
             await database[collection_name].delete_many({})
     finally:

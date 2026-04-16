@@ -2,10 +2,21 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import api from "../api/client";
 
-const TABS = ["overview", "monitor", "errors", "diagnosis"];
+const TABS = ["overview", "monitor", "errors", "diagnosis", "autofix"];
 
 function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function bandFromWorkspaceThresholds(score, riskProfile, fallbackBand = "") {
+  if (typeof score !== "number" || !riskProfile) {
+    return normalizeString(fallbackBand);
+  }
+  const autoFixBelow = Number(riskProfile.auto_fix_below);
+  const requireApprovalAbove = Number(riskProfile.require_approval_above);
+  if (score <= autoFixBelow) return "low";
+  if (score <= requireApprovalAbove) return "medium";
+  return "high";
 }
 
 function normalizeMonitorReport(item) {
@@ -21,12 +32,43 @@ function normalizeMonitorReport(item) {
 
 function normalizeDiagnosisReport(item) {
   const report = item?.diagnosis_report_json || {};
+  const risk = item?.risk_report_json || {};
+  const riskInputs = item?.risk_inputs_json || {};
   return {
     name: normalizeString(report.name || item?.workflow_name || ""),
-    branch: normalizeString(report.branch || item?.branch || ""),
+    commitTitle: normalizeString(item?.commit_title || report.name || item?.workflow_name || ""),
+    branch: normalizeString(item?.display_branch || report.branch || item?.branch || ""),
+    issuePreview: normalizeString(item?.issue_preview || ""),
     errorType: normalizeString(report.error_type || ""),
     possibleCauses: Array.isArray(report.possible_causes) ? report.possible_causes.filter((entry) => typeof entry === "string" && entry.trim()) : [],
     latestWorkingChange: normalizeString(report.latest_working_change || ""),
+    riskScore: typeof risk.risk_score === "number" ? risk.risk_score : item?.risk_score,
+    riskBand: normalizeString(risk.risk_band || item?.risk_band || ""),
+    scoreBreakdown: Array.isArray(riskInputs.score_breakdown) ? riskInputs.score_breakdown.filter((entry) => entry && typeof entry === "object") : [],
+    summary: normalizeString(risk.plain_english_summary || ""),
+    recommendedAction: normalizeString(risk.recommended_action || ""),
+    reversibilityNote: normalizeString(risk.reversibility_note || ""),
+    autofixStatus: normalizeString(item?.autofix_status || ""),
+    autofixMode: normalizeString(item?.autofix_mode || ""),
+    autofixReportUrl: normalizeString(item?.autofix_report_url || ""),
+    autofixPrUrl: normalizeString(item?.autofix_pr_url || ""),
+    autofixError: normalizeString(item?.autofix_error || ""),
+  };
+}
+
+function normalizeAutofixReport(item) {
+  return {
+    id: normalizeString(item?.id || ""),
+    workflowName: normalizeString(item?.workflow_name || ""),
+    branch: normalizeString(item?.branch || item?.target_branch || ""),
+    mode: normalizeString(item?.mode || ""),
+    status: normalizeString(item?.execution_status || ""),
+    riskScore: typeof item?.risk_score === "number" ? item.risk_score : null,
+    summary: normalizeString(item?.fix_summary || ""),
+    prUrl: normalizeString(item?.pr_url || ""),
+    reportUrl: normalizeString(item?.report_url || ""),
+    loopBlockedReason: normalizeString(item?.loop_blocked_reason || ""),
+    updatedAt: normalizeString(item?.updated_at || ""),
   };
 }
 
@@ -35,13 +77,47 @@ function StatusPill({ value }) {
   return <span className={`status-pill ${normalized}`}>{value || "unknown"}</span>;
 }
 
+function RiskBadge({ score, band, error }) {
+  if (error) {
+    return (
+      <div className="risk-badge" style={{ borderColor: "var(--red-5)", color: "var(--red-11)" }}>
+        <strong>ERR</strong>
+        <span>Risk failed</span>
+      </div>
+    );
+  }
+
+  const normalizedBand = normalizeString(band).toLowerCase() || "unknown";
+  const scoreLabel = typeof score === "number" ? score : "--";
+
+  return (
+    <div className={`risk-badge ${normalizedBand}`}>
+      <strong>{scoreLabel}</strong>
+      <span>{normalizedBand === "unknown" ? "Risk pending" : `${normalizedBand} risk`}</span>
+    </div>
+  );
+}
+
 export default function WorkspacePage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [backfillingRisk, setBackfillingRisk] = useState(false);
+  const [runningAutofixById, setRunningAutofixById] = useState({});
+  const [backfillMessage, setBackfillMessage] = useState("");
+  const [autofixMessage, setAutofixMessage] = useState("");
+  const [expandedDiagnosisId, setExpandedDiagnosisId] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
+
+  const [isEditingPolicy, setIsEditingPolicy] = useState(false);
+  const [policyForm, setPolicyForm] = useState({
+    auto_fix_below: 30,
+    require_approval_above: 60,
+    production_branch: "main"
+  });
+  const [policyError, setPolicyError] = useState("");
 
   const installationState = searchParams.get("installation");
   const setupAction = searchParams.get("setup_action");
@@ -93,11 +169,102 @@ export default function WorkspacePage() {
     }
   };
 
+  const backfillRiskReports = async () => {
+    setBackfillMessage("");
+    setBackfillingRisk(true);
+    try {
+      const { data } = await api.post(`/workspaces/${id}/diagnosis/backfill-risk`);
+      await fetchDashboard();
+      setBackfillMessage(`Risk backfill complete: updated ${data.updated} of ${data.processed} diagnosis reports.`);
+    } catch (err) {
+      console.error("Failed to backfill risk reports", err);
+      const detail = err?.response?.data?.detail;
+      setBackfillMessage(typeof detail === "string" ? detail : "Failed to backfill risk reports.");
+    } finally {
+      setBackfillingRisk(false);
+    }
+  };
+
+  const runAutofixForDiagnosis = async (pipelineRunId) => {
+    if (!pipelineRunId) return;
+    if (!workspace?.slack_devops_mention) {
+      const mention = window.prompt("Enter the DevOps engineer Slack mention (example: @alice or <@U12345>) for auto-fix notifications:");
+      if (!mention || !mention.trim()) {
+        setAutofixMessage("Auto-fix requires a DevOps Slack mention before notifications can be sent.");
+        return;
+      }
+      try {
+        await api.put(`/workspaces/${id}`, { slack_devops_mention: mention.trim() });
+      } catch (err) {
+        const detail = err?.response?.data?.detail;
+        setAutofixMessage(typeof detail === "string" ? detail : "Failed to save DevOps Slack mention.");
+        return;
+      }
+    }
+    setAutofixMessage("");
+    setRunningAutofixById((prev) => ({ ...prev, [pipelineRunId]: true }));
+    try {
+      await api.post(`/workspaces/${id}/diagnosis/${pipelineRunId}/run-autofix`);
+      await fetchDashboard();
+      setAutofixMessage("Auto-fix reprocessing started for the selected diagnosis report.");
+    } catch (err) {
+      console.error("Failed to run auto-fix for diagnosis report", err);
+      const detail = err?.response?.data?.detail;
+      setAutofixMessage(typeof detail === "string" ? detail : "Failed to run auto-fix for this diagnosis report.");
+    } finally {
+      setRunningAutofixById((prev) => {
+        const next = { ...prev };
+        delete next[pipelineRunId];
+        return next;
+      });
+    }
+  };
+
+  const handleEditPolicyClick = () => {
+    setPolicyForm({
+      auto_fix_below: dashboard?.workspace?.risk_profile?.auto_fix_below ?? 30,
+      require_approval_above: dashboard?.workspace?.risk_profile?.require_approval_above ?? 60,
+      production_branch: dashboard?.workspace?.risk_profile?.production_branch || dashboard?.workspace?.github_default_branch || "main"
+    });
+    setPolicyError("");
+    setIsEditingPolicy(true);
+  };
+
+  const handleSavePolicy = async (e) => {
+    e.preventDefault();
+    setPolicyError("");
+    const data = {
+      risk_profile: {
+        auto_fix_below: Number(policyForm.auto_fix_below),
+        require_approval_above: Number(policyForm.require_approval_above),
+        production_branch: policyForm.production_branch
+      }
+    };
+    if (data.risk_profile.auto_fix_below >= data.risk_profile.require_approval_above) {
+      setPolicyError("Auto-merge value must be strictly less than manual approval value.");
+      return;
+    }
+    try {
+      await api.put(`/workspaces/${id}`, data);
+      await fetchDashboard();
+      setIsEditingPolicy(false);
+    } catch (err) {
+      setPolicyError(err?.response?.data?.detail || "Failed to update risk profile");
+    }
+  };
+
   const workspace = dashboard?.workspace;
   const health = dashboard?.health;
   const monitorLogs = dashboard?.monitor_logs || [];
   const errors = dashboard?.errors || [];
   const diagnosisReports = dashboard?.diagnosis_reports || [];
+  const autofixReports = dashboard?.autofix_reports || [];
+
+  useEffect(() => {
+    if (!diagnosisReports.some((item) => item.id === expandedDiagnosisId)) {
+      setExpandedDiagnosisId(null);
+    }
+  }, [diagnosisReports, expandedDiagnosisId]);
 
   const activeTabContent = useMemo(() => {
     if (!dashboard || !workspace) return null;
@@ -179,50 +346,208 @@ export default function WorkspacePage() {
     }
 
     if (activeTab === "diagnosis") {
-      return diagnosisReports.length ? (
+      return (
+        <div className="diagnosis-tab">
+          <div className="diagnosis-toolbar">
+            <div>
+              <h3>Diagnosis Reports</h3>
+              <p>Fetch current compare context and backfill risk scores for older diagnosis records.</p>
+            </div>
+            <button type="button" className="btn-secondary" onClick={backfillRiskReports} disabled={backfillingRisk || !diagnosisReports.length}>
+              {backfillingRisk ? "Backfilling risk…" : "Backfill Risk Scores"}
+            </button>
+          </div>
+
+          {backfillMessage ? <div className="notice-banner success subtle">{backfillMessage}</div> : null}
+          {autofixMessage ? <div className="notice-banner subtle">{autofixMessage}</div> : null}
+
+          {diagnosisReports.length ? (
+            <div className="dashboard-feed">
+              {diagnosisReports.map((item) => {
+                const report = normalizeDiagnosisReport(item);
+                const isExpanded = expandedDiagnosisId === item.id;
+                const canRunAutofix = item.health_status === "failing" && item.diagnosis_status === "completed";
+                const isRunningAutofix = Boolean(runningAutofixById[item.id]);
+                const effectiveRiskBand = bandFromWorkspaceThresholds(report.riskScore, workspace.risk_profile, report.riskBand);
+                return (
+                  <article key={item.id} className={`feed-card diagnosis ${isExpanded ? "expanded" : "collapsed"}`}>
+                    <div className="diagnosis-accordion-header">
+                      <div className="diagnosis-accordion-summary">
+                        <div>
+                          <h3>{report.commitTitle || "Unknown commit"}</h3>
+                          <p>{report.branch || "unknown branch"}</p>
+                        </div>
+                        <p className="diagnosis-issue-preview">{report.issuePreview || report.errorType || "No issue summary captured."}</p>
+                      </div>
+                      <div className="diagnosis-card-top-right accordion-actions">
+                        <RiskBadge score={report.riskScore} band={effectiveRiskBand} error={item.risk_error} />
+                        <div className="accordion-meta">
+                          <StatusPill value={item.diagnosis_status} />
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            disabled={!canRunAutofix || isRunningAutofix}
+                            onClick={() => runAutofixForDiagnosis(item.id)}
+                          >
+                            {isRunningAutofix ? "Running Auto-fix…" : "Run Auto-fix"}
+                          </button>
+                          <button
+                            type="button"
+                            className="accordion-toggle"
+                            onClick={() => setExpandedDiagnosisId(isExpanded ? null : item.id)}
+                          >
+                            {isExpanded ? "Collapse" : "Expand"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {isExpanded ? (
+                      <>
+                        {item.risk_error ? (
+                          <p className="inline-error inline-risk-error">Risk calculation failed: {item.risk_error}</p>
+                        ) : null}
+
+                        <div className="diagnosis-facts">
+                          <span className="diag-chip">Error: {report.errorType || "unknown"}</span>
+                          {report.recommendedAction ? <span className="diag-chip">Action: {report.recommendedAction.replaceAll("_", " ")}</span> : null}
+                        </div>
+
+                        <section className="report-section full">
+                          <h4>Possible causes</h4>
+                          <ul>
+                            {report.possibleCauses.length ? (
+                              report.possibleCauses.map((cause, index) => <li key={`${item.id}-cause-${index}`}>{cause}</li>)
+                            ) : (
+                              <li>No causes captured.</li>
+                            )}
+                          </ul>
+                        </section>
+
+                        <section className="report-section full">
+                          <h4>Latest working change</h4>
+                          <p>{report.latestWorkingChange || "No diff summary captured."}</p>
+                        </section>
+
+                        {report.summary ? (
+                          <section className="report-section full">
+                            <h4>Risk summary</h4>
+                            <p>{report.summary}</p>
+                          </section>
+                        ) : null}
+
+                        {report.scoreBreakdown.length ? (
+                          <section className="report-section full">
+                            <h4>Risk score breakdown</h4>
+                            <div className="risk-breakdown-table">
+                              <div className="risk-breakdown-header">
+                                <span>Factor</span>
+                                <span>Observed value</span>
+                                <span>Points</span>
+                              </div>
+                              {report.scoreBreakdown.map((entry, index) => (
+                                <div key={`${item.id}-breakdown-${index}`} className="risk-breakdown-row">
+                                  <span>{normalizeString(entry.title || entry.label || "Factor")}</span>
+                                  <span>{normalizeString(entry.value || entry.detail || "-")}</span>
+                                  <strong className={Number(entry.points) > 0 ? "positive" : Number(entry.points) < 0 ? "negative" : ""}>
+                                    {Number(entry.points) > 0 ? `+${entry.points}` : `${entry.points ?? 0}`}
+                                  </strong>
+                                </div>
+                              ))}
+                            </div>
+                          </section>
+                        ) : null}
+
+                        {report.reversibilityNote ? (
+                          <section className="report-section full">
+                            <h4>Rollback note</h4>
+                            <p>{report.reversibilityNote}</p>
+                          </section>
+                        ) : null}
+
+                        {report.autofixStatus ? (
+                          <section className="report-section full">
+                            <h4>Auto-fix workflow</h4>
+                            <p>Mode: {report.autofixMode || "n/a"} | Status: {report.autofixStatus}</p>
+                            {report.autofixError ? <p>{report.autofixError}</p> : null}
+                            {report.autofixPrUrl ? <p><a href={report.autofixPrUrl} target="_blank" rel="noreferrer">Open PR</a></p> : null}
+                            {report.autofixMode !== "auto_merge" && report.autofixReportUrl ? <p><a href={report.autofixReportUrl} target="_blank" rel="noreferrer">Open signed report</a></p> : null}
+                          </section>
+                        ) : null}
+
+                        <div className="feed-meta">
+                          <span>
+                            Diagnosis agent: {item.diagnosis_provider || "pending"}
+                            {item.risk_provider ? ` • Risk agent: ${item.risk_provider}` : ""}
+                          </span>
+                          <span>{new Date(item.updated_at).toLocaleString()}</span>
+                        </div>
+                      </>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="empty-inline">Diagnosis reports appear only after a failure.</div>
+          )}
+        </div>
+      );
+    }
+
+    if (activeTab === "autofix") {
+      return autofixReports.length ? (
         <div className="dashboard-feed">
-          {diagnosisReports.map((item) => {
-            const report = normalizeDiagnosisReport(item);
+          {autofixReports.map((item) => {
+            const report = normalizeAutofixReport(item);
             return (
-              <article key={item.id} className="feed-card diagnosis">
+              <article key={report.id || item.id} className="feed-card diagnosis">
                 <div className="feed-card-top">
                   <div>
-                    <h3>{report.name || "workflow_run"}</h3>
+                    <h3>{report.workflowName || "workflow_run"}</h3>
                     <p>{report.branch || "unknown branch"}</p>
                   </div>
-                  <StatusPill value={item.diagnosis_status} />
+                  <StatusPill value={report.status || "unknown"} />
                 </div>
 
-                <div className="diagnosis-facts">
-                  <span className="diag-chip">Error: {report.errorType || "unknown"}</span>
+                <div className="report-kv-grid">
+                  <div className="report-kv-card">
+                    <span>Mode</span>
+                    <strong>{report.mode || "n/a"}</strong>
+                  </div>
+                  <div className="report-kv-card">
+                    <span>Risk score</span>
+                    <strong>{typeof report.riskScore === "number" ? report.riskScore : "n/a"}</strong>
+                  </div>
+                  <div className="report-kv-card">
+                    <span>Updated</span>
+                    <strong>{report.updatedAt ? new Date(report.updatedAt).toLocaleString() : "n/a"}</strong>
+                  </div>
                 </div>
 
                 <section className="report-section full">
-                  <h4>Possible causes</h4>
-                  <ul>
-                    {report.possibleCauses.length ? (
-                      report.possibleCauses.map((cause, index) => <li key={`${item.id}-cause-${index}`}>{cause}</li>)
-                    ) : (
-                      <li>No causes captured.</li>
-                    )}
-                  </ul>
+                  <h4>Summary</h4>
+                  <p>{report.summary || "No fix summary captured."}</p>
                 </section>
 
-                <section className="report-section full">
-                  <h4>Latest working change</h4>
-                  <p>{report.latestWorkingChange || "No diff summary captured."}</p>
-                </section>
+                {report.loopBlockedReason ? (
+                  <p className="inline-error">{report.loopBlockedReason}</p>
+                ) : null}
 
-                <div className="feed-meta">
-                  <span>Diagnosis agent: {item.diagnosis_provider || "pending"}</span>
-                  <span>{new Date(item.updated_at).toLocaleString()}</span>
+                <div className="workspace-actions" style={{ marginTop: "8px" }}>
+                  {report.prUrl ? (
+                    <a className="btn-secondary" href={report.prUrl} target="_blank" rel="noreferrer">Open PR</a>
+                  ) : null}
+                  {report.mode !== "auto_merge" && report.reportUrl ? (
+                    <a className="btn-secondary" href={report.reportUrl} target="_blank" rel="noreferrer">Open Signed Report</a>
+                  ) : null}
                 </div>
               </article>
             );
           })}
         </div>
       ) : (
-        <div className="empty-inline">Diagnosis reports appear only after a failure.</div>
+        <div className="empty-inline">No auto-fix reports yet. Run Auto-fix from a diagnosis card to generate one.</div>
       );
     }
 
@@ -281,9 +606,78 @@ export default function WorkspacePage() {
             </div>
           </div>
         </article>
+
+        <article className="workspace-panel">
+          <div className="panel-heading" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <h2>Auto-fix policy</h2>
+              <p>These workspace thresholds decide whether PipelineIQ auto-merges, opens a PR for approval, or only produces a signed review report.</p>
+            </div>
+            {!isEditingPolicy && (
+              <button className="btn-secondary" onClick={handleEditPolicyClick}>
+                Edit Policy
+              </button>
+            )}
+          </div>
+          {isEditingPolicy ? (
+            <form onSubmit={handleSavePolicy} className="auth-form" style={{ maxWidth: "400px", marginTop: "1rem" }}>
+              {policyError && <div className="notice-banner warning">{policyError}</div>}
+              <div className="form-group">
+                <label>Auto-merge up to</label>
+                <input 
+                  type="number" 
+                  value={policyForm.auto_fix_below} 
+                  onChange={(e) => setPolicyForm({...policyForm, auto_fix_below: e.target.value})}
+                  min="1" max="100" required 
+                />
+              </div>
+              <div className="form-group">
+                <label>Manual approval up to</label>
+                <input 
+                  type="number" 
+                  value={policyForm.require_approval_above} 
+                  onChange={(e) => setPolicyForm({...policyForm, require_approval_above: e.target.value})}
+                  min="1" max="100" required 
+                />
+              </div>
+              <div className="form-group">
+                <label>Protected branch</label>
+                <input 
+                  type="text" 
+                  value={policyForm.production_branch} 
+                  onChange={(e) => setPolicyForm({...policyForm, production_branch: e.target.value})}
+                  required 
+                />
+              </div>
+              <div className="workspace-actions" style={{ marginTop: "1rem" }}>
+                <button type="submit" className="btn-primary">Save Changes</button>
+                <button type="button" className="btn-secondary" onClick={() => setIsEditingPolicy(false)}>Cancel</button>
+              </div>
+            </form>
+          ) : (
+            <div className="connection-summary">
+              <div className="summary-item">
+                <span>Auto-merge up to</span>
+                <strong>{workspace.risk_profile?.auto_fix_below ?? 30}</strong>
+              </div>
+              <div className="summary-item">
+                <span>Manual approval up to</span>
+                <strong>{workspace.risk_profile?.require_approval_above ?? 60}</strong>
+              </div>
+              <div className="summary-item">
+                <span>Report only above</span>
+                <strong>{workspace.risk_profile?.require_approval_above ?? 60}</strong>
+              </div>
+              <div className="summary-item">
+                <span>Protected branch</span>
+                <strong>{workspace.risk_profile?.production_branch || workspace.github_default_branch || "main"}</strong>
+              </div>
+            </div>
+          )}
+        </article>
       </div>
     );
-  }, [activeTab, dashboard, diagnosisReports, errors, health, monitorLogs, workspace]);
+  }, [activeTab, autofixReports, backfillMessage, backfillingRisk, dashboard, diagnosisReports, errors, expandedDiagnosisId, health, monitorLogs, workspace, isEditingPolicy, policyForm, policyError]);
 
   if (loading) {
     return (
@@ -370,9 +764,9 @@ export default function WorkspacePage() {
             <p>Diagnosis is triggered only after a failure.</p>
           </article>
           <article className="kpi-card">
-            <span>Reports</span>
-            <strong>{diagnosisReports.length}</strong>
-            <p>Failure reports show a short cause list and latest working change.</p>
+            <span>Auto-fix reports</span>
+            <strong>{autofixReports.length}</strong>
+            <p>Manual runs and generated signed reports appear in the Auto-fix tab.</p>
           </article>
         </section>
       )}

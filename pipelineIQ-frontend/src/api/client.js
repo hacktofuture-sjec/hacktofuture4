@@ -11,7 +11,9 @@ const api = axios.create({
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401 && window.location.pathname !== "/") {
+    const path = window.location.pathname || "/";
+    const isPublicPath = path === "/" || path.startsWith("/autofix/report");
+    if (err.response?.status === 401 && !isPublicPath) {
       window.location.href = "/";
     }
     return Promise.reject(err);

@@ -12,9 +12,11 @@ from beanie import PydanticObjectId
 from config import settings
 from models.pipeline_run import PipelineRun
 from models.workspace import Workspace
+from services.autofix_service import execute_autofix_policy
 from services.error_detection import extract_failure_snippet, has_failure_signal
-from services.github_app import download_workflow_logs, fetch_compare_diff
+from services.github_app import download_workflow_logs, fetch_compare_details
 from services.llm_gateway import call_with_fallback
+from services.risk_classifier import classify_and_store_risk_for_pipeline_run
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +32,8 @@ MONITOR_AGENT_PROMPT = (
 
 DIAGNOSIS_AGENT_PROMPT = (
     "Return only strict JSON with keys name, branch, error_type, possible_causes, latest_working_change. "
-    "Use monitor error log and git diff to infer the cause. Keep output short."
+    "Use monitor error log and git diff to infer the cause. Keep output short. "
+    "If git diff is unavailable, say that explicitly in latest_working_change and do not guess a prior working commit."
 )
 
 
@@ -44,6 +47,8 @@ def _iso(value: datetime | None) -> str:
 
 def _to_monitor_status(conclusion_status: str, logs_text: str) -> str:
     normalized = (conclusion_status or "").strip().upper()
+    if normalized == "SUCCESS":
+        return "SUCCESS"
     if normalized == "FAILURE":
         return "FAILURE"
     if has_failure_signal(logs_text):
@@ -297,8 +302,10 @@ class PipelineRuntime:
         if pipeline_run is None:
             return
 
+        is_success = str(event.get("status") or "").strip().upper() == "SUCCESS"
+
         logs_text = ""
-        if event.get("installation_id") and event.get("repo") and event.get("run_id"):
+        if not is_success and event.get("installation_id") and event.get("repo") and event.get("run_id"):
             try:
                 logs_text = await download_workflow_logs(
                     installation_id=event["installation_id"],
@@ -308,7 +315,7 @@ class PipelineRuntime:
             except Exception as exc:
                 logs_text = f"Failed to fetch workflow logs: {exc}"
 
-        error_snippet = extract_failure_snippet(logs_text)
+        error_snippet = extract_failure_snippet(logs_text) if not is_success else ""
         final_status = _to_monitor_status(event.get("status") or "FAILURE", logs_text)
         monitor_report = {
             "name": event.get("workflow_name") or "",
@@ -334,11 +341,14 @@ class PipelineRuntime:
 
         if monitor_report["status"] != "FAILURE":
             pipeline_run.diagnosis_status = "skipped"
+            pipeline_run.risk_status = "skipped"
+            pipeline_run.autofix_status = "skipped"
             pipeline_run.updated_at = _now()
             await pipeline_run.save()
             return
 
         pipeline_run.diagnosis_status = "queued"
+        pipeline_run.risk_status = "queued"
         pipeline_run.error_summary = error_snippet
         pipeline_run.updated_at = _now()
         await pipeline_run.save()
@@ -366,26 +376,45 @@ class PipelineRuntime:
             await pipeline_run.save()
             return
 
-        compare_diff = "Git diff unavailable."
+        compare_details = {
+            "diff_text": "Git diff unavailable.",
+            "files": [],
+            "changed_files": [],
+            "total_changed_lines": 0,
+        }
         if event.get("installation_id") and event.get("repo"):
             try:
-                compare_diff = await fetch_compare_diff(
+                compare_details = await fetch_compare_details(
                     installation_id=event["installation_id"],
                     repository_full_name=event["repo"],
                     base_sha=event.get("base_sha"),
                     head_sha=event.get("head_sha"),
                 )
             except Exception as exc:
-                compare_diff = f"Git diff lookup failed: {exc}"
+                compare_details = {
+                    "diff_text": f"Git diff lookup failed: {exc}",
+                    "files": [],
+                    "changed_files": [],
+                    "total_changed_lines": 0,
+                }
 
-        diagnosis_time = _iso(_now())
-        system_prompt = (
-            "Return only strict JSON with keys name, branch, error_type, possible_causes, latest_working_change."
-        )
+        compare_diff = compare_details["diff_text"]
+
+        system_prompt = DIAGNOSIS_AGENT_PROMPT
         user_prompt = (
             f"Monitor error log:\n{monitor_report.get('error', '') or event.get('error_snippet', '')}\n\n"
             f"Git diff:\n{compare_diff}"
         )
+
+        diagnosis_report = {
+            "name": event.get("workflow_name") or "",
+            "branch": event.get("branch") or "",
+            "error_type": "Runtime Failure",
+            "possible_causes": ["Inspect the failing step and recent diff"],
+            "latest_working_change": f"{_first_diff_file(compare_diff)} {_first_change_summary(compare_diff)}".strip(),
+        }
+        diagnosis_provider = "deterministic"
+        diagnosis_model = "rules-only"
 
         try:
             response_text, provider, model = await call_with_fallback(
@@ -399,25 +428,47 @@ class PipelineRuntime:
             )
             diagnosis_report = _parse_json_object(
                 response_text,
-                {
-                    "name": event.get("workflow_name") or "",
-                    "branch": event.get("branch") or "",
-                    "error_type": "Runtime Failure",
-                    "possible_causes": ["Inspect the failing step and recent diff"],
-                    "latest_working_change": f"{_first_diff_file(compare_diff)} {_first_change_summary(compare_diff)}".strip(),
-                },
+                diagnosis_report,
             )
-            diagnosis_report["name"] = diagnosis_report.get("name") or event.get("workflow_name") or ""
-            diagnosis_report["branch"] = diagnosis_report.get("branch") or event.get("branch") or ""
-            pipeline_run.diagnosis_status = "completed"
-            pipeline_run.diagnosis_report_json = diagnosis_report
-            pipeline_run.diagnosis_report = json.dumps(diagnosis_report, separators=(",", ":"))
-            pipeline_run.diagnosis_provider = provider
-            pipeline_run.diagnosis_model = model
-            pipeline_run.diagnosis_error = None
-        except Exception as exc:
-            pipeline_run.diagnosis_status = "failed"
-            pipeline_run.diagnosis_error = str(exc)
+            diagnosis_provider = provider
+            diagnosis_model = model
+        except Exception:
+            pass
+
+        diagnosis_report["name"] = diagnosis_report.get("name") or event.get("workflow_name") or ""
+        diagnosis_report["branch"] = diagnosis_report.get("branch") or event.get("branch") or ""
+        pipeline_run.diagnosis_status = "completed"
+        pipeline_run.diagnosis_report_json = diagnosis_report
+        pipeline_run.diagnosis_report = json.dumps(diagnosis_report, separators=(",", ":"))
+        pipeline_run.diagnosis_provider = diagnosis_provider
+        pipeline_run.diagnosis_model = diagnosis_model
+        pipeline_run.diagnosis_error = None
+
+        workspace = await Workspace.get(pipeline_run.workspace_id)
+        if workspace is None:
+            pipeline_run.risk_status = "failed"
+            pipeline_run.risk_error = "Workspace not found for risk classification"
+            pipeline_run.autofix_status = "failed"
+            pipeline_run.autofix_error = "Workspace not found for autofix policy"
+        else:
+            try:
+                await classify_and_store_risk_for_pipeline_run(
+                    workspace=workspace,
+                    pipeline_run=pipeline_run,
+                )
+            except Exception as exc:
+                pipeline_run.risk_status = "failed"
+                pipeline_run.risk_error = str(exc)
+
+            if pipeline_run.risk_status == "completed":
+                try:
+                    await execute_autofix_policy(
+                        workspace=workspace,
+                        pipeline_run=pipeline_run,
+                    )
+                except Exception as exc:
+                    pipeline_run.autofix_status = "failed"
+                    pipeline_run.autofix_error = str(exc)
 
         pipeline_run.updated_at = _now()
         await pipeline_run.save()

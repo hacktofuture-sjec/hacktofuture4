@@ -24,12 +24,26 @@ class PipelineRun(Document):
     kafka_status: str = "queued"
     monitor_status: str = "pending"
     diagnosis_status: str = "pending"
+    risk_status: str = "pending"
     monitor_summary: Optional[str] = None
     monitor_report_json: dict[str, Any] = Field(default_factory=dict)
     monitor_logs_excerpt: list[str] = Field(default_factory=list)
     diagnosis_report: Optional[str] = None
     diagnosis_report_json: dict[str, Any] = Field(default_factory=dict)
     diagnosis_error: Optional[str] = None
+    risk_score: Optional[int] = None
+    risk_band: Optional[str] = None
+    risk_report_json: dict[str, Any] = Field(default_factory=dict)
+    risk_inputs_json: dict[str, Any] = Field(default_factory=dict)
+    risk_error: Optional[str] = None
+    risk_provider: Optional[str] = None
+    risk_model: Optional[str] = None
+    autofix_status: str = "pending"
+    autofix_mode: Optional[str] = None
+    autofix_report_url: Optional[str] = None
+    autofix_pr_url: Optional[str] = None
+    autofix_execution_id: Optional[str] = None
+    autofix_error: Optional[str] = None
     error_summary: Optional[str] = None
     diagnosis_provider: Optional[str] = None
     diagnosis_model: Optional[str] = None

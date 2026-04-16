@@ -67,7 +67,26 @@ Output JSON shape:
 }
 ```
 
-## 5. Restore successful state
+## 5. Expected risk classification behavior
+
+Risk classification runs immediately after diagnosis for failing workflow runs.
+
+Expected JSON shape:
+
+```json
+{
+  "risk_score": 0,
+  "risk_band": "low",
+  "top_contributors": ["...", "...", "..."],
+  "plain_english_summary": "...",
+  "recommended_action": "auto_fix",
+  "reversibility_note": "..."
+}
+```
+
+The diagnosis tab should show the risk score in the top-right corner of each diagnosis card.
+
+## 6. Restore successful state
 
 Revert the intentional break in `flask_app/app.py`, push again, and verify monitor returns:
 

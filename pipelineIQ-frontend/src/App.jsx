@@ -6,6 +6,7 @@ import Navbar from "./components/Navbar";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import WorkspacePage from "./pages/WorkspacePage";
+import AutoFixReportPage from "./pages/AutoFixReportPage";
 
 function App() {
   return (
@@ -31,6 +32,7 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route path="/autofix/report" element={<AutoFixReportPage />} />
           </Routes>
         </main>
       </AuthProvider>

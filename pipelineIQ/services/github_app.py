@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import hmac
@@ -59,12 +60,14 @@ async def _github_request(
     token: str,
     token_type: str = "Bearer",
     json_body: dict[str, Any] | None = None,
+    query_params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     async with httpx.AsyncClient() as client:
         response = await client.request(
             method,
             f"{GITHUB_API_BASE}{path}",
             json=json_body,
+            params=query_params,
             headers={
                 "Authorization": f"{token_type} {token}",
                 "Accept": "application/vnd.github+json",
@@ -136,33 +139,95 @@ async def download_workflow_logs(
     return "\n\n".join(chunks)
 
 
-async def fetch_compare_diff(
+async def fetch_commit_parent_sha(
+    installation_id: int,
+    repository_full_name: str,
+    commit_sha: str | None,
+) -> str | None:
+    if not commit_sha:
+        return None
+
+    installation_token = await get_installation_access_token(installation_id)
+    owner, repo = repository_full_name.split("/", 1)
+    commit = await _github_request(
+        "GET",
+        f"/repos/{owner}/{repo}/commits/{commit_sha}",
+        token=installation_token,
+    )
+
+    parents = commit.get("parents") or []
+    for parent in parents:
+        parent_sha = parent.get("sha")
+        if parent_sha:
+            return parent_sha
+    return None
+
+
+async def fetch_compare_details(
     installation_id: int,
     repository_full_name: str,
     base_sha: str | None,
     head_sha: str | None,
-) -> str:
-    if not base_sha or not head_sha:
-        return "Git diff unavailable: missing base or head SHA."
+) -> dict[str, Any]:
+    resolved_head_sha = (head_sha or "").strip()
+    resolved_base_sha = (base_sha or "").strip()
+
+    if not resolved_head_sha:
+        return {
+            "base_sha": resolved_base_sha,
+            "head_sha": resolved_head_sha,
+            "files": [],
+            "changed_files": [],
+            "total_changed_lines": 0,
+            "diff_text": "Git diff unavailable: missing head SHA.",
+        }
+
+    if not resolved_base_sha:
+        resolved_base_sha = await fetch_commit_parent_sha(
+            installation_id=installation_id,
+            repository_full_name=repository_full_name,
+            commit_sha=resolved_head_sha,
+        ) or ""
+
+    if not resolved_base_sha:
+        return {
+            "base_sha": resolved_base_sha,
+            "head_sha": resolved_head_sha,
+            "files": [],
+            "changed_files": [],
+            "total_changed_lines": 0,
+            "diff_text": "Git diff unavailable: could not resolve a base SHA from the head commit.",
+        }
 
     installation_token = await get_installation_access_token(installation_id)
     owner, repo = repository_full_name.split("/", 1)
     compare = await _github_request(
         "GET",
-        f"/repos/{owner}/{repo}/compare/{base_sha}...{head_sha}",
+        f"/repos/{owner}/{repo}/compare/{resolved_base_sha}...{resolved_head_sha}",
         token=installation_token,
     )
 
     files = compare.get("files") or []
     if not files:
-        return "No file changes found between base and head."
+        return {
+            "base_sha": resolved_base_sha,
+            "head_sha": resolved_head_sha,
+            "files": [],
+            "changed_files": [],
+            "total_changed_lines": 0,
+            "diff_text": "No file changes found between base and head.",
+        }
 
     chunks: list[str] = []
+    changed_files: list[str] = []
+    total_changed_lines = 0
     for file_item in files[:20]:
         filename = file_item.get("filename", "unknown")
         status = file_item.get("status", "modified")
         additions = file_item.get("additions", 0)
         deletions = file_item.get("deletions", 0)
+        changed_files.append(filename)
+        total_changed_lines += additions + deletions
         patch = (file_item.get("patch") or "").strip()
         if len(patch) > 2000:
             patch = patch[:2000] + "\n...truncated..."
@@ -173,7 +238,219 @@ async def fetch_compare_diff(
             f"Patch:\n{patch or 'Patch unavailable.'}"
         )
 
-    return "\n\n".join(chunks)
+    return {
+        "base_sha": resolved_base_sha,
+        "head_sha": resolved_head_sha,
+        "files": files,
+        "changed_files": changed_files,
+        "total_changed_lines": total_changed_lines,
+        "diff_text": "\n\n".join(chunks),
+    }
+
+
+async def fetch_compare_diff(
+    installation_id: int,
+    repository_full_name: str,
+    base_sha: str | None,
+    head_sha: str | None,
+) -> str:
+    details = await fetch_compare_details(
+        installation_id=installation_id,
+        repository_full_name=repository_full_name,
+        base_sha=base_sha,
+        head_sha=head_sha,
+    )
+    return details["diff_text"]
+
+
+async def fetch_pull_request_review_state(
+    installation_id: int,
+    repository_full_name: str,
+    pull_number: int | None,
+) -> dict[str, Any]:
+    if not pull_number:
+        return {"approved_reviewers": 0}
+
+    installation_token = await get_installation_access_token(installation_id)
+    owner, repo = repository_full_name.split("/", 1)
+    reviews = await _github_request(
+        "GET",
+        f"/repos/{owner}/{repo}/pulls/{pull_number}/reviews",
+        token=installation_token,
+    )
+
+    if not isinstance(reviews, list):
+        return {"approved_reviewers": 0}
+
+    approved_reviewers: set[str] = set()
+    for review in reviews:
+        if (review.get("state") or "").upper() != "APPROVED":
+            continue
+        login = ((review.get("user") or {}).get("login") or "").strip().lower()
+        if login:
+            approved_reviewers.add(login)
+    return {"approved_reviewers": len(approved_reviewers)}
+
+
+async def get_branch_head_sha(
+    installation_id: int,
+    repository_full_name: str,
+    branch_name: str,
+) -> str:
+    installation_token = await get_installation_access_token(installation_id)
+    owner, repo = repository_full_name.split("/", 1)
+    ref = await _github_request(
+        "GET",
+        f"/repos/{owner}/{repo}/git/ref/heads/{branch_name}",
+        token=installation_token,
+    )
+    return (((ref.get("object") or {}).get("sha")) or "").strip()
+
+
+async def create_branch_ref(
+    installation_id: int,
+    repository_full_name: str,
+    branch_name: str,
+    from_sha: str,
+) -> dict[str, Any]:
+    installation_token = await get_installation_access_token(installation_id)
+    owner, repo = repository_full_name.split("/", 1)
+    return await _github_request(
+        "POST",
+        f"/repos/{owner}/{repo}/git/refs",
+        token=installation_token,
+        json_body={
+            "ref": f"refs/heads/{branch_name}",
+            "sha": from_sha,
+        },
+    )
+
+
+async def fetch_file_contents(
+    installation_id: int,
+    repository_full_name: str,
+    path: str,
+    ref: str,
+) -> dict[str, Any]:
+    installation_token = await get_installation_access_token(installation_id)
+    owner, repo = repository_full_name.split("/", 1)
+    payload = await _github_request(
+        "GET",
+        f"/repos/{owner}/{repo}/contents/{path}",
+        token=installation_token,
+        query_params={"ref": ref} if ref else None,
+    )
+    content = payload.get("content") or ""
+    encoding = payload.get("encoding") or "base64"
+    if encoding == "base64":
+        decoded = base64.b64decode(content).decode("utf-8", errors="replace")
+    else:
+        decoded = content
+    return {
+        "path": payload.get("path") or path,
+        "sha": payload.get("sha"),
+        "content": decoded,
+    }
+
+
+async def update_file_contents(
+    installation_id: int,
+    repository_full_name: str,
+    path: str,
+    branch_name: str,
+    previous_sha: str,
+    new_content: str,
+    commit_message: str,
+) -> dict[str, Any]:
+    installation_token = await get_installation_access_token(installation_id)
+    owner, repo = repository_full_name.split("/", 1)
+    return await _github_request(
+        "PUT",
+        f"/repos/{owner}/{repo}/contents/{path}",
+        token=installation_token,
+        json_body={
+            "message": commit_message,
+            "content": base64.b64encode(new_content.encode("utf-8")).decode("ascii"),
+            "branch": branch_name,
+            "sha": previous_sha,
+        },
+    )
+
+
+async def create_pull_request(
+    installation_id: int,
+    repository_full_name: str,
+    *,
+    title: str,
+    body: str,
+    head_branch: str,
+    base_branch: str,
+) -> dict[str, Any]:
+    installation_token = await get_installation_access_token(installation_id)
+    owner, repo = repository_full_name.split("/", 1)
+    return await _github_request(
+        "POST",
+        f"/repos/{owner}/{repo}/pulls",
+        token=installation_token,
+        json_body={
+            "title": title,
+            "body": body,
+            "head": head_branch,
+            "base": base_branch,
+        },
+    )
+
+
+async def request_pull_request_reviewers(
+    installation_id: int,
+    repository_full_name: str,
+    pull_number: int,
+    reviewers: list[str],
+) -> dict[str, Any]:
+    if not reviewers:
+        return {}
+    installation_token = await get_installation_access_token(installation_id)
+    owner, repo = repository_full_name.split("/", 1)
+    return await _github_request(
+        "POST",
+        f"/repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers",
+        token=installation_token,
+        json_body={"reviewers": reviewers},
+    )
+
+
+async def merge_pull_request(
+    installation_id: int,
+    repository_full_name: str,
+    pull_number: int,
+    commit_title: str,
+) -> dict[str, Any]:
+    installation_token = await get_installation_access_token(installation_id)
+    owner, repo = repository_full_name.split("/", 1)
+    return await _github_request(
+        "PUT",
+        f"/repos/{owner}/{repo}/pulls/{pull_number}/merge",
+        token=installation_token,
+        json_body={
+            "merge_method": "squash",
+            "commit_title": commit_title,
+        },
+    )
+
+
+async def close_pull_request(
+    installation_id: int,
+    repository_full_name: str,
+    pull_number: int,
+) -> dict[str, Any]:
+    installation_token = await get_installation_access_token(installation_id)
+    owner, repo = repository_full_name.split("/", 1)
+    return await _github_request(
+        "PATCH",
+        f"/repos/{owner}/{repo}/pulls/{pull_number}",
+        token=installation_token,
+        json_body={"state": "closed"},
+    )
 
 
 def verify_webhook_signature(body: bytes, signature_header: str | None) -> bool:
