@@ -4,14 +4,11 @@ Tickets Celery task and upsert API tests.
 
 import pytest
 from unittest.mock import MagicMock, patch
-from rest_framework import status
 
 
 @pytest.mark.django_db
 class TestSyncIntegrationTicketsTask:
-    def test_sync_calls_agent_pipeline_endpoint(
-        self, org_fixture, integration_fixture
-    ):
+    def test_sync_calls_agent_pipeline_endpoint(self, org_fixture, integration_fixture):
         """sync_integration_tickets should call agent service /pipeline/sync."""
         from integrations.models import IntegrationAccount
         from tickets.tasks import sync_integration_tickets
@@ -62,6 +59,7 @@ class TestSyncIntegrationTicketsTask:
 class TestTicketUpsertIdempotency:
     def _api_client_with_key(self, api_key_fixture):
         from rest_framework.test import APIClient
+
         client = APIClient()
         client.credentials(HTTP_X_API_KEY=api_key_fixture._raw_key)
         return client
@@ -79,7 +77,9 @@ class TestTicketUpsertIdempotency:
 
         client = self._api_client_with_key(api_key_fixture)
         payload = {
-            "organization_id": str(org_fixture.id),      # required by TicketUpsertSerializer
+            "organization_id": str(
+                org_fixture.id
+            ),  # required by TicketUpsertSerializer
             "integration_id": integration_fixture.id,
             "external_ticket_id": "UPSERT-001",
             "title": "New ticket via upsert",
@@ -111,7 +111,9 @@ class TestTicketUpsertIdempotency:
         resp = client.post("/api/v1/tickets/upsert", updated, format="json")
         assert resp.status_code in (200, 201), resp.json()
 
-        count = UnifiedTicket.objects.filter(external_ticket_id="UPSERT-DUP-001").count()
+        count = UnifiedTicket.objects.filter(
+            external_ticket_id="UPSERT-DUP-001"
+        ).count()
         assert count == 1
         ticket = UnifiedTicket.objects.get(external_ticket_id="UPSERT-DUP-001")
         assert ticket.normalized_status == "in_progress"

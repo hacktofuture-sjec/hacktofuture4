@@ -113,9 +113,7 @@ class TestIntegrationModel:
                 credentials={},
             )
 
-    def test_cross_org_integration_isolation(
-        self, org_fixture, user_fixture, db
-    ):
+    def test_cross_org_integration_isolation(self, org_fixture, user_fixture, db):
         """Two orgs can have same provider+name — constraint is org-scoped."""
         from accounts.models import Organization
         from integrations.models import Integration
@@ -192,6 +190,7 @@ class TestIntegrationAPI:
         results = resp.json().get("results", resp.json())
         # All returned integrations must belong to our org
         for item in results:
-            assert "hubspot" not in item.get("name", "") or item.get(
-                "provider"
-            ) != "hubspot"
+            assert (
+                "hubspot" not in item.get("name", "")
+                or item.get("provider") != "hubspot"
+            )

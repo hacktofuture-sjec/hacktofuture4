@@ -1,5 +1,5 @@
 [project]
-name = "voice-to-action-workspace"
+name = ".venv"
 version = "0.1.0"
 description = "Voice-to-Action Hackathon Workspace"
 requires-python = ">=3.11"

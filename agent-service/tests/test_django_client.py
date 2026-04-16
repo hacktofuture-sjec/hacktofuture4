@@ -71,7 +71,9 @@ async def test_post_ingest_event_retries_on_500():
     # All 3 attempts fail → RuntimeError
     mock_client = _mock_async_client(post_return=fail_resp)
     mock_client.post = AsyncMock(
-        side_effect=httpx.HTTPStatusError("500", request=MagicMock(), response=fail_resp)
+        side_effect=httpx.HTTPStatusError(
+            "500", request=MagicMock(), response=fail_resp
+        )
     )
 
     with patch("src.django_client.httpx.AsyncClient", return_value=mock_client):
@@ -122,9 +124,7 @@ async def test_post_dlq_sends_failure_reason():
     """post_dlq sends failure_reason and error_trace to /api/v1/dlq."""
     from src.django_client import post_dlq
 
-    mock_client = _mock_async_client(
-        post_return=make_ok_response({"id": "dlq-001"})
-    )
+    mock_client = _mock_async_client(post_return=make_ok_response({"id": "dlq-001"}))
     with patch("src.django_client.httpx.AsyncClient", return_value=mock_client):
         result = await post_dlq(
             event_id=42,
@@ -150,7 +150,9 @@ async def test_get_identity_map_returns_user_id_on_success():
     from src.django_client import get_identity_map
 
     mock_client = _mock_async_client(
-        get_return=make_ok_response({"user_id": "u-123", "external_user_id": "user-001"})
+        get_return=make_ok_response(
+            {"user_id": "u-123", "external_user_id": "user-001"}
+        )
     )
     with patch("src.django_client.httpx.AsyncClient", return_value=mock_client):
         result = await get_identity_map(

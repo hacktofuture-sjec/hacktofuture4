@@ -46,9 +46,7 @@ class TestProcessRawWebhookTask:
         event.refresh_from_db()
         assert event.status == "processed"
 
-    def test_task_marks_failed_on_agent_error(
-        self, org_fixture, integration_fixture
-    ):
+    def test_task_marks_failed_on_agent_error(self, org_fixture, integration_fixture):
         """On HTTP errors the task transitions event to failed/processing."""
         import httpx
 
@@ -147,9 +145,7 @@ class TestRetryFailedEventsTask:
         dlq_entry.refresh_from_db()
         assert dlq_entry.retry_count >= 1
 
-    def test_retry_skips_exhausted_dlq_entries(
-        self, org_fixture, integration_fixture
-    ):
+    def test_retry_skips_exhausted_dlq_entries(self, org_fixture, integration_fixture):
         from events.models import DeadLetterQueue, RawWebhookEvent
         from events.tasks import retry_failed_events
 
