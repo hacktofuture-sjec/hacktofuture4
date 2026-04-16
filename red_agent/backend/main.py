@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """FastAPI entry point for the Red Agent backend.
 
 Runs on port 8001. Exposes REST routes for scan / exploit / strategy

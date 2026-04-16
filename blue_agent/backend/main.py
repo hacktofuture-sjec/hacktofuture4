@@ -1,18 +1,27 @@
 """FastAPI entry point for the Blue Agent backend.
 
-Runs on port 8002. Exposes REST routes for defense / patch / strategy
-operations plus a WebSocket channel that streams live tool-call logs
-to the Blue Team dashboard.
+Runs on port 8002. Exposes REST routes for defense / patch / strategy /
+scan / environment operations plus a WebSocket channel that streams live
+tool-call logs to the Blue Team dashboard.
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env from project root so CVE_API_KEY etc. are available
+_env_path = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(_env_path)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from blue_agent.backend.routers import (
     defense_routes,
+    environment_routes,
     patch_routes,
+    scan_routes,
     strategy_routes,
 )
 from blue_agent.backend.websocket import blue_ws
@@ -30,7 +39,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="HTF Blue Agent API",
     description="Backend for the Blue (defender) AI agent in the HTF simulation.",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -45,6 +54,8 @@ app.add_middleware(
 app.include_router(defense_routes.router, prefix="/defend", tags=["defend"])
 app.include_router(patch_routes.router, prefix="/patch", tags=["patch"])
 app.include_router(strategy_routes.router, prefix="/strategy", tags=["strategy"])
+app.include_router(scan_routes.router, prefix="/scan", tags=["scan"])
+app.include_router(environment_routes.router, prefix="/environment", tags=["environment"])
 app.include_router(blue_ws.router, tags=["websocket"])
 
 

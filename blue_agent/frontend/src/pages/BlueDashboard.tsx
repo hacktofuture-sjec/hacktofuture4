@@ -1,23 +1,65 @@
 import { useState } from "react";
 import { ActivityPanel } from "@/components/ActivityPanel";
 import { ChatButton } from "@/components/ChatButton";
+import { FixPlanPanel } from "@/components/FixPlanPanel";
 import { LogStream } from "@/components/LogStream";
+import { SSHScanPanel } from "@/components/SSHScanPanel";
+import { StatusBar } from "@/components/StatusBar";
 import { useBlueWebSocket } from "@/hooks/useBlueWebSocket";
 import { blueApi } from "@/api/blueApi";
+import type { SSHScanResult } from "@/types/blue.types";
 
 const ACCENT = "#58a6ff";
 
 export function BlueDashboard() {
-  const { connected, toolCalls, logs } = useBlueWebSocket();
-  const [host, setHost] = useState("192.168.1.100");
-  const [busy, setBusy] = useState(false);
+  const { connected, toolCalls, logs, agentStatus } = useBlueWebSocket();
 
-  const handleHarden = async () => {
-    setBusy(true);
+  const [host, setHost] = useState("");
+  const [sshPort, setSshPort] = useState("22");
+  const [username, setUsername] = useState("root");
+  const [password, setPassword] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [scanResult, setScanResult] = useState<SSHScanResult | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+
+  const hasVulnerabilities =
+    scanResult?.success === true && scanResult.total_cves > 0;
+
+  const handleScan = async () => {
+    if (!host || !password) return;
+    setScanning(true);
+    setScanError(null);
+    setScanResult(null);
     try {
-      await blueApi.hardenService({ host, service: "ssh" });
+      const res = await blueApi.sshScan({
+        host,
+        ssh_port: parseInt(sshPort, 10),
+        username,
+        password,
+      });
+      setScanResult(res);
+      if (!res.success) setScanError(res.error || "Scan failed");
+    } catch (err: any) {
+      setScanError(err?.response?.data?.detail || err?.message || "Connection failed");
     } finally {
-      setBusy(false);
+      setScanning(false);
+    }
+  };
+
+  const handleApplyFixes = async () => {
+    setApplying(true);
+    try {
+      const res = await blueApi.sshApplyFixes();
+      if (res.services) {
+        setScanResult((prev) =>
+          prev ? { ...prev, services: res.services, fixes_applied: res.fixes_applied ?? 0 } : prev
+        );
+      }
+    } catch (err: any) {
+      setScanError(err?.response?.data?.detail || err?.message || "Fix failed");
+    } finally {
+      setApplying(false);
     }
   };
 
@@ -31,67 +73,86 @@ export function BlueDashboard() {
         fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
       }}
     >
-      <header
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          paddingBottom: 16,
-          marginBottom: 16,
-          borderBottom: `1px solid ${ACCENT}55`,
-        }}
-      >
-        <div>
-          <h1 style={{ color: ACCENT, margin: 0, letterSpacing: 2 }}>
-            🔵 BLUE TEAM // DEFENDER
-          </h1>
-          <p style={{ color: "#8b949e", margin: "4px 0 0", fontSize: 12 }}>
-            host: {host} · ws:{" "}
-            <span style={{ color: connected ? "#3fb950" : "#f85149" }}>
-              {connected ? "connected" : "disconnected"}
-            </span>
-          </p>
+      {/* Header */}
+      <header style={{ paddingBottom: 12, marginBottom: 12, borderBottom: `1px solid ${ACCENT}55` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div>
+            <h1 style={{ color: ACCENT, margin: 0, letterSpacing: 2, fontSize: 20 }}>
+              BLUE TEAM // AUTONOMOUS DEFENDER
+            </h1>
+            <p style={{ color: "#8b949e", margin: "4px 0 0", fontSize: 11 }}>
+              Step 1: Scan server &rarr; Step 2: Review fix plan &rarr; Step 3: Apply fixes
+              &nbsp;&middot;&nbsp;ws:{" "}
+              <span style={{ color: connected ? "#3fb950" : "#f85149" }}>
+                {connected ? "connected" : "disconnected"}
+              </span>
+            </p>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <input
-            value={host}
-            onChange={(e) => setHost(e.target.value)}
-            style={{
-              background: "#161b22",
-              border: `1px solid ${ACCENT}55`,
-              color: "#f0f6fc",
-              padding: "8px 10px",
-              borderRadius: 4,
-              fontFamily: "inherit",
-            }}
-          />
+
+        {/* SSH input bar */}
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            background: "#161b22",
+            padding: "10px 14px",
+            borderRadius: 8,
+            border: `1px solid ${ACCENT}33`,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ color: ACCENT, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>TARGET</span>
+          <input placeholder="Host / IP" value={host} onChange={(e) => setHost(e.target.value)} style={inputStyle} />
+          <span style={{ color: "#8b949e", fontSize: 11 }}>:</span>
+          <input placeholder="Port" value={sshPort} onChange={(e) => setSshPort(e.target.value)} style={{ ...inputStyle, width: 55, flex: "none" }} />
+          <input placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} style={{ ...inputStyle, width: 100, flex: "none" }} />
+          <input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} style={inputStyle} />
           <button
-            disabled={busy}
-            onClick={handleHarden}
-            style={{
-              background: ACCENT,
-              color: "#0d1117",
-              border: "none",
-              padding: "8px 16px",
-              borderRadius: 4,
-              fontWeight: 700,
-              cursor: busy ? "wait" : "pointer",
-            }}
+            onClick={handleScan}
+            disabled={scanning || applying || !host || !password}
+            style={{ ...btnBase, background: scanning ? "#21262d" : ACCENT, color: scanning ? "#8b949e" : "#0d1117" }}
           >
-            {busy ? "..." : "HARDEN SSH"}
+            {scanning ? "SCANNING..." : "SCAN"}
           </button>
+          {scanError && <span style={{ color: "#f85149", fontSize: 11 }}>{scanError}</span>}
+          {scanResult?.success && scanResult.total_cves === 0 && (
+            <span style={{ color: "#3fb950", fontSize: 11 }}>All clean — no vulnerabilities</span>
+          )}
         </div>
       </header>
 
+      {/* Status bar */}
+      <StatusBar status={agentStatus} accent={ACCENT} />
+
+      {/* Main grid — adapts based on scan state */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 16,
-          height: "calc(100vh - 160px)",
+          gridTemplateColumns: hasVulnerabilities ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr",
+          gap: 12,
+          marginTop: 12,
+          height: "calc(100vh - 230px)",
         }}
       >
-        <ActivityPanel toolCalls={toolCalls} accent={ACCENT} />
+        {/* Col 1: Scan results */}
+        <SSHScanPanel result={scanResult} accent={ACCENT} />
+
+        {/* Col 2: Fix plan — only when vulnerabilities found */}
+        {hasVulnerabilities && (
+          <FixPlanPanel
+            result={scanResult!}
+            applying={applying}
+            onApply={handleApplyFixes}
+            accent={ACCENT}
+          />
+        )}
+
+        {/* Activity */}
+        <ActivityPanel toolCalls={toolCalls} accent={ACCENT} limit={30} />
+
+        {/* Logs */}
         <LogStream logs={logs} accent={ACCENT} />
       </div>
 
@@ -99,3 +160,27 @@ export function BlueDashboard() {
     </div>
   );
 }
+
+const inputStyle: React.CSSProperties = {
+  background: "#0d1117",
+  border: "1px solid #30363d",
+  color: "#f0f6fc",
+  padding: "7px 10px",
+  borderRadius: 4,
+  fontFamily: "inherit",
+  fontSize: 12,
+  flex: 1,
+  minWidth: 0,
+};
+
+const btnBase: React.CSSProperties = {
+  border: "none",
+  padding: "8px 18px",
+  borderRadius: 6,
+  fontWeight: 700,
+  fontSize: 12,
+  cursor: "pointer",
+  fontFamily: "inherit",
+  letterSpacing: 1,
+  whiteSpace: "nowrap",
+};

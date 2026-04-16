@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Real-Time Response (Feature 2) — React to every detection event immediately.
 
 Subscribes to all detection events from the event bus on initialisation.

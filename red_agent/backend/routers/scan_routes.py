@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 """Scan endpoints for the Red Agent."""
+
+from typing import List
 
 from fastapi import APIRouter, HTTPException
 
@@ -35,6 +39,6 @@ async def scan_cloud(request: ScanRequest) -> ScanResult:
     return await red_service.run_cloud_scan(request)
 
 
-@router.get("/recent", response_model=list[ToolCall])
-async def recent_scans(limit: int = 20) -> list[ToolCall]:
+@router.get("/recent", response_model=List[ToolCall])
+async def recent_scans(limit: int = 20) -> List[ToolCall]:
     return await red_service.recent_tool_calls(category="scan", limit=limit)

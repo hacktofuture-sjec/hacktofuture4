@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -21,63 +21,63 @@ class ToolCall(BaseModel):
     name: str = Field(..., description="Tool name, e.g. nmap_scan, lookup_cve")
     category: str = Field(..., description="scan | exploit | strategy")
     status: ToolStatus = ToolStatus.PENDING
-    params: dict[str, Any] = Field(default_factory=dict)
-    result: dict[str, Any] | None = None
+    params: Dict[str, Any] = Field(default_factory=dict)
+    result: Optional[Dict[str, Any]] = None
     started_at: datetime = Field(default_factory=datetime.utcnow)
-    finished_at: datetime | None = None
+    finished_at: Optional[datetime] = None
 
 
 class LogEntry(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     level: str = "INFO"
     message: str
-    tool_id: str | None = None
+    tool_id: Optional[str] = None
 
 
 class ScanRequest(BaseModel):
     target: str = Field(..., examples=["192.168.1.100"])
-    ports: list[int] | None = None
-    options: dict[str, Any] = Field(default_factory=dict)
+    ports: Optional[List[int]] = None
+    options: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ScanResult(BaseModel):
     tool_call: ToolCall
-    open_ports: list[int] = Field(default_factory=list)
-    services: dict[int, str] = Field(default_factory=dict)
-    findings: list[str] = Field(default_factory=list)
+    open_ports: List[int] = Field(default_factory=list)
+    services: Dict[int, str] = Field(default_factory=dict)
+    findings: List[str] = Field(default_factory=list)
 
 
 class CVELookupRequest(BaseModel):
     service: str
-    version: str | None = None
+    version: Optional[str] = None
 
 
 class CVELookupResult(BaseModel):
     tool_call: ToolCall
-    cve_ids: list[str] = Field(default_factory=list)
-    summaries: dict[str, str] = Field(default_factory=dict)
+    cve_ids: List[str] = Field(default_factory=list)
+    summaries: Dict[str, str] = Field(default_factory=dict)
 
 
 class ExploitRequest(BaseModel):
     target: str
-    cve_id: str | None = None
-    payload: str | None = None
-    options: dict[str, Any] = Field(default_factory=dict)
+    cve_id: Optional[str] = None
+    payload: Optional[str] = None
+    options: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ExploitResult(BaseModel):
     tool_call: ToolCall
     success: bool = False
-    foothold: str | None = None
-    notes: str | None = None
+    foothold: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class StrategyRequest(BaseModel):
     target: str
-    intel: dict[str, Any] = Field(default_factory=dict)
+    intel: Dict[str, Any] = Field(default_factory=dict)
 
 
 class StrategyPlan(BaseModel):
     tool_call: ToolCall
-    steps: list[str] = Field(default_factory=list)
-    rationale: str | None = None
+    steps: List[str] = Field(default_factory=list)
+    rationale: Optional[str] = None
