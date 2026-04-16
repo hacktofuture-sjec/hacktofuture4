@@ -1,0 +1,23 @@
+# Secret Keys (NEVER UPLOAD THESE)
+.env
+*.env
+
+# Python Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+
+# Python Cache (Speeds up Git)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Editor Settings
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

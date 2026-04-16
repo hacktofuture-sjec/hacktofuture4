@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Self-Healing Cloud — Live Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--surface:#13161d;--surface2:#1a1e28;--surface3:#222736;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);
+  --text:#e8eaf0;--text2:#9ca3b0;--text3:#5a6070;
+  --teal:#00d4aa;--teal-dim:rgba(0,212,170,0.15);--teal-t:#00d4aa;
+  --blue:#4d9eff;--blue-dim:rgba(77,158,255,0.15);
+  --amber:#f59e0b;--amber-dim:rgba(245,158,11,0.15);
+  --red:#f43f5e;--red-dim:rgba(244,63,94,0.15);
+  --purple:#a78bfa;--purple-dim:rgba(167,139,250,0.15);
+  --green:#10b981;
+  --r:8px;--r-lg:12px;--r-xl:16px;
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;overflow-x:hidden}
+.layout{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+
+.sidebar{background:var(--surface);border-right:1px solid var(--border);padding:0;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.sidebar-header{padding:20px 20px 16px;border-bottom:1px solid var(--border)}
+.logo{font-size:16px;font-weight:700;letter-spacing:-0.3px}
+.logo .accent{color:var(--teal)}
+.logo .sub{font-size:11px;font-weight:400;color:var(--text3);display:block;margin-top:2px;font-family:'JetBrains Mono',monospace}
+.nav{padding:12px 8px;flex:1;overflow-y:auto}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r);cursor:pointer;font-size:13px;font-weight:500;color:var(--text2);transition:all .15s;margin-bottom:2px;border:none;background:none;width:100%;text-align:left}
+.nav-item:hover{background:var(--surface2);color:var(--text)}
+.nav-item.active{background:var(--teal-dim);color:var(--teal)}
+.nav-item .icon{width:16px;text-align:center;font-size:14px;flex-shrink:0}
+.sidebar-footer{padding:16px;border-top:1px solid var(--border)}
+.conn-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.conn-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;transition:background .3s}
+.conn-dot.ok{background:var(--teal);box-shadow:0 0 6px var(--teal);animation:pulse 2s infinite}
+.conn-dot.off{background:var(--red)}
+.conn-dot.connecting{background:var(--amber);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.conn-text{font-size:12px;color:var(--text2)}
+.conn-url{font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace}
+.quota-bar-wrap{margin-top:10px}
+.quota-label{font-size:11px;color:var(--text3);margin-bottom:4px;display:flex;justify-content:space-between}
+.quota-bar{height:4px;background:var(--surface3);border-radius:2px;overflow:hidden}
+.quota-bar-fill{height:100%;border-radius:2px;background:var(--teal);transition:width .5s}
+.quota-bar-fill.warn{background:var(--amber)}
+.quota-bar-fill.crit{background:var(--red)}
+
+.main{padding:24px 28px;overflow-x:hidden;max-width:100%}
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.page-head h1{font-size:20px;font-weight:600;letter-spacing:-0.3px}
+.page-head p{font-size:12px;color:var(--text3);margin-top:3px}
+.topbar-actions{display:flex;gap:8px}
+
+.btn{font-family:'Inter',sans-serif;font-size:13px;font-weight:500;padding:8px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--surface2);color:var(--text);cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{background:var(--surface3);border-color:var(--border2)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-teal{background:var(--teal-dim);border-color:rgba(0,212,170,.3);color:var(--teal)}
+.btn-teal:hover{background:rgba(0,212,170,.25)}
+.btn-red{background:var(--red-dim);border-color:rgba(244,63,94,.3);color:var(--red)}
+.btn-red:hover{background:rgba(244,63,94,.25)}
+.btn-blue{background:var(--blue-dim);border-color:rgba(77,158,255,.3);color:var(--blue)}
+.btn-blue:hover{background:rgba(77,158,255,.25)}
+.btn-sm{font-size:12px;padding:5px 10px}
+
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;white-space:nowrap;letter-spacing:.02em}
+.pill-ok{background:rgba(0,212,170,.15);color:#00d4aa}
+.pill-warn{background:rgba(245,158,11,.15);color:#f59e0b}
+.pill-crit{background:rgba(244,63,94,.15);color:#f43f5e}
+.pill-heal{background:rgba(77,158,255,.15);color:#4d9eff}
+.pill-skip{background:var(--surface3);color:var(--text3)}
+.pill-run{background:rgba(167,139,250,.15);color:#a78bfa;animation:pulse 1.5s infinite}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px 20px}
+.card-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px;display:flex;align-items:center;gap:6px}
+
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px 18px;transition:border-color .2s}
+.metric.crit{border-color:rgba(244,63,94,.4)}
+.metric.warn{border-color:rgba(245,158,11,.4)}
+.metric.ok{border-color:rgba(0,212,170,.25)}
+.metric-label{font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:500;text-transform:uppercase;letter-spacing:.04em}
+.metric-val{font-size:28px;font-weight:700;color:var(--text);letter-spacing:-1px;line-height:1}
+.metric-sub{font-size:11px;color:var(--text3);margin-top:6px}
+
+.services-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
+.svc-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px 16px;transition:border-color .2s}
+.svc-card.crit{border-color:rgba(244,63,94,.5)}
+.svc-card.warn{border-color:rgba(245,158,11,.4)}
+.svc-card.ok{border-color:rgba(0,212,170,.2)}
+.svc-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.svc-name{font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace}
+.svc-stats{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
+.svc-stat{font-size:11px;color:var(--text3)}
+.svc-stat b{display:block;font-size:13px;font-weight:600;color:var(--text);margin-top:1px}
+.mini-bar{height:3px;background:var(--surface3);border-radius:2px;overflow:hidden;margin-top:8px}
+.mini-bar-fill{height:100%;border-radius:2px;transition:width .5s}
+
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}
+
+.log-entry{display:grid;grid-template-columns:70px 1fr auto auto;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);font-size:12px}
+.log-entry:last-child{border-bottom:none}
+.log-time{color:var(--text3);font-family:'JetBrains Mono',monospace;font-size:11px}
+.log-msg{color:var(--text2)}
+.log-dur{color:var(--text3);font-family:'JetBrains Mono',monospace;font-size:11px;text-align:right}
+
+.terminal{background:#0a0c10;border:1px solid var(--border);border-radius:var(--r-lg);padding:16px;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.8;min-height:120px;max-height:340px;overflow-y:auto;color:#c9d1d9}
+.terminal .line-ts{color:var(--text3)}
+.terminal .line-info{color:var(--blue)}
+.terminal .line-ok{color:var(--teal)}
+.terminal .line-warn{color:var(--amber)}
+.terminal .line-err{color:var(--red)}
+.terminal .line-agent{color:var(--purple)}
+.terminal:empty::before{content:"Waiting for agent output...";color:var(--text3)}
+
+.chaos-panel{margin-bottom:20px}
+.chaos-types{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.chaos-type-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:12px 14px;cursor:pointer;transition:all .15s}
+.chaos-type-card:hover{border-color:var(--border2);background:var(--surface2)}
+.chaos-type-card.selected{border-color:rgba(244,63,94,.5);background:var(--red-dim)}
+.chaos-type-name{font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace;margin-bottom:3px}
+.chaos-type-desc{font-size:11px;color:var(--text3)}
+.chaos-config{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;margin-bottom:14px}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em}
+.field input,.field select{font-family:'Inter',sans-serif;font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--surface2);color:var(--text);outline:none;transition:border-color .15s}
+.field input:focus,.field select:focus{border-color:rgba(244,63,94,.5)}
+.chaos-status-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text2);min-height:48px}
+
+.promql-row{display:flex;gap:8px;margin-bottom:10px}
+.promql-row input{flex:1;font-family:'JetBrains Mono',monospace;font-size:12px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--surface2);color:var(--text);outline:none}
+.promql-row input:focus{border-color:rgba(77,158,255,.5)}
+.promql-presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.promql-result{background:#0a0c10;border:1px solid var(--border);border-radius:var(--r-lg);padding:14px;font-family:'JetBrains Mono',monospace;font-size:12px;white-space:pre-wrap;min-height:60px;max-height:220px;overflow-y:auto;color:#c9d1d9}
+
+.ask-wrap{display:grid;grid-template-columns:1fr;gap:10px}
+.ask-row{display:flex;gap:8px}
+.ask-row select{font-family:'Inter',sans-serif;font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--surface2);color:var(--text);outline:none;min-width:200px}
+.ask-row input{flex:1;font-family:'Inter',sans-serif;font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--surface2);color:var(--text);outline:none}
+.ask-row input:focus,.ask-row select:focus{border-color:rgba(77,158,255,.5)}
+.ask-resp{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px;min-height:60px;font-size:13px;color:var(--text2);line-height:1.7;white-space:pre-wrap;word-break:break-word;display:none}
+
+.quick-btns{display:flex;gap:6px;flex-wrap:wrap}
+
+.info-strip{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--text3);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+
+@media(max-width:1000px){
+  .layout{grid-template-columns:1fr}
+  .sidebar{display:none}
+  .metrics{grid-template-columns:repeat(2,1fr)}
+  .services-grid{grid-template-columns:1fr 1fr}
+  .two-col{grid-template-columns:1fr}
+  .chaos-config{grid-template-columns:1fr 1fr}
+}
+@media(max-width:620px){
+  .metrics{grid-template-columns:1fr 1fr}
+  .services-grid{grid-template-columns:1fr}
+  .chaos-types{grid-template-columns:1fr}
+}
+
+.spin{display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.tab-content{display:none}
+.tab-content.active{display:block}
+
+.agent-bar-row{display:grid;grid-template-columns:140px 1fr 48px;align-items:center;gap:10px;padding:5px 0}
+.agent-bar-label{font-size:12px;color:var(--text2);font-weight:500}
+.a-bar{height:6px;background:var(--surface3);border-radius:3px;overflow:hidden}
+.a-bar-fill{height:100%;border-radius:3px;transition:width .6s}
+.a-bar-pct{font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-align:right}
+
+.chaos-timeline{margin-top:10px}
+.ct-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px}
+.ct-row:last-child{border:none}
+.ct-step{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
+.ct-step.done{background:var(--teal-dim);color:var(--teal)}
+.ct-step.run{background:var(--purple-dim);color:var(--purple);animation:pulse 1.5s infinite}
+.ct-step.wait{background:var(--surface3);color:var(--text3)}
+.ct-step.fail{background:var(--red-dim);color:var(--red)}
+.ct-label{color:var(--text2)}
+.ct-ts{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3);margin-left:auto}
+</style>
+</head>
+<body>
+<div class="layout">
+
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">
+      self<span class="accent">heal</span>.cloud
+      <span class="sub">gemini-2.5-flash-lite</span>
+    </div>
+  </div>
+  <nav class="nav">
+    <button class="nav-item active" onclick="showTab('overview')" id="nav-overview">
+      <span class="icon">◎</span> Overview
+    </button>
+    <button class="nav-item" onclick="showTab('chaos')" id="nav-chaos">
+      <span class="icon">⚡</span> Chaos &amp; Heal
+    </button>
+    <button class="nav-item" onclick="showTab('promql')" id="nav-promql">
+      <span class="icon">⊞</span> PromQL Explorer
+    </button>
+    <button class="nav-item" onclick="showTab('agents')" id="nav-agents">
+      <span class="icon">◈</span> Ask Agents
+    </button>
+    <button class="nav-item" onclick="showTab('quota')" id="nav-quota">
+      <span class="icon">♻</span> API Quota
+    </button>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="conn-row">
+      <span class="conn-dot connecting" id="conn-dot"></span>
+      <span class="conn-text" id="conn-label">connecting...</span>
+    </div>
+    <div class="conn-url">localhost:8005</div>
+    <div class="quota-bar-wrap">
+      <div class="quota-label">
+        <span>LLM quota used</span>
+        <span id="quota-used-label">—</span>
+      </div>
+      <div class="quota-bar"><div class="quota-bar-fill" id="quota-bar-fill" style="width:0%"></div></div>
+    </div>
+  </div>
+</aside>
+
+<main class="main">
+
+  <div class="topbar">
+    <div class="page-head">
+      <h1 id="page-title">Cluster Overview</h1>
+      <p id="last-updated">Fetching live data from backend...</p>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn" onclick="fetchAll()">↻ Refresh</button>
+      <button class="btn btn-teal" id="heal-btn" onclick="triggerHeal()">▶ Trigger Heal</button>
+    </div>
+  </div>
+
+    <div class="tab-content active" id="tab-overview">
+    <div class="metrics" id="metrics-grid">
+      <div class="metric"><div class="metric-label">Cluster Status</div><div class="metric-val" id="m-status">—</div><div class="metric-sub" id="m-status-sub">connecting...</div></div>
+      <div class="metric"><div class="metric-label">Anomalous Services</div><div class="metric-val" id="m-anom">—</div><div class="metric-sub" id="m-anom-sub">—</div></div>
+      <div class="metric"><div class="metric-label">Workflows Run</div><div class="metric-val" id="m-runs">—</div><div class="metric-sub">total healing runs</div></div>
+      <div class="metric"><div class="metric-label">Avg Duration</div><div class="metric-val" id="m-dur">—</div><div class="metric-sub">seconds per workflow</div></div>
+    </div>
+
+    <div class="card-title">● Live Services (Prometheus)</div>
+    <div class="services-grid" id="services-grid">
+      <div style="grid-column:1/-1;padding:2rem;text-align:center;color:var(--text3)">Loading cluster data...</div>
+    </div>
+
+    <div class="two-col">
+      <div>
+        <div class="card-title">📋 Healing Log</div>
+        <div class="card" id="heal-log" style="padding:8px 16px;">
+          <div style="text-align:center;padding:1rem;color:var(--text3)">No runs yet</div>
+        </div>
+      </div>
+      <div>
+        <div class="card-title">◈ Agent Activity</div>
+        <div class="card" id="agent-bars">
+          <div class="agent-bar-row"><span class="agent-bar-label">Monitor agent</span><div class="a-bar"><div class="a-bar-fill" style="width:0%;background:var(--teal)"></div></div><span class="a-bar-pct">—</span></div>
+          <div class="agent-bar-row"><span class="agent-bar-label">Heal agent</span><div class="a-bar"><div class="a-bar-fill" style="width:0%;background:var(--blue)"></div></div><span class="a-bar-pct">—</span></div>
+          <div class="agent-bar-row"><span class="agent-bar-label">Validation agent</span><div class="a-bar"><div class="a-bar-fill" style="width:0%;background:var(--purple)"></div></div><span class="a-bar-pct">—</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-title">📡 Agent Terminal Output</div>
+    <div class="terminal" id="terminal">Waiting for agent output...</div>
+  </div>
+
+    <div class="tab-content" id="tab-chaos">
+    <div class="info-strip">⚡ Inject a fault into your cluster using LitmusChaos, then watch our agents auto-detect and heal it.</div>
+
+    <div class="card-title">Select Chaos Type</div>
+    <div class="chaos-types" id="chaos-types-container">
+      <div class="chaos-type-card selected" id="ct-pod-delete" onclick="selectChaosType('pod-delete')">
+        <div class="chaos-type-name">pod-delete</div>
+        <div class="chaos-type-desc">Safest — deletes target pods via kubectl. Deployments will recreate them eventually.</div>
+      </div>
+      <div class="chaos-type-card" id="ct-scale-to-zero" onclick="selectChaosType('scale-to-zero')">
+        <div class="chaos-type-name">scale-to-zero</div>
+        <div class="chaos-type-desc">Severe — forcefully scales deployment replicas down to 0, causing a complete frontend outage.</div>
+      </div>
+      <div class="chaos-type-card" id="ct-crashloop" onclick="selectChaosType('crashloop')">
+        <div class="chaos-type-name">crashloop</div>
+        <div class="chaos-type-desc">Severe — injects an invalid container image (busybox:invalid), forcing CrashLoopBackOff.</div>
+      </div>
+    </div>
+
+    <div class="chaos-config">
+      <div class="field">
+        <label>Namespace</label>
+        <input id="chaos-ns" type="text" value="staging" placeholder="staging"/>
+      </div>
+      <div class="field">
+        <label>Target App Label</label>
+        <input id="chaos-app" type="text" value="frontend" placeholder="frontend"/>
+      </div>
+      <div class="field">
+        <label>Experiment Name</label>
+        <input id="chaos-name" type="text" value="demo-chaos"/>
+      </div>
+      <div style="display: flex; gap: 10px; margin-top:22px">
+        <button class="btn btn-blue" id="random-chaos-btn" onclick="generateRandomScenario()">🎲 Random Scenario</button>
+        <button class="btn btn-red" id="chaos-btn" onclick="injectChaos()">⚡ Inject Fault</button>
+      </div>
+    </div>
+
+    <div class="card-title">Chaos + Heal Timeline</div>
+    <div class="chaos-status-box" id="chaos-status-box">Waiting for chaos injection...</div>
+
+    <div class="chaos-timeline" id="chaos-timeline"></div>
+
+    <div style="margin-top:16px">
+      <div class="card-title">Live Agent Response</div>
+      <div class="terminal" id="chaos-terminal">Chaos workflow output will appear here...</div>
+    </div>
+  </div>
+
+    <div class="tab-content" id="tab-promql">
+    <div class="info-strip">📊 Query Prometheus directly — zero LLM calls, unlimited use on free tier.</div>
+    <div class="promql-row">
+      <input id="promql-input" type="text" placeholder='e.g. sum(rate(http_requests_total{status=~"5.."}[5m])) by (job)'/>
+      <button class="btn btn-blue" onclick="runPromQL()">▶ Run</button>
+    </div>
+    <div class="promql-presets">
+      <button class="btn btn-sm" onclick="setPromQL('sum(rate(http_requests_total{status=~&quot;5..&quot;}[5m])) by (job) * 100')">Error rate %</button>
+      <button class="btn btn-sm" onclick="setPromQL('histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job)) * 1000')">p99 latency ms</button>
+      <button class="btn btn-sm" onclick="setPromQL('sum(rate(http_requests_total[5m])) by (job)')">Req/s by service</button>
+      <button class="btn btn-sm" onclick="setPromQL('container_memory_working_set_bytes{container!=&quot;&quot;} / container_spec_memory_limit_bytes * 100')">Memory % by pod</button>
+      <button class="btn btn-sm" onclick="setPromQL('sum by (job) (rate(http_requests_total{status=~&quot;5..&quot;}[10m])) / sum by (job) (rate(http_requests_total[10m])) * 100 > 2')">Anomalous services</button>
+    </div>
+    <div class="card-title">Result</div>
+    <div class="promql-result" id="promql-result">Results will appear here...</div>
+  </div>
+
+    <div class="tab-content" id="tab-agents">
+    <div class="info-strip">◈ Each query uses 1–2 LLM calls from your free tier (1500/day). Use sparingly!</div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="ask-wrap">
+        <div class="ask-row">
+          <select id="agent-sel">
+            <option value="monitor">Monitor agent (Prometheus + Loki + Tempo)</option>
+            <option value="heal">Heal agent (ArgoCD rollback/sync)</option>
+            <option value="validation">Validation agent (LitmusChaos)</option>
+          </select>
+        </div>
+        <div class="ask-row">
+          <input id="ask-input" type="text" placeholder="Ask anything about your cluster..."/>
+          <button class="btn btn-blue" onclick="askAgent()">Ask ↗</button>
+        </div>
+        <div class="ask-resp" id="ask-resp"></div>
+      </div>
+    </div>
+    <div class="card-title">Quick Prompts</div>
+    <div class="quick-btns">
+      <button class="btn btn-sm" onclick="quickAsk('monitor','What services are currently degraded and what are their error rates?')">Degraded services</button>
+      <button class="btn btn-sm" onclick="quickAsk('monitor','Are there any firing Prometheus alert rules right now?')">Firing alerts</button>
+      <button class="btn btn-sm" onclick="quickAsk('monitor','Summarize the cluster health across all services in the last 10 minutes')">Cluster summary</button>
+      <button class="btn btn-sm" onclick="quickAsk('heal','Which services need rollback and what is the recommended action?')">Heal recommendations</button>
+      <button class="btn btn-sm" onclick="quickAsk('validation','What chaos experiments have run and what were their resilience scores?')">Chaos history</button>
+    </div>
+  </div>
+
+    <div class="tab-content" id="tab-quota">
+    <div class="info-strip">♻ Monitoring free tier usage — gemini-2.5-flash-lite: 1500 req/day, 30 RPM</div>
+    <div class="metrics" style="grid-template-columns:repeat(3,1fr)">
+      <div class="metric"><div class="metric-label">Daily Limit</div><div class="metric-val" id="q-limit">1500</div><div class="metric-sub">requests/day (free tier)</div></div>
+      <div class="metric"><div class="metric-label">Used This Session</div><div class="metric-val" id="q-used">—</div><div class="metric-sub" id="q-used-sub">LLM calls</div></div>
+      <div class="metric"><div class="metric-label">Est. Remaining</div><div class="metric-val" id="q-remaining">—</div><div class="metric-sub" id="q-circuit">circuit: closed</div></div>
+    </div>
+    <div class="two-col">
+      <div>
+        <div class="card-title">Usage Breakdown</div>
+        <div class="card" id="quota-breakdown">
+          <div style="color:var(--text3);text-align:center;padding:1rem">Loading quota data...</div>
+        </div>
+      </div>
+      <div>
+        <div class="card-title">Free Tier Tips</div>
+        <div class="card">
+          <div style="font-size:12px;color:var(--text2);line-height:2">
+            ✅ <b>/status</b> — 0 LLM calls (safe to poll every 30s)<br>
+            ✅ <b>/metrics/query</b> — 0 LLM calls (direct Prometheus)<br>
+            ⚡ <b>/trigger/sync</b> — ~3 LLM calls per run<br>
+            ⚡ <b>/agent/query</b> — 1–2 LLM calls per question<br>
+            🚫 <b>/stream/monitor</b> — 1–2 calls/poll (use sparingly)<br><br>
+            <span style="color:var(--text3)">Circuit breaker opens after 3× 429 errors and waits 60s before retrying.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-title">Backend Health</div>
+    <div class="card" id="backend-health">
+      <div style="color:var(--text3);text-align:center;padding:1rem">Loading...</div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<script>
+const BASE = 'http://localhost:8005';
+
+// ─── Utility ─────────────────────────────────────────────────────────────────
+
+function pill(s) {
+  const m = {
+    ok:'pill-ok', healthy:'pill-ok', all_pass:'pill-ok', pass:'pill-ok',
+    degraded:'pill-warn', partial_pass:'pill-warn', warn:'pill-warn',
+    critical:'pill-crit', all_fail:'pill-crit', error:'pill-crit', fail:'pill-crit',
+    running:'pill-run', healing:'pill-run',
+    skipped:'pill-skip', awaited:'pill-skip',
+  };
+  const cls = m[(s||'').toLowerCase()] || 'pill-warn';
+  return `<span class="pill ${cls}">${s}</span>`;
+}
+
+function barColor(s) {
+  if (!s) return 'var(--amber)';
+  if (s === 'ok' || s === 'healthy') return 'var(--teal)';
+  if (s === 'critical') return 'var(--red)';
+  return 'var(--amber)';
+}
+
+function ts() { return new Date().toLocaleTimeString(); }
+
+function logToTerminal(id, msg, cls='line-info') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const line = document.createElement('div');
+  line.innerHTML = `<span class="line-ts">[${ts()}]</span> <span class="${cls}">${msg}</span>`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+  if (el.children.length > 200) el.removeChild(el.firstChild);
+}
+
+// ─── Tab routing ─────────────────────────────────────────────────────────────
+
+const TABS = ['overview','chaos','promql','agents','quota'];
+const TITLES = {
+  overview: 'Cluster Overview',
+  chaos: 'Chaos Injection & Auto-Heal',
+  promql: 'PromQL Explorer',
+  agents: 'Ask Agents',
+  quota: 'API Quota Monitor',
+};
+
+function showTab(name) {
+  TABS.forEach(t => {
+    document.getElementById('tab-' + t).classList.toggle('active', t === name);
+    document.getElementById('nav-' + t).classList.toggle('active', t === name);
+  });
+  document.getElementById('page-title').textContent = TITLES[name] || name;
+}
+
+// ─── Connection ──────────────────────────────────────────────────────────────
+
+function setConn(state, label) {
+  document.getElementById('conn-dot').className = 'conn-dot ' + state;
+  document.getElementById('conn-label').textContent = label;
+}
+
+// ─── Overview ────────────────────────────────────────────────────────────────
+
+async function fetchStatus() {
+  const r = await fetch(`${BASE}/status`, { signal: AbortSignal.timeout(5000) });
+  return r.json();
+}
+
+async function fetchLogs() {
+  const r = await fetch(`${BASE}/logs?limit=10`, { signal: AbortSignal.timeout(5000) });
+  return r.json();
+}
+
+function renderMetrics(snap, logs) {
+  const svcs = snap?.snapshot?.services || [];
+  const anom = svcs.filter(s => s.status && s.status !== 'ok').length || snap?.snapshot?.total_anomalous || 0;
+  const crit = svcs.filter(s => s.status === 'critical').length;
+  const status = crit > 0 ? 'CRITICAL' : anom > 0 ? 'DEGRADED' : 'HEALTHY';
+
+  document.getElementById('m-status').textContent = status;
+  document.getElementById('m-status-sub').textContent = anom > 0 ? `${anom} service(s) degraded` : 'All systems nominal';
+  const mStatus = document.querySelector('#metrics-grid .metric');
+  if (mStatus) mStatus.className = 'metric ' + (crit > 0 ? 'crit' : anom > 0 ? 'warn' : 'ok');
+
+  document.getElementById('m-anom').textContent = anom;
+  document.getElementById('m-anom-sub').textContent = `of ${svcs.length || '?'} scanned`;
+
+  const entries = logs?.entries || [];
+  document.getElementById('m-runs').textContent = logs?.total || entries.length;
+  const durations = entries.filter(e => e.duration_s).map(e => e.duration_s);
+  document.getElementById('m-dur').textContent = durations.length
+    ? (durations.reduce((a, b) => a + b, 0) / durations.length).toFixed(1) + 's'
+    : '—';
+}
+
+function renderServices(snap) {
+  const grid = document.getElementById('services-grid');
+  const svcs = snap?.snapshot?.services || [];
+
+  if (!svcs.length) {
+    const total = snap?.snapshot?.total_anomalous ?? null;
+    if (total === 0) {
+      grid.innerHTML = `<div style="grid-column:1/-1;padding:2rem;text-align:center;color:var(--teal);font-weight:600">
+        ✓ Cluster is healthy — zero anomalous services detected by Prometheus
+      </div>`;
+    } else {
+      grid.innerHTML = `<div style="grid-column:1/-1;padding:2rem;text-align:center;color:var(--text3)">
+        Prometheus returned no data. Ensure Prometheus is running on port 9090.
+      </div>`;
+    }
+    return;
+  }
+
+  grid.innerHTML = svcs.map(s => {
+    const status = s.status || (s.error_rate_pct > 10 ? 'critical' : s.error_rate_pct > 2 ? 'degraded' : 'ok');
+    const ep = Math.min(100, ((s.error_rate_pct || s.error || 0) / 20) * 100);
+    return `<div class="svc-card ${status !== 'ok' ? status : 'ok'}">
+      <div class="svc-head">
+        <span class="svc-name">${s.service || s.name || 'unknown'}</span>
+        ${pill(status)}
+      </div>
+      <div class="svc-stats">
+        <div class="svc-stat">Error Rate<b>${(s.error_rate_pct || s.error || 0).toFixed ? (s.error_rate_pct || s.error || 0).toFixed(2) : '?'}%</b></div>
+        <div class="svc-stat">Source<b>${s.source || 'prometheus'}</b></div>
+      </div>
+      <div class="mini-bar"><div class="mini-bar-fill" style="width:${ep.toFixed(1)}%;background:${barColor(status)}"></div></div>
+    </div>`;
+  }).join('');
+}
+
+function renderHealLog(logs) {
+  const el = document.getElementById('heal-log');
+  const entries = (logs?.entries || []).slice().reverse().slice(0, 8);
+  if (!entries.length) {
+    el.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--text3)">No healing runs yet. Trigger one above!</div>';
+    return;
+  }
+  el.innerHTML = entries.map(e => {
+    const t = e.started_at ? new Date(e.started_at * 1000).toLocaleTimeString() : '—';
+    const dur = e.duration_s ? e.duration_s + 's' : '—';
+    const msg = e.stages?.monitor?.summary || e.trigger || e.outcome || '—';
+    return `<div class="log-entry">
+      <span class="log-time">${t}</span>
+      <span class="log-msg">${msg}</span>
+      <span class="log-dur">${dur}</span>
+      ${pill(e.outcome || 'unknown')}
+    </div>`;
+  }).join('');
+}
+
+function renderAgentBars(logs) {
+  const entries = logs?.entries || [];
+  const monitorRuns = entries.filter(e => e.stages?.monitor).length;
+  const healRuns    = entries.filter(e => e.stages?.heal).length;
+  const valRuns     = entries.filter(e => e.stages?.validation).length;
+  const total = Math.max(1, entries.length);
+
+  const bars = [
+    { name: 'Monitor agent',    pct: Math.round((monitorRuns / total) * 100), color: 'var(--teal)' },
+    { name: 'Heal agent',       pct: Math.round((healRuns / total) * 100),    color: 'var(--blue)' },
+    { name: 'Validation agent', pct: Math.round((valRuns / total) * 100),     color: 'var(--purple)' },
+  ];
+
+  document.getElementById('agent-bars').innerHTML = bars.map(b => `
+    <div class="agent-bar-row">
+      <span class="agent-bar-label">${b.name}</span>
+      <div class="a-bar"><div class="a-bar-fill" style="width:${b.pct}%;background:${b.color}"></div></div>
+      <span class="a-bar-pct">${b.pct}%</span>
+    </div>`).join('');
+}
+
+async function fetchAll() {
+  try {
+    const [snap, logs] = await Promise.all([fetchStatus(), fetchLogs()]);
+    setConn('ok', 'connected');
+    document.getElementById('last-updated').textContent = 'Updated ' + ts() + ' · Prometheus live data';
+    renderMetrics(snap, logs);
+    renderServices(snap);
+    renderHealLog(logs);
+    renderAgentBars(logs);
+    updateQuotaBar();
+  } catch (e) {
+    setConn('off', 'offline');
+    document.getElementById('last-updated').textContent = 'Backend offline — start main.py on port 8005';
+    document.getElementById('services-grid').innerHTML = `<div style="grid-column:1/-1;padding:2rem;text-align:center;color:var(--red)">
+      Cannot reach backend. Run: cd backend-agents &amp;&amp; python main.py
+    </div>`;
+  }
+}
+
+// ─── Trigger Heal ─────────────────────────────────────────────────────────────
+
+async function triggerHeal() {
+  const btn = document.getElementById('heal-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> Running...';
+  logToTerminal('terminal', '[WORKFLOW START] Manual trigger from dashboard', 'line-agent');
+
+  try {
+    const r = await fetch(`${BASE}/trigger/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: 'dashboard manual trigger' }),
+      signal: AbortSignal.timeout(120000),
+    });
+    const d = await r.json();
+
+    logToTerminal('terminal', `[STAGE 1] Monitor — anomalies_found: ${d.stages?.monitor?.anomalies_found ?? '?'}`, 'line-info');
+    if (d.stages?.heal) logToTerminal('terminal', `[STAGE 2] Heal — ${d.stages.heal.summary || JSON.stringify(d.stages.heal)}`, 'line-ok');
+    if (d.stages?.validation) logToTerminal('terminal', `[STAGE 3] Validate — ${d.stages.validation.summary || JSON.stringify(d.stages.validation)}`, 'line-ok');
+    logToTerminal('terminal', `[WORKFLOW END] outcome=${d.outcome} llm_calls=${d.llm_calls} duration=${d.duration_s}s`, 'line-ok');
+
+    btn.innerHTML = '✓ Done';
+    setTimeout(() => { btn.disabled = false; btn.innerHTML = '▶ Trigger Heal'; fetchAll(); }, 2500);
+  } catch (e) {
+    logToTerminal('terminal', '[ERROR] ' + e.message, 'line-err');
+    btn.innerHTML = '✗ Error';
+    setTimeout(() => { btn.disabled = false; btn.innerHTML = '▶ Trigger Heal'; }, 2500);
+  }
+}
+
+// ─── Chaos & Heal ────────────────────────────────────────────────────────────
+
+let selectedChaosType = 'pod-delete';
+
+function selectChaosType(t) {
+  selectedChaosType = t;
+  ['pod-delete','scale-to-zero','crashloop'].forEach(id => {
+    const el = document.getElementById('ct-' + id);
+    if(el) el.classList.toggle('selected', id === t);
+  });
+}
+
+function generateRandomScenario() {
+  const scenarios = [
+    { type: 'pod-delete', name: 'random-kill', desc: 'Randomly deletes a frontend pod to simulate a sudden container hardware/runtime crash.' },
+    { type: 'scale-to-zero', name: 'random-scale', desc: 'Simulates a catastrophic autoscaler failure or human error scaling all replicas down to 0 resulting in complete 5xx outage.' },
+    { type: 'crashloop', name: 'random-crashloop', desc: 'Simulates a bad CI CD deployment that injected an invalid configuration, causing containers to instantly hit ImagePullBackOff or CrashLoopBackOff.' }
+  ];
+  const s = scenarios[Math.floor(Math.random() * scenarios.length)];
+  
+  selectChaosType(s.type);
+  document.getElementById('chaos-name').value = s.name + '-' + Math.floor(Math.random() * 1000);
+  
+  const statusBox = document.getElementById('chaos-status-box');
+  statusBox.innerHTML = `<strong style="color:var(--teal)">🎲 RANDOM SCENARIO GENERATED:</strong><br><br>` + 
+                        `<span style="color:var(--amber)">Action Type: <b>${s.type}</b></span><br>` +
+                        `<span style="color:var(--text3)">${s.desc}</span><br><br>` +
+                        `<em>Click "⚡ Inject Fault" when you are ready to cause this physical failure in your cluster!</em>`;
+}
+
+function addTimelineStep(step, label, state, timestamp) {
+  const tl = document.getElementById('chaos-timeline');
+  const el = document.createElement('div');
+  el.className = 'ct-row';
+  el.id = 'ct-step-' + step;
+  el.innerHTML = `<div class="ct-step ${state}">${step}</div><span class="ct-label">${label}</span><span class="ct-ts">${timestamp || ''}</span>`;
+  tl.appendChild(el);
+}
+
+function updateTimelineStep(step, state) {
+  const el = document.getElementById('ct-step-' + step);
+  if (el) el.querySelector('.ct-step').className = 'ct-step ' + state;
+}
+
+async function injectChaos() {
+  const btn = document.getElementById('chaos-btn');
+  const ns   = document.getElementById('chaos-ns').value.trim() || 'staging';
+  const app  = document.getElementById('chaos-app').value.trim() || 'frontend';
+  const name = document.getElementById('chaos-name').value.trim() || 'demo-chaos';
+  const term = document.getElementById('chaos-terminal');
+  const statusBox = document.getElementById('chaos-status-box');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> Injecting...';
+  term.innerHTML = '';
+  document.getElementById('chaos-timeline').innerHTML = '';
+
+  logToTerminal('chaos-terminal', `Injecting ${selectedChaosType} fault into ${app} in ${ns}...`, 'line-warn');
+  statusBox.textContent = 'Chaos injection in progress...';
+
+  addTimelineStep(1, 'Safety checks running (namespace allowlist, prod-block, error threshold)', 'run', ts());
+  addTimelineStep(2, 'LitmusChaos experiment launching', 'wait', '');
+  addTimelineStep(3, 'Monitor agent scanning Prometheus for anomalies', 'wait', '');
+  addTimelineStep(4, 'Heal agent triggering ArgoCD remediation', 'wait', '');
+  addTimelineStep(5, 'Validation agent verifying steady-state', 'wait', '');
+
+  try {
+    // Step 1: Inject chaos
+    const chaosResp = await fetch(`${BASE}/chaos/inject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ experiment_name: name, target_namespace: ns, target_app: app, chaos_type: selectedChaosType }),
+      signal: AbortSignal.timeout(30000),
+    });
+    const chaos = await chaosResp.json();
+    logToTerminal('chaos-terminal', `Chaos API response: ${JSON.stringify(chaos)}`, chaos.skipped ? 'line-warn' : 'line-info');
+
+    if (chaos.skipped || chaos.status === 'SKIPPED') {
+      updateTimelineStep(1, 'fail');
+      statusBox.textContent = 'SKIPPED: ' + (chaos.safety_check?.reason || 'Safety gate blocked this experiment.');
+      logToTerminal('chaos-terminal', 'Chaos SKIPPED by safety gate. Triggering agent workflow on current cluster state instead...', 'line-warn');
+    } else {
+      updateTimelineStep(1, 'done');
+      updateTimelineStep(2, 'done');
+      statusBox.textContent = `Chaos running (run_id: ${chaos.run_id || 'N/A'}) — type: ${chaos.chaos_type}`;
+      logToTerminal('chaos-terminal', `Chaos experiment LAUNCHED. run_id: ${chaos.run_id}`, 'line-ok');
+    }
+
+    // Step 2: Let agents heal
+    logToTerminal('chaos-terminal', 'Triggering healing workflow — agents scanning cluster...', 'line-agent');
+    updateTimelineStep(3, 'run');
+
+    const healResp = await fetch(`${BASE}/trigger/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: `post-chaos-heal: ${name}` }),
+      signal: AbortSignal.timeout(120000),
+    });
+    const heal = await healResp.json();
+
+    updateTimelineStep(3, heal.stages?.monitor?.anomalies_found ? 'done' : 'done');
+    logToTerminal('chaos-terminal', `[MONITOR] anomalies_found=${heal.stages?.monitor?.anomalies_found ?? false}`, 'line-info');
+    logToTerminal('chaos-terminal', `[MONITOR] ${heal.stages?.monitor?.summary || JSON.stringify(heal.stages?.monitor)}`, 'line-info');
+
+    if (heal.stages?.heal) {
+      updateTimelineStep(4, 'done');
+      logToTerminal('chaos-terminal', `[HEAL] ${heal.stages.heal.summary || JSON.stringify(heal.stages.heal)}`, 'line-ok');
+    } else {
+      updateTimelineStep(4, heal.outcome === 'healthy' ? 'done' : 'fail');
+    }
+
+    if (heal.stages?.validation) {
+      updateTimelineStep(5, 'done');
+      logToTerminal('chaos-terminal', `[VALIDATE] ${heal.stages.validation.summary || JSON.stringify(heal.stages.validation)}`, 'line-ok');
+    } else {
+      updateTimelineStep(5, heal.outcome === 'healthy' ? 'done' : 'fail');
+    }
+
+    logToTerminal('chaos-terminal', `[WORKFLOW END] outcome=${heal.outcome} llm_calls=${heal.llm_calls} duration=${heal.duration_s}s`, 
+      heal.outcome === 'healthy' ? 'line-ok' : heal.outcome === 'error' ? 'line-err' : 'line-warn');
+
+    statusBox.textContent = `Workflow complete — outcome: ${heal.outcome} | LLM calls: ${heal.llm_calls} | Duration: ${heal.duration_s}s`;
+    btn.innerHTML = '✓ Done';
+    fetchAll();
+  } catch (e) {
+    logToTerminal('chaos-terminal', '[ERROR] ' + e.message, 'line-err');
+    statusBox.textContent = 'Error: ' + e.message;
+    btn.innerHTML = '✗ Error';
+  }
+  setTimeout(() => { btn.disabled = false; btn.innerHTML = '⚡ Inject Fault'; }, 3000);
+}
+
+// ─── PromQL ──────────────────────────────────────────────────────────────────
+
+async function runPromQL() {
+  const q = document.getElementById('promql-input').value.trim();
+  const out = document.getElementById('promql-result');
+  if (!q) return;
+  out.textContent = 'Querying Prometheus...';
+  try {
+    const r = await fetch(`${BASE}/metrics/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: q, minutes: 10 }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const d = await r.json();
+    const results = d?.data?.result || [];
+    if (!results.length) { out.textContent = 'No data returned for this query.\nTip: Check your label selectors or expand the time range.'; return; }
+    out.textContent = results.map(res => {
+      const labels = Object.entries(res.metric || {}).map(([k, v]) => `${k}="${v}"`).join(', ');
+      const val    = Array.isArray(res.value) ? parseFloat(res.value[1]).toFixed(4) : 'n/a';
+      return `{${labels}}  →  ${val}`;
+    }).join('\n');
+  } catch (e) {
+    out.textContent = 'Error: ' + e.message + '\nMake sure backend is running on port 8005.';
+  }
+}
+
+function setPromQL(q) {
+  document.getElementById('promql-input').value = q;
+  runPromQL();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('promql-input').addEventListener('keydown', e => { if (e.key === 'Enter') runPromQL(); });
+});
+
+// ─── Ask Agents ──────────────────────────────────────────────────────────────
+
+async function askAgent() {
+  const agent  = document.getElementById('agent-sel').value;
+  const prompt = document.getElementById('ask-input').value.trim();
+  const resp   = document.getElementById('ask-resp');
+  if (!prompt) return;
+  resp.style.display = 'block';
+  resp.textContent = `Asking ${agent} agent... (1-2 LLM calls)`;
+  try {
+    const r = await fetch(`${BASE}/agent/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent, prompt }),
+      signal: AbortSignal.timeout(60000),
+    });
+    const d = await r.json();
+    resp.textContent = d.response || JSON.stringify(d, null, 2);
+  } catch (e) {
+    resp.textContent = 'Error: ' + e.message;
+  }
+}
+
+function quickAsk(agent, prompt) {
+  showTab('agents');
+  document.getElementById('agent-sel').value = agent;
+  document.getElementById('ask-input').value = prompt;
+  askAgent();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('ask-input').addEventListener('keydown', e => { if (e.key === 'Enter') askAgent(); });
+});
+
+// ─── Quota ───────────────────────────────────────────────────────────────────
+
+async function fetchQuota() {
+  try {
+    const [qr, hr] = await Promise.all([
+      fetch(`${BASE}/quota`, { signal: AbortSignal.timeout(5000) }),
+      fetch(`${BASE}/health`, { signal: AbortSignal.timeout(5000) }),
+    ]);
+    const q = await qr.json();
+    const h = await hr.json();
+
+    document.getElementById('q-used').textContent = q.llm_calls_this_session ?? '—';
+    document.getElementById('q-remaining').textContent = q.estimated_remaining ?? '—';
+    document.getElementById('q-used-sub').textContent = `avg ${q.avg_calls_per_workflow ?? '?'} calls/workflow`;
+    document.getElementById('q-circuit').textContent = 'circuit: ' + (q.circuit_breaker || 'closed');
+
+    const pct = Math.min(100, ((q.llm_calls_this_session || 0) / 1500) * 100);
+    document.getElementById('quota-bar-fill').style.width = pct + '%';
+    document.getElementById('quota-bar-fill').className = 'quota-bar-fill' + (pct > 80 ? ' crit' : pct > 50 ? ' warn' : '');
+    document.getElementById('quota-used-label').textContent = Math.round(pct) + '%';
+
+    document.getElementById('quota-breakdown').innerHTML = `
+      <div class="log-entry"><span class="log-time">model</span><span class="log-msg">${q.model || '—'}</span><span></span><span></span></div>
+      <div class="log-entry"><span class="log-time">workflows</span><span class="log-msg">${q.workflows_run ?? '—'} total runs</span><span></span><span></span></div>
+      <div class="log-entry"><span class="log-time">avg calls</span><span class="log-msg">${q.avg_calls_per_workflow ?? '—'} LLM calls per run</span><span></span><span></span></div>
+      <div class="log-entry"><span class="log-time">429 streak</span><span class="log-msg">${q.consecutive_429s ?? 0} consecutive errors</span><span></span><span></span></div>
+    `;
+
+    document.getElementById('backend-health').innerHTML = `
+      <div class="log-entry"><span class="log-time">status</span><span class="log-msg" style="color:var(--teal)">${h.status || 'ok'}</span><span></span><span></span></div>
+      <div class="log-entry"><span class="log-time">auto-poll</span><span class="log-msg">${h.auto_poll ? 'ON — every ' + h.poll_interval_s + 's' : 'OFF (manual trigger only)'}</span><span></span><span></span></div>
+      <div class="log-entry"><span class="log-time">agents</span><span class="log-msg">${(h.agents || []).join(', ')}</span><span></span><span></span></div>
+      <div class="log-entry"><span class="log-time">circuit</span><span class="log-msg">${h.circuit_breaker || 'closed'}</span><span></span><span></span></div>
+    `;
+  } catch (e) {
+    document.getElementById('quota-breakdown').innerHTML = `<div style="color:var(--red);text-align:center;padding:1rem">Cannot reach backend: ${e.message}</div>`;
+  }
+}
+
+async function updateQuotaBar() {
+  try {
+    const r = await fetch(`${BASE}/quota`, { signal: AbortSignal.timeout(3000) });
+    const q = await r.json();
+    const pct = Math.min(100, ((q.llm_calls_this_session || 0) / 1500) * 100);
+    document.getElementById('quota-bar-fill').style.width = pct + '%';
+    document.getElementById('quota-used-label').textContent = Math.round(pct) + '%';
+  } catch (_) {}
+}
+
+// ─── Boot ────────────────────────────────────────────────────────────────────
+
+fetchAll();
+fetchQuota();
+setInterval(fetchAll, 30000);
+setInterval(fetchQuota, 15000);
+</script>
+</body>
+</html>
