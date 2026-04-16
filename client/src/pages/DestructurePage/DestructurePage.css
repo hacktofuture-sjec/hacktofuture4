@@ -65,19 +65,19 @@
 }
 
 .dest-tabs-section {
-  @apply relative z-10 px-6 max-w-6xl mx-auto mt-12;
+  @apply relative z-10 px-6 max-w-7xl mx-auto mt-16;
 }
 
 .dest-tabs-container {
-  @apply flex justify-center mb-16;
+  @apply flex justify-center mb-20;
 }
 
 .dest-tabs {
-  @apply inline-flex gap-4 p-2 rounded-2xl bg-surface-container-lowest border border-outline-variant/50;
+  @apply inline-flex gap-4 p-2.5 rounded-2xl bg-surface-container-lowest border border-outline-variant/50 shadow-xl shadow-black/5;
 }
 
 .dest-tab {
-  @apply relative px-8 py-4 rounded-xl transition-all duration-300 font-headline font-bold text-sm tracking-widest flex items-center gap-3;
+  @apply relative px-10 py-5 rounded-xl transition-all duration-300 font-headline font-bold text-sm tracking-widest flex items-center gap-3;
   @apply text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high;
 }
 
@@ -94,23 +94,43 @@
 }
 
 .dest-viewer {
-  @apply w-full;
+  @apply w-full pt-4;
 }
 
 .dest-content {
-  @apply flex flex-col;
+  @apply flex flex-col gap-12;
 }
 
 .dest-section-header {
-  @apply mb-12 text-center md:text-left;
+  @apply mb-16 text-center flex flex-col items-center;
 }
 
 .dest-section-title {
-  @apply font-headline font-black text-4xl tracking-tighter text-on-surface mb-4;
+  @apply font-headline font-black text-4xl tracking-tighter text-on-surface mb-6;
 }
 
 .dest-section-desc {
-  @apply text-on-surface-variant text-lg max-w-3xl leading-relaxed;
+  @apply text-on-surface-variant text-lg max-w-4xl leading-relaxed text-center;
+}
+
+.dest-workflow-box {
+  @apply bg-surface-container-high/40 border border-outline-variant rounded-2xl p-8 mb-12 text-left max-w-3xl mx-auto;
+}
+
+.dest-workflow-title {
+  @apply font-headline font-black text-xs tracking-[0.2em] text-primary mb-6 uppercase;
+}
+
+.dest-workflow-list {
+  @apply flex flex-col gap-6;
+}
+
+.dest-workflow-list li {
+  @apply text-sm text-on-surface-variant leading-relaxed;
+}
+
+.dest-workflow-step-title {
+  @apply block font-bold text-on-surface mb-1 uppercase tracking-tight;
 }
 
 .dest-grid {

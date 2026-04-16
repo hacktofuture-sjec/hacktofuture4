@@ -96,9 +96,32 @@ export default function DestructurePage() {
             <div className="dest-content animate-fade-in">
               <div className="dest-section-header">
                 <h2 className="dest-section-title">REPOSITORY STRUCTURAL INDEXING</h2>
-                <p className="dest-section-desc">
-                  This is how we parse the repo to gain full contextual awareness. Our parser breaks down the codebase into four core structural layers.
-                </p>
+                <div className="dest-section-desc">
+                  <div className="dest-workflow-box">
+                    <h4 className="dest-workflow-title">THE EXECUTION PIPELINE</h4>
+                    <p className="text-on-surface-variant text-sm mb-8 leading-relaxed font-medium border-b border-outline-variant pb-6">
+                      This is how we parse the repo to gain full contextual awareness. Our engine initiates a multi-pass deconstruction of the codebase to build a high-fidelity structural map.
+                    </p>
+                    <ul className="dest-workflow-list">
+                      <li>
+                        <span className="dest-workflow-step-title">01. DEEP SCAN</span>
+                        Clones the branch and runs a multi-pass parser across the entire filesystem.
+                      </li>
+                      <li>
+                        <span className="dest-workflow-step-title">02. ATOMIC MAPPING</span>
+                        Deconstructs files into atomic symbols (functions/classes) with precise line-range metadata.
+                      </li>
+                      <li>
+                        <span className="dest-workflow-step-title">03. GRAPH ASSEMBLY</span>
+                        Links imports and exports into a directed dependency graph to measure 'blast radius'.
+                      </li>
+                      <li>
+                        <span className="dest-workflow-step-title">04. CONTEXT PERSISTENCE</span>
+                        Stores the resulting metadata into normalized RSI tables for sub-millisecond AI retrieval.
+                      </li>
+                    </ul>
+                  </div>
+                </div>
               </div>
               
               <div className="dest-grid">
@@ -132,13 +155,13 @@ export default function DestructurePage() {
                 </div>
               </div>
 
-              <div className="dest-info-box mt-12">
-                <div className="dest-info-box__header">
-                  <span className="material-symbols-outlined">summarize</span>
-                  REPO SUMMARY
+              <div className="dest-info-box mt-12 border-primary/40 bg-primary/5">
+                <div className="dest-info-box__header text-primary">
+                  <span className="material-symbols-outlined">database</span>
+                  REPO SUMMARY (rsi_repo_summary)
                 </div>
                 <p className="dest-info-box__text">
-                  Post-indexing, we generate a high-level technical overview (Primary Language, Tech Stack, Entry Points) that serves as the project's tactical manual for AI agents.
+                  Post-indexing, we generate a high-level technical overview (Primary Language, Tech Stack, Entry Points). <strong>Stored in the rsi_repo_summary table</strong>, this context is passed to the AI engine on every deployment to ensure total awareness of the codebase structure.
                 </p>
               </div>
             </div>
