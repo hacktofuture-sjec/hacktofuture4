@@ -29,8 +29,9 @@ async def inject_fault(body: FaultInjectionRequest) -> FaultInjectionResponse:
         db.close()
 
     injector = FaultInjector([scenario])
+    effective_force = body.force or body.scenario_id == "cpu-spike-001"
     try:
-        injector.apply_fault(body.scenario_id, force=body.force)
+        injector.apply_fault(body.scenario_id, force=effective_force)
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail={"error": "fault_injection_failed", "reason": str(exc)})
 

@@ -39,6 +39,13 @@ export default function DiagnosisPanel({ diagnosis, incidentId, onRefresh }: Pro
     );
   }
 
+  const mode = (diagnosis as any).diagnosis_mode ?? (diagnosis as any).source ?? "rule";
+  const fingerprintMatched =
+    (diagnosis as any).fingerprint_matched ?? Boolean((diagnosis as any).fingerprint_id);
+  const evidence = Array.isArray((diagnosis as any).evidence)
+    ? (diagnosis as any).evidence
+    : [String((diagnosis as any).reasoning ?? "No evidence available")];
+
   return (
     <section className="diagnosis-panel panel">
       <h3 className="section-title">Diagnosis</h3>
@@ -46,17 +53,17 @@ export default function DiagnosisPanel({ diagnosis, incidentId, onRefresh }: Pro
         <strong>Root cause:</strong> {diagnosis.root_cause}
       </p>
       <p>
-        <strong>Mode:</strong> {diagnosis.diagnosis_mode}
+        <strong>Mode:</strong> {String(mode)}
       </p>
-      <ProgressBar value={diagnosis.confidence} label="Confidence" />
+      <ProgressBar value={Number(diagnosis.confidence ?? 0)} label="Confidence" />
       <p>
-        <strong>Fingerprint matched:</strong> {diagnosis.fingerprint_matched ? "Yes" : "No"}
+        <strong>Fingerprint matched:</strong> {fingerprintMatched ? "Yes" : "No"}
       </p>
       <p>
         <strong>Evidence:</strong>
       </p>
       <ul>
-        {diagnosis.evidence.map((e, idx) => (
+        {evidence.map((e: string, idx: number) => (
           <li key={idx}>{e}</li>
         ))}
       </ul>

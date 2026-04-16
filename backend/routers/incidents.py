@@ -13,6 +13,7 @@ from planner.plan_simulator import simulate_action
 from planner.planner_agent import PlannerAgent
 from verifier.recovery_checker import RecoveryChecker
 from incident.store import INCIDENTS
+from realtime.hub import BROADCASTER
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 planner_agent = PlannerAgent()
@@ -129,11 +130,126 @@ def list_incidents() -> list[dict]:
 @router.get("/{incident_id}")
 def get_incident(incident_id: str) -> dict:
     """Return the incident detail payload for a single incident."""
-    return _find_incident(incident_id)
+    incident = _find_incident(incident_id)
+
+    # Frontend expects `plan`; older flows only populate `plan_json`.
+    if incident.get("plan") is None and incident.get("plan_json") is not None:
+        incident["plan"] = incident["plan_json"]
+
+    return incident
+
+
+@router.post("/{incident_id}/diagnose")
+async def diagnose_incident(incident_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Run diagnosis for a specific incident and persist it on the incident record."""
+    incident = _find_incident(incident_id)
+    body = payload or {}
+
+    snapshot = body.get("snapshot") or incident.get("snapshot") or collect_monitor_snapshot()
+    diagnosis = diagnose_snapshot(snapshot)
+
+    previous_status = incident.get("status", "open")
+    incident["snapshot"] = snapshot
+    incident["diagnosis"] = diagnosis
+    incident["updated_at"] = datetime.now(timezone.utc).isoformat()
+    incident["status"] = "diagnosing"
+
+    await BROADCASTER.broadcast(
+        {
+            "type": "status_change",
+            "incident_id": incident_id,
+            "previous_status": previous_status,
+            "new_status": incident["status"],
+            "timestamp": incident["updated_at"],
+        }
+    )
+    await BROADCASTER.broadcast(
+        {
+            "type": "diagnosis_complete",
+            "incident_id": incident_id,
+            "diagnosis": diagnosis,
+        }
+    )
+
+    return diagnosis
+
+
+@router.get("/{incident_id}/timeline")
+def get_incident_timeline(incident_id: str) -> dict[str, Any]:
+    """Return a synthetic timeline from persisted incident lifecycle timestamps."""
+    incident = _find_incident(incident_id)
+
+    events: list[dict[str, Any]] = []
+
+    created_at = incident.get("created_at")
+    if created_at:
+        events.append(
+            {
+                "timestamp": created_at,
+                "status": "open",
+                "actor": "monitor",
+                "note": incident.get("summary", "Incident opened"),
+            }
+        )
+
+    if incident.get("diagnosis") is not None:
+        events.append(
+            {
+                "timestamp": incident.get("updated_at") or created_at,
+                "status": "diagnosing",
+                "actor": "diagnose-agent",
+                "note": "Diagnosis generated",
+            }
+        )
+
+    if incident.get("planned_at"):
+        events.append(
+            {
+                "timestamp": incident.get("planned_at"),
+                "status": incident.get("status", "planned"),
+                "actor": "planner-agent",
+                "note": "Remediation plan generated",
+            }
+        )
+
+    if incident.get("execution") is not None:
+        events.append(
+            {
+                "timestamp": incident.get("execution", {}).get("execution_timestamp")
+                or incident.get("updated_at")
+                or created_at,
+                "status": "executing",
+                "actor": "executor-agent",
+                "note": "Execution attempted",
+            }
+        )
+
+    if incident.get("verification") is not None:
+        events.append(
+            {
+                "timestamp": incident.get("verified_at") or incident.get("updated_at") or created_at,
+                "status": "verifying",
+                "actor": "verifier-agent",
+                "note": "Verification completed",
+            }
+        )
+
+    if incident.get("resolved_at"):
+        events.append(
+            {
+                "timestamp": incident.get("resolved_at"),
+                "status": "resolved",
+                "actor": "system",
+                "note": "Incident resolved",
+            }
+        )
+
+    events.sort(key=lambda item: str(item.get("timestamp", "")))
+    return {"incident_id": incident_id, "events": events}
 
 
 @router.post("/{incident_id}/plan")
-def plan_incident(incident_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+async def plan_incident(incident_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """Generate and persist a plan for the incident using the planner agent."""
     incident = _find_incident(incident_id)
     body = payload or {}
@@ -165,12 +281,33 @@ def plan_incident(incident_id: str, payload: dict[str, Any] | None = None) -> di
     actions = [action.model_dump(mode="json") for action in plan_output.actions]
     incident["diagnosis"] = diagnosis
     incident["plan_json"] = {"actions": actions}
+    incident["plan"] = incident["plan_json"]
     incident["planned_at"] = datetime.now(timezone.utc).isoformat()
 
+    previous_status = incident.get("status", "open")
     if any(action["approval_required"] for action in actions):
         incident["status"] = "pending_approval"
     else:
         incident["status"] = "planned"
+
+    incident["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    await BROADCASTER.broadcast(
+        {
+            "type": "status_change",
+            "incident_id": incident_id,
+            "previous_status": previous_status,
+            "new_status": incident["status"],
+            "timestamp": incident["updated_at"],
+        }
+    )
+    await BROADCASTER.broadcast(
+        {
+            "type": "plan_ready",
+            "incident_id": incident_id,
+            "plan": incident["plan_json"],
+        }
+    )
 
     return {
         "incident_id": incident_id,
@@ -216,7 +353,7 @@ def simulate_incident_action(incident_id: str, payload: dict[str, Any] | None = 
 
 
 @router.post("/{incident_id}/approve")
-def approve_incident_action(incident_id: str) -> dict:
+async def approve_incident_action(incident_id: str) -> dict:
     """Mark the incident as approved so the next execution stage can proceed."""
     incident = _find_incident(incident_id)
 
@@ -226,7 +363,20 @@ def approve_incident_action(incident_id: str) -> dict:
             detail="Incident must be in planned or pending_approval state before approval",
         )
 
+    previous_status = incident.get("status", "open")
     incident["status"] = "approved"
+    incident["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    await BROADCASTER.broadcast(
+        {
+            "type": "status_change",
+            "incident_id": incident_id,
+            "previous_status": previous_status,
+            "new_status": incident["status"],
+            "timestamp": incident["updated_at"],
+        }
+    )
+
     return {
         "incident_id": incident_id,
         "status": incident["status"],
@@ -254,7 +404,20 @@ async def execute_incident_action(incident_id: str, payload: dict[str, Any] | No
     action = actions[action_index]
     command = str(action.get("action", ""))
 
+    previous_status = incident.get("status", "open")
     incident["status"] = "executing"
+    incident["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    await BROADCASTER.broadcast(
+        {
+            "type": "status_change",
+            "incident_id": incident_id,
+            "previous_status": previous_status,
+            "new_status": incident["status"],
+            "timestamp": incident["updated_at"],
+        }
+    )
+
     execution_result = await executor_agent.execute(incident_id=incident_id, action_command=command)
     incident["execution"] = execution_result.model_dump(mode="json")
 
@@ -262,6 +425,25 @@ async def execute_incident_action(incident_id: str, payload: dict[str, Any] | No
         incident["status"] = "verifying"
     else:
         incident["status"] = "failed"
+
+    incident["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    await BROADCASTER.broadcast(
+        {
+            "type": "execution_update",
+            "incident_id": incident_id,
+            "execution": incident["execution"],
+        }
+    )
+    await BROADCASTER.broadcast(
+        {
+            "type": "status_change",
+            "incident_id": incident_id,
+            "previous_status": "executing",
+            "new_status": incident["status"],
+            "timestamp": incident["updated_at"],
+        }
+    )
 
     return {
         "incident_id": incident_id,
@@ -285,11 +467,42 @@ async def verify_incident_recovery(incident_id: str, payload: dict[str, Any] | N
     incident["verification"] = verification.model_dump(mode="json")
     incident["verified_at"] = datetime.now(timezone.utc).isoformat()
 
+    previous_status = incident.get("status", "verifying")
     if verification.recovered:
         incident["status"] = "resolved"
         incident["resolved_at"] = incident["verified_at"]
     else:
         incident["status"] = "failed"
+
+    incident["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    await BROADCASTER.broadcast(
+        {
+            "type": "status_change",
+            "incident_id": incident_id,
+            "previous_status": previous_status,
+            "new_status": incident["status"],
+            "timestamp": incident["updated_at"],
+        }
+    )
+
+    if incident["status"] == "resolved":
+        await BROADCASTER.broadcast(
+            {
+                "type": "incident_resolved",
+                "incident_id": incident_id,
+                "verification": incident["verification"],
+                "token_summary": incident.get("token_summary")
+                or {
+                    "total_input_tokens": 0,
+                    "total_output_tokens": 0,
+                    "total_ai_calls": 0,
+                    "total_actual_cost_usd": 0.0,
+                    "rule_only_resolution": True,
+                    "fallback_triggered": False,
+                },
+            }
+        )
 
     return {
         "incident_id": incident_id,

@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import httpx
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -12,6 +12,7 @@ from routers.health import router as health_router
 from routers.incidents import router as incidents_router
 from routers.memory import router as memory_router
 from routers.scenarios import router as scenarios_router
+from realtime.hub import BROADCASTER
 
 
 def create_app() -> FastAPI:
@@ -53,6 +54,18 @@ def create_app() -> FastAPI:
     @app.on_event("shutdown")
     async def shutdown() -> None:
         await LIVE_MONITOR_AGENT.stop()
+
+    @app.websocket("/ws")
+    async def websocket_endpoint(websocket: WebSocket) -> None:
+        await BROADCASTER.connect(websocket)
+        try:
+            # Keep connection open; client currently only receives events.
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            BROADCASTER.disconnect(websocket)
+        except Exception:
+            BROADCASTER.disconnect(websocket)
 
     app.include_router(health_router)
     app.include_router(scenarios_router)

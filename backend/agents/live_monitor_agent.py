@@ -14,6 +14,7 @@ from config import settings
 from db import get_db
 from incident.incident_assembler import IncidentAssembler
 from incident.store import INCIDENTS
+from realtime.hub import BROADCASTER
 
 
 MONITORED_SCENARIO_IDS = {
@@ -141,7 +142,36 @@ class LiveMonitorAgent:
         failure_class = str(snapshot.get("failure_class", "unknown"))
 
         diagnosis = diagnose_snapshot(self._to_diagnosis_snapshot(incident))
-        self._upsert_incident_record(incident=incident, diagnosis=diagnosis)
+        record, created = self._upsert_incident_record(incident=incident, diagnosis=diagnosis)
+
+        if created:
+            await BROADCASTER.broadcast(
+                {
+                    "type": "incident_event",
+                    "incident_id": record["incident_id"],
+                    "status": record.get("status", "open"),
+                    "severity": record.get("severity", "medium"),
+                    "created_at": record.get("created_at", datetime.now(timezone.utc).isoformat()),
+                }
+            )
+        else:
+            await BROADCASTER.broadcast(
+                {
+                    "type": "status_change",
+                    "incident_id": record["incident_id"],
+                    "previous_status": "open",
+                    "new_status": record.get("status", "open"),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+
+        await BROADCASTER.broadcast(
+            {
+                "type": "diagnosis_complete",
+                "incident_id": record["incident_id"],
+                "diagnosis": diagnosis,
+            }
+        )
 
     async def _resolve_pod_name(self, namespace: str, deployment: str) -> str:
         if self.k8s_events.v1 is None:
@@ -388,7 +418,7 @@ class LiveMonitorAgent:
             "trace": snapshot.get("trace_summary") or {},
         }
 
-    def _create_incident_record(self, *, incident: dict[str, Any], diagnosis: dict[str, Any]) -> None:
+    def _create_incident_record(self, *, incident: dict[str, Any], diagnosis: dict[str, Any]) -> dict[str, Any]:
         snapshot = incident["snapshot"]
         now = datetime.now(timezone.utc).isoformat()
 
@@ -436,6 +466,8 @@ class LiveMonitorAgent:
         finally:
             db.close()
 
+        return record
+
     @staticmethod
     def _merge_unique_by_key(existing: list[dict[str, Any]], incoming: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
         merged: dict[str, dict[str, Any]] = {}
@@ -467,7 +499,7 @@ class LiveMonitorAgent:
         merged["pod"] = incoming.get("pod") or current.get("pod", "unknown")
         return merged
 
-    def _upsert_incident_record(self, *, incident: dict[str, Any], diagnosis: dict[str, Any]) -> None:
+    def _upsert_incident_record(self, *, incident: dict[str, Any], diagnosis: dict[str, Any]) -> tuple[dict[str, Any], bool]:
         snapshot = incident["snapshot"]
         now = datetime.now(timezone.utc).isoformat()
         existing = self._find_open_incident(
@@ -478,8 +510,7 @@ class LiveMonitorAgent:
         )
 
         if existing is None:
-            self._create_incident_record(incident=incident, diagnosis=diagnosis)
-            return
+            return self._create_incident_record(incident=incident, diagnosis=diagnosis), True
 
         merged_snapshot = self._merge_snapshot(existing.get("snapshot", {}), snapshot)
         existing.update(
@@ -520,6 +551,8 @@ class LiveMonitorAgent:
             db.commit()
         finally:
             db.close()
+
+        return existing, False
 
 
 LIVE_MONITOR_AGENT = LiveMonitorAgent()
