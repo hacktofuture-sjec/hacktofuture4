@@ -24,6 +24,14 @@ An independent intelligent microservice designed exclusively to evaluate natural
 - **Self-Healing:** Built-in validator nodes catch hallucinated payloads natively, appending the errors to the prompt for closed-loop, isolated retries.
 - **CRITICAL RESTRICTION:** FastApi possesses absolutely zero database write capabilities to ensure the AI pipeline can never autonomously destruct system integrity. It communicates to Django via strictly typed internal URLs.
 
+### 3️⃣ Web Frontend (Operator Console)
+A Vite + React + TypeScript single-page application that operators use to administer the platform end-to-end.
+- **Stack:** React 19, TypeScript, Tailwind, Framer Motion, React Router, Axios.
+- **Auth:** JWT access + refresh tokens are obtained from the Django `/api/v1/auth/*` endpoints and stored client-side. A single-flight refresh interceptor transparently rotates expired access tokens on 401.
+- **Coverage:** One page per `/api/v1/*` resource group — dashboard, insights, unified tickets (with activities/comments), raw events + DLQ (with one-click retry), integrations + accounts (with on-demand sync), processing runs + step transitions, chat sessions (SSE-capable streaming with JSON fallback), dashboards + widgets, saved queries, sync checkpoints, organization + members + invites, API keys, audit logs.
+- **Voice Agent:** The original VoxBridge voice/action demo is preserved at `/agent` and talks directly to the FastAPI agent service (not Django), so the demo works with or without the backend online.
+- **Boundary:** The frontend NEVER calls internal ApiKey routes (`/events/ingest`, `/tickets/upsert`, `/dlq`, `/identities/map`) — those remain service-to-service.
+
 ---
 
 ## 🧠 Core Engineering Principles
@@ -69,7 +77,14 @@ The active LangGraph State machine flows through the following graph properties 
 ├── mcp-servers/              # Model Context Protocol plugins
 │   ├── jira/
 │   ├── slack/
-│   └── hubspot/              
+│   └── hubspot/
+│
+├── frontend/                 # Vite + React + TS operator console
+│   ├── src/api/              # Typed Axios client + one module per /api/v1 group
+│   ├── src/context/          # Auth provider (JWT + refresh rotation)
+│   ├── src/components/       # App shell (Layout, ProtectedRoute) + UI primitives
+│   ├── src/pages/            # One page per resource group, plus /agent (VoxBridge)
+│   └── .env.example          # VITE_API_URL / VITE_AGENT_URL template
 │
 ├── docker-compose.yml        # PostgreSQL & Redis clusters
 ├── Makefile                  # UV CLI standardized commands
@@ -101,6 +116,15 @@ LLM_TEMPERATURE=0.0
 ```
 
 *(Ensure PostgreSQL/JWT variables are correctly patched mirroring `.env.example`)*
+
+The frontend reads its own two variables from `frontend/.env` (copy `frontend/.env.example`):
+```ini
+# Django REST base, must include /api/v1
+VITE_API_URL=http://localhost:8000/api/v1
+
+# FastAPI agent service (used only by the /agent voice screen)
+VITE_AGENT_URL=http://localhost:8001
+```
 
 ### 4. Bootstrapping Local Infrastructure
 Provision the backend systems.
@@ -148,6 +172,16 @@ make celery-worker
 make celery-beat
 ```
 
+**(Terminal 6) Frontend Dev Server**:
+Boot the operator console. On first run it will install npm packages into `frontend/node_modules`.
+```bash
+# One-time setup (also covered by `make setup`)
+cd frontend && npm install && cp .env.example .env
+
+# Hot-reloading dev server on http://localhost:5173
+make frontend
+```
+
 ---
 
 ## 🧪 Testing Coverage & Linting
@@ -157,7 +191,11 @@ Our standardized CI/CD pipelines require total formatting alignment.
 make test-agent
 
 # Format via Ruff/Black standards globally
-make fl 
+make fl
+
+# Frontend static checks (typecheck + ESLint)
+make frontend-typecheck
+make frontend-lint
 ```
 
 ## 📚 Endpoints Overview

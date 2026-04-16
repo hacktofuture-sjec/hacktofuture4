@@ -57,11 +57,21 @@ Build a scalable SaaS platform that:
 * flake8 (linting)
 * python-dotenv
 
+## Frontend (Operator Console)
+
+* Node 20+
+* Vite 8
+* React 19 + TypeScript (strict)
+* Tailwind CSS
+* Framer Motion (animations only)
+* React Router 6
+* Axios (with JWT access/refresh interceptor)
+
 ---
 
 # 🏗️ SYSTEM ARCHITECTURE (MANDATORY)
 
-You MUST implement a **two-service architecture**:
+You MUST implement a **three-workspace architecture**: Django Core, FastAPI Agent, and a Web Frontend. The first two own data and intelligence; the third is a thin, read-mostly UI that talks only to public `/api/v1/*` over JWT.
 
 ---
 
@@ -97,6 +107,35 @@ Responsibilities:
 FastAPI service MUST NOT write to database directly.
 
 All DB writes must go through Django APIs or Celery tasks.
+
+---
+
+## 3️⃣ Web Frontend (Operator Console)
+
+Location: `frontend/` (Vite + React 19 + TypeScript + Tailwind).
+
+Responsibilities:
+
+* JWT-authenticated UI over **every public** `/api/v1/*` resource group
+* Auth flow: register / login / refresh / logout / me
+* One page per resource: tickets (+ activities/comments), events, DLQ (retry), integrations (+ accounts + manual sync), processing runs (+ steps), chat sessions (SSE-capable), insights, dashboards (+ widgets), saved queries, sync checkpoints, organization settings, members, invites, API keys, audit logs
+* Preserves the FastAPI-only VoxBridge voice agent UI at `/agent` so the demo works standalone
+
+Requirements:
+
+* Typed Axios client with a single-flight refresh-token rotation on 401
+* One strongly-typed module per backend URL group under `src/api/`
+* Every authenticated screen MUST be wrapped by `<ProtectedRoute />`
+* Organization scoping is enforced by the backend; frontend MUST NOT assume or inject `organization_id` into write payloads — it reads the org id from JWT claims when absolutely needed (e.g. settings page)
+* Config is env-driven via `VITE_API_URL` (Django) and `VITE_AGENT_URL` (FastAPI) — NEVER hardcode hosts
+
+### 🚫 Frontend Forbidden Patterns
+
+* Calling internal ApiKey-only endpoints from the browser (`/events/ingest`, `/tickets/upsert`, `/dlq` POST, `/identities/map`)
+* Storing raw API keys / service-account tokens in `localStorage`
+* Bypassing the Axios client to hit the Django API with `fetch` (SSE is the only documented exception — chat streaming)
+* Importing from `src/api/agent.ts` outside of the `/agent` page (that client talks to FastAPI, not Django)
+* Adding a state-management library (Redux/Zustand/etc.) — keep state local or in the `AuthContext`
 
 ---
 
@@ -424,6 +463,13 @@ Generate:
    * ingestion
    * ticket upsert
    * DLQ handling
+
+5. Frontend (operator console)
+
+   * Typed API client (`src/api/`) covering every `/api/v1/*` group
+   * Auth context with JWT + refresh rotation
+   * App shell with sidebar nav + `<ProtectedRoute />`
+   * One page per resource group + preserved `/agent` voice UI
 
 ---
 

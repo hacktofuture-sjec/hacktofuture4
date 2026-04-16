@@ -1,7 +1,7 @@
 # 📊 Product Intelligence Platform — Master Status Tracker
 
-> **Last Updated:** 2026-04-16
-> **Session:** Backend Master Data Build
+> **Last Updated:** 2026-04-17
+> **Session:** Frontend API Integration
 > **Legend:** `[ ]` Not started · `[/]` In progress · `[x]` Complete · `[!]` Blocked
 
 ---
@@ -27,6 +27,7 @@
 17. [Test Suite](#17-test-suite)
 18. [Database Migrations](#18-database-migrations)
 19. [CI/CD & Tooling](#19-cicd--tooling)
+20. [Web Frontend (Operator Console)](#20-web-frontend-operator-console)
 
 ---
 
@@ -1138,6 +1139,79 @@
 
 ---
 
+## 20. Web Frontend (Operator Console)
+
+> Vite + React 19 + TypeScript + Tailwind. Location: `frontend/`. Consumes **only** public `/api/v1/*` endpoints over JWT; internal ApiKey routes stay service-to-service.
+
+### 20.1 Tooling & Config
+
+- [x] Vite 8 + React 19 + TS (strict) + Tailwind 4 + Framer Motion
+- [x] `axios` — typed HTTP client
+- [x] `react-router-dom` — SPA routing
+- [x] `frontend/.env.example` — `VITE_API_URL` + `VITE_AGENT_URL`
+- [x] `make frontend` / `make frontend-install` / `make frontend-build` / `make frontend-typecheck` / `make frontend-lint`
+
+### 20.2 API Layer (`frontend/src/api/`)
+
+- [x] `client.ts` — Axios instance, JWT injection, 401 → single-flight refresh rotation, `extractError()`, `tokenStore`
+- [x] `types.ts` — TS mirrors of every DRF response shape (paginated envelope aware)
+- [x] `auth.ts` — register / login / refresh / logout / me / org / members / invites / roles
+- [x] `events.ts` — events list + detail, DLQ list + retry
+- [x] `tickets.ts` — list + detail + activities + comments (filters: status/assignee/type/q)
+- [x] `integrations.ts` — providers, accounts CRUD, manual sync trigger
+- [x] `processing.ts` — runs + run detail + step transitions
+- [x] `chat.ts` — sessions CRUD, messages, `sendStream()` SSE reader with JSON-endpoint fallback
+- [x] `insights.ts` — insights, dashboards CRUD, widgets, saved queries
+- [x] `security.ts` — API keys CRUD + revoke, audit logs, sync checkpoints
+- [x] `index.ts` — barrel export + `unwrap()` helper
+
+### 20.3 Auth & Routing
+
+- [x] `context/AuthContext.tsx` — token store, `/me` hydration, login/register/logout
+- [x] `components/ProtectedRoute.tsx` — gate + loading state
+- [x] `components/Layout.tsx` — sidebar nav grouped by Overview / Work / AI Pipeline / Data / Admin, user card, sign-out
+- [x] `App.tsx` — public `/login` + `/register`, all other routes wrapped in `<ProtectedRoute>`
+
+### 20.4 Pages (1 per resource group)
+
+| Route | Backend endpoints wired |
+|-------|-------------------------|
+| [x] `/` Dashboard | tickets/events/dlq/runs/insights/integrations summary |
+| [x] `/insights` | `GET /insights/` |
+| [x] `/tickets` + `/tickets/:id` | `GET /tickets/`, detail, `activities/`, `comments/` |
+| [x] `/events` + `/events/:id` | `GET /events/`, detail |
+| [x] `/dlq` | `GET /dlq/`, `POST /dlq/{id}/retry/` |
+| [x] `/integrations` + `/integrations/:id` | list, accounts CRUD, `POST .../sync/` |
+| [x] `/processing` + `/processing/:id` | runs list, run detail, `steps/` |
+| [x] `/chat` | sessions CRUD, messages, SSE send (with JSON fallback) |
+| [x] `/agent` | preserved VoxBridge voice UI → FastAPI agent |
+| [x] `/dashboards` + `/dashboards/:id` | list + create + detail + update + widgets |
+| [x] `/saved-queries` | `GET /saved-queries/` |
+| [x] `/sync` | `GET /sync/checkpoints/` |
+| [x] `/settings` | org detail/update, members list/remove, invites list/create, roles |
+| [x] `/api-keys` | list + create (shows raw key once) + revoke |
+| [x] `/audit-logs` | list with expandable metadata |
+
+### 20.5 Shared UI Primitives
+
+- [x] `components/ui.tsx` — `Card`, `Button`, `Badge`, `Table/TH/TD/TR/THead`, `Field`, `Input`, `TextArea`, `Select`, `Spinner`, `EmptyState`, `ErrorBanner`, `JsonBlock`, `SectionHeader`, `statusTone()`, `formatDate()`
+- [x] `hooks/useAsync.ts` — minimal loader with `reload()` (avoids pulling in react-query)
+
+### 20.6 Boundary Rules
+
+- [x] Browser never calls internal ApiKey endpoints (`/events/ingest`, `/tickets/upsert`, `/dlq` POST, `/identities/map`)
+- [x] JWT stored in `localStorage` under `htf.access` / `htf.refresh`; interceptor auto-rotates
+- [x] Org id resolved from JWT claims when a settings screen needs it (never written from client)
+- [x] `/agent` isolated from Django client — imports only `src/api/agent.ts`
+
+### 20.7 Checks
+
+- [x] `make frontend-typecheck` (tsc --noEmit) passes clean on new code
+- [x] `make frontend-lint` passes clean on new code (only pre-existing `speech.d.ts` issue remains, unchanged)
+- [ ] `make frontend-build` on non-UNC paths (Windows UNC + Vite 8 rolldown has a config-load interop bug — builds fine inside WSL/Docker)
+
+---
+
 ## 📈 Overall Progress
 
 | Component | Progress | Session |
@@ -1162,6 +1236,7 @@
 | Migrations | 🟢 95% | Session 1 — all apps migrated |
 | CI/CD | 🟢 95% | Session 2 — backend-ci.yml, agent-ci.yml |
 | queries app | 🟢 100% | Session 3 — removed stale IntegrationConfig, SavedQuery in insights |
+| Web Frontend | 🟢 95% | Session 4 — typed API client, auth context, 20+ pages across every /api/v1 group |
 
 ### ✅ Session 1 Completed (2026-04-16)
 - `backend/backend/settings.py` — full production settings
@@ -1192,12 +1267,25 @@
 - `Makefile` — `make type-check` target added
 - `backend/backend/urls.py` — queries app URL included
 
+### ✅ Session 4 Completed (2026-04-17)
+- **Frontend rewrite** — `feat/frontend-api-integration` branch
+- `frontend/src/api/` — typed Axios client with JWT + single-flight refresh rotation, one module per `/api/v1` group (auth, events, tickets, integrations, processing, chat, insights, security)
+- SSE reader in `chat.ts` for streaming assistant responses, with JSON-endpoint fallback
+- `AuthContext` + `ProtectedRoute` + `Layout` (grouped sidebar nav) — auth-gated app shell
+- **20+ pages** covering every public endpoint group (dashboard, tickets, events, DLQ, integrations + accounts + sync, processing runs + steps, chat, insights, dashboards + widgets, saved queries, sync checkpoints, settings, members, invites, API keys, audit logs)
+- Preserved the VoxBridge voice UI at `/agent` (talks to FastAPI only; no regression)
+- Shared UI primitives (`ui.tsx`) + `useAsync` hook to avoid react-query bloat
+- Makefile: `frontend-install` / `frontend-build` / `frontend-typecheck` / `frontend-lint` targets
+- Docs: README + AGENTS.md + STATUS.md updated to reflect the third workspace
+
 ### 🔜 Remaining (non-critical)
 - [ ] `make docker-up` end-to-end smoke test (requires real `.env`)
 - [ ] Add real provider credentials for MCP servers (JIRA_API_KEY, SLACK_BOT_TOKEN, etc.)
 - [ ] `chat/views.py` SendMessageView — needs live agent for full test (currently 56% coverage)
 - [ ] `accounts/views.py` org invite/member flows (currently 70% coverage)
 - [ ] Run `mypy` clean on agent-service (LangChain stubs still missing)
+- [ ] Frontend: add a Dockerfile + compose service to serve the prod bundle behind the backend
+- [ ] Frontend: wire CI step (`make frontend-typecheck` + `make frontend-lint`) into `.github/workflows/`
 
 ---
 
