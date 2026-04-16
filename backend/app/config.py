@@ -22,6 +22,8 @@ class Settings:
         self.k8s_namespace_scope = os.getenv("K8S_NAMESPACE_SCOPE", "").strip()
         self.poll_interval_seconds = int(os.getenv("POLL_INTERVAL_SECONDS", "15"))
         self.poll_timeout_seconds = int(os.getenv("POLL_TIMEOUT_SECONDS", "20"))
+        # Orchestrator calls the LLM; default backend→agents HTTP client is too short otherwise.
+        self.agents_orchestrator_timeout_seconds = float(os.getenv("AGENTS_ORCHESTRATOR_TIMEOUT_SECONDS", "120"))
 
 
 settings = Settings()

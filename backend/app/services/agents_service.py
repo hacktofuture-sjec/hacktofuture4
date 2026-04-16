@@ -7,6 +7,11 @@ import httpx
 from app.config import settings
 
 
+def _orchestrator_timeout() -> httpx.Timeout:
+    sec = settings.agents_orchestrator_timeout_seconds
+    return httpx.Timeout(sec, connect=10.0)
+
+
 class AgentsService:
     def __init__(self) -> None:
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0))
@@ -30,7 +35,11 @@ class AgentsService:
         return response.json()
 
     async def orchestrator_chat(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        response = await self._client.post(f"{settings.agents_service_url}/orchestrator/chat", json=payload)
+        response = await self._client.post(
+            f"{settings.agents_service_url}/orchestrator/chat",
+            json=payload,
+            timeout=_orchestrator_timeout(),
+        )
         response.raise_for_status()
         return response.json()
 

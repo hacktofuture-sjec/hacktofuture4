@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query
@@ -34,6 +34,29 @@ detection_service = DetectionService(obs_service)
 prompt_store = PromptStoreService()
 agents_service = AgentsService()
 logger = logging.getLogger(__name__)
+
+
+def _upstream_error_detail(body: Any, fallback: str) -> str:
+    """FastAPI may return `detail` as str, list of validation dicts, or nested objects."""
+    if not isinstance(body, dict):
+        return fallback
+    detail = body.get("detail")
+    if detail is None:
+        msg = body.get("message")
+        return str(msg) if msg is not None else fallback
+    if isinstance(detail, str):
+        return detail
+    if isinstance(detail, list):
+        parts: list[str] = []
+        for item in detail:
+            if isinstance(item, dict):
+                loc = item.get("loc")
+                msg = item.get("msg", item)
+                parts.append(f"{loc}: {msg}" if loc else str(msg))
+            else:
+                parts.append(str(item))
+        return "; ".join(parts) if parts else fallback
+    return str(detail)
 
 
 @asynccontextmanager
@@ -204,16 +227,34 @@ async def orchestrator_chat(payload: OrchestratorChatRequest):
         return await agents_service.orchestrator_chat(payload.dict(exclude_none=True))
     except httpx.HTTPStatusError as exc:
         logger.exception("Orchestrator chat failed")
-        detail = "Orchestrator chat failed"
+        fallback = "Orchestrator chat failed"
         try:
             body = exc.response.json()
-            detail = body.get("detail") or body.get("message") or detail
+            detail = _upstream_error_detail(body, fallback)
         except Exception:  # pylint: disable=broad-exception-caught
             try:
-                detail = exc.response.text or detail
+                detail = (exc.response.text or "").strip() or fallback
             except Exception:  # pylint: disable=broad-exception-caught
-                pass
+                detail = fallback
         raise HTTPException(status_code=502, detail=detail) from exc
+    except httpx.ReadTimeout as exc:
+        logger.exception("Orchestrator chat timed out")
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                "Orchestrator chat timed out waiting for the agents service (LLM). "
+                "Set AGENTS_ORCHESTRATOR_TIMEOUT_SECONDS on the backend deployment if needed, "
+                "or ensure OPENROUTER_API_KEY is set on lerna-agents."
+            ),
+        ) from exc
+    except httpx.ConnectError as exc:
+        logger.exception("Orchestrator chat upstream unreachable")
+        req = getattr(exc, "request", None)
+        url = req.url if req is not None else "agents service"
+        raise HTTPException(
+            status_code=502,
+            detail=f"Cannot reach agents service ({url}): {exc}",
+        ) from exc
     except Exception as exc:  # pylint: disable=broad-except
         logger.exception("Orchestrator chat failed")
         raise HTTPException(status_code=502, detail=f"Orchestrator chat failed: {exc}") from exc
