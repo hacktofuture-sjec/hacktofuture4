@@ -1,33 +1,36 @@
 """
-URL configuration for backend project.
+URL configuration — Product Intelligence Platform.
 
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/4.2/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
+API versioned under /api/v1/
+Internal service endpoints use ApiKey auth (marked in each app).
 """
 
 from django.contrib import admin
 from django.http import JsonResponse
 from django.urls import include, path
+from rest_framework_simplejwt.views import TokenRefreshView
 
 
 def health_check(request):
-    """Health check endpoint."""
+    """Simple health probe used by Docker and load balancers."""
     return JsonResponse({"status": "ok", "service": "backend"})
 
 
 urlpatterns = [
+    # Admin
     path("admin/", admin.site.urls),
+    # Health
     path("health", health_check, name="health"),
-    path("", include("core.urls")),
-    path("", include("queries.urls")),
+    # Auth
+    path("api/v1/auth/", include("accounts.urls", namespace="accounts")),
+    path("api/v1/auth/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    # Core platform APIs
+    path("api/v1/", include("integrations.urls", namespace="integrations")),
+    path("api/v1/", include("events.urls", namespace="events")),
+    path("api/v1/", include("processing.urls", namespace="processing")),
+    path("api/v1/", include("tickets.urls", namespace="tickets")),
+    path("api/v1/", include("insights.urls", namespace="insights")),
+    path("api/v1/", include("chat.urls", namespace="chat")),
+    path("api/v1/", include("security.urls", namespace="security")),
+    path("api/v1/", include("sync.urls", namespace="sync")),
 ]

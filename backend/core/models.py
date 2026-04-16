@@ -1,22 +1,44 @@
+"""
+Core base models — abstract mixins inherited by every platform model.
+
+Rules:
+  - TimestampedModel    : created_at / updated_at on every table
+  - UUIDPrimaryKeyModel : UUID PK for public-facing resources
+  - OrgScopedModel      : enforces multi-tenancy via organization FK
+"""
+
+import uuid
+
 from django.db import models
 
 
-class QueryLog(models.Model):
-    """Stores user voice queries and their processing metadata."""
+class TimestampedModel(models.Model):
+    """Abstract — adds created_at / updated_at to every descendant."""
 
-    id = models.AutoField(primary_key=True)
-    user_query = models.TextField(help_text="The transcribed voice query from user")
-    timestamp = models.DateTimeField(auto_now_add=True)
-    response_time = models.FloatField(
-        help_text="Response time in milliseconds",
-        null=True,
-        blank=True,
-    )
-
-    def __str__(self):
-        return f"Query {self.id}: {self.user_query[:50]}..."
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["-timestamp"]
-        verbose_name = "Query Log"
-        verbose_name_plural = "Query Logs"
+        abstract = True
+        ordering = ["-created_at"]
+
+
+class UUIDPrimaryKeyModel(models.Model):
+    """Abstract — replaces integer PK with UUID."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    class Meta:
+        abstract = True
+
+
+class OrgScopedModel(TimestampedModel):
+    """
+    Abstract — every model that belongs to an organization.
+    Concrete subclasses MUST declare the `organization` FK themselves
+    so they can set the correct related_name.
+    This base just enforces the pattern via abstract = True.
+    """
+
+    class Meta:
+        abstract = True

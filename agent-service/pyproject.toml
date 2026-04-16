@@ -1,20 +1,23 @@
 [project]
-name = "voice-to-action-agent"
-version = "0.1.0"
-description = "FastAPI + LangGraph agent service for Voice-to-Action"
+name = "product-intelligence-agent"
+version = "1.0.0"
+description = "FastAPI + LangGraph agent service — Product Intelligence Platform"
 requires-python = ">=3.11"
 
 dependencies = [
     "fastapi>=0.104.1",
     "uvicorn[standard]>=0.24.0",
-    "langgraph>=0.0.20",
-    "langchain-openai>=0.0.5",
-    "langchain>=0.1.0",
+    "langgraph>=0.1.0",
+    "langchain>=0.2.0",
+    "langchain-openai>=0.1.0",
+    "langchain-core>=0.2.0",
     "sse-starlette>=1.8.1",
     "httpx>=0.25.2",
     "python-dotenv>=1.0.0",
     "pydantic>=2.5.2",
+    "pydantic-settings>=2.0.0",
     "black>=24.1.1",
+    "fastmcp>=0.1.0",
 ]
 
 [project.optional-dependencies]
