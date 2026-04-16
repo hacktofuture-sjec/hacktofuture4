@@ -44,9 +44,9 @@ func main() {
 	eng := engine.NewClient(cfg.EngineURL)
 
 	// ── Handlers ──────────────────────────────────────────────────────────
-	webhookHandler := handlers.NewWebhookHandler(broker, eng)
+	webhookHandler  := handlers.NewWebhookHandler(broker, eng)
 	approvalHandler := handlers.NewApprovalHandler(eng)
-	streamHandler := handlers.NewStreamHandler(broker)
+	streamHandler   := handlers.NewStreamHandler(broker)
 	callbackHandler := handlers.NewCallbackHandler(broker)
 
 	// ── Router ────────────────────────────────────────────────────────────
@@ -68,18 +68,18 @@ func main() {
 	// Webhooks
 	wh := r.Group("/webhook")
 	{
-		wh.POST("/github", webhookHandler.HandleGitHub)
-		wh.POST("/gitlab", webhookHandler.HandleGitLab)
+		wh.POST("/github",   webhookHandler.HandleGitHub)
+		wh.POST("/gitlab",   webhookHandler.HandleGitLab)
 		wh.POST("/simulate", webhookHandler.HandleSimulate)
 	}
 
 	// Incidents
 	inc := r.Group("/incidents")
 	{
-		inc.GET("", handlers.ListIncidents)
-		inc.GET("/:id", handlers.GetIncident)
+		inc.GET("",           handlers.ListIncidents)
+		inc.GET("/:id",       handlers.GetIncident)
 		inc.POST("/:id/approve", approvalHandler.Approve)
-		inc.POST("/:id/reject", approvalHandler.Reject)
+		inc.POST("/:id/reject",  approvalHandler.Reject)
 	}
 
 	// SSE stream
@@ -88,7 +88,7 @@ func main() {
 	// Vault
 	v := r.Group("/vault")
 	{
-		v.GET("", handlers.ListVault)
+		v.GET("",       handlers.ListVault)
 		v.GET("/stats", handlers.VaultStats)
 	}
 
@@ -96,7 +96,7 @@ func main() {
 	m := r.Group("/metrics")
 	{
 		m.GET("/summary", handlers.Summary)
-		m.GET("/rl", handlers.RLEpisodes)
+		m.GET("/rl",      handlers.RLEpisodes)
 	}
 
 	// Internal — called by the Python engine service only, not exposed to frontend
