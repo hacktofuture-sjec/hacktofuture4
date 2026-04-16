@@ -9,3 +9,8 @@ venv/
 data/
 *.egg-info/
 .DS_Store
+
+# Next.js frontend (web/)
+web/node_modules/
+web/.next/
+web/out/
