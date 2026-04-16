@@ -831,18 +831,21 @@ def _build_state_snapshot(
 
 
 def _attach_state(text: str, state: dict[str, Any]) -> str:
-    """Append the state as an expandable-blockquote (collapsed by default).
+    """No-op: we keep the user-facing message clean.
 
-    Telegram's HTML parser supports `<blockquote expandable>`, so the
-    state token is technically present in the message (required for
-    cold-start callback recovery) but invisible unless a user taps to
-    expand it.
+    Historically we appended a base64-encoded snapshot of the incident to
+    every Telegram message so a cold-started Vercel instance could
+    reconstruct state purely from the callback payload. That made the
+    message visually noisy, so we now rely on the server-side incident
+    store (in-memory + `/tmp/pipelinemedic_incidents.json`).
+
+    If you deploy across many cold-starting containers and need 100%
+    reliability, replace the `_INCIDENTS` store with a KV backend
+    (Upstash Redis, Vercel KV, etc.) — every other piece of the flow
+    already reads/writes through ``store_incident`` / ``get_incident``.
     """
-    encoded = _encode_state(state)
-    return (
-        f"{text}"
-        f"\n\n<blockquote expandable>{_STATE_MARKER}{encoded}</blockquote>"
-    )
+    del state  # intentionally unused; see docstring
+    return text
 
 
 def _incident_from_snapshot(snap: dict[str, Any]) -> dict[str, Any]:
@@ -1789,7 +1792,17 @@ async def handle_telegram_callback(body: dict[str, Any]) -> JSONResponse:
             source_of_state = "message"
     if not inc:
         if callback_id:
-            tg_answer_callback(callback_id, "Session expired or unknown incident")
+            tg_answer_callback(callback_id, "Session expired — please re-run CI")
+        if clicked_chat is not None and clicked_msg_id is not None:
+            try:
+                tg_edit_message(
+                    clicked_chat,
+                    int(clicked_msg_id),
+                    build_expired_message({"repository": ""}),
+                    buttons=[],
+                )
+            except Exception as e:
+                print(f"[PipelineMedic] expired-edit failed: {e}", flush=True)
         return JSONResponse({"ok": True})
 
     def _refresh_buttons_edit(new_text: str, buttons: list[list[dict[str, Any]]] | None, snap_state: dict[str, Any] | None) -> None:
