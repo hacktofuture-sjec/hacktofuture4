@@ -7,6 +7,17 @@ mkdir -p "$PID_DIR"
 
 command -v uv >/dev/null || { echo "ERROR: uv not found. Install from https://docs.astral.sh/uv/getting-started/"; exit 1; }
 
+find_frontend_port() {
+  local port
+  for port in 3000 3001 3002 3003 3004 3005; do
+    if curl --max-time 2 -sf "http://localhost:${port}" >/dev/null; then
+      echo "$port"
+      return 0
+    fi
+  done
+  return 1
+}
+
 if ! curl -sf http://localhost:9090/-/healthy >/dev/null; then
   bash "$ROOT_DIR/scripts/port_forward.sh"
 fi
@@ -61,10 +72,36 @@ npm run dev &
 FRONTEND_PID=$!
 cd "$ROOT_DIR"
 
+frontend_port=""
+for _ in {1..30}; do
+  if frontend_port="$(find_frontend_port)"; then
+    break
+  fi
+  sleep 1
+done
+
 echo "Backend PID: $BACKEND_PID"
 echo "Frontend PID: $FRONTEND_PID"
 echo "$BACKEND_PID" > "$PID_DIR/backend.pid"
 echo "$FRONTEND_PID" > "$PID_DIR/frontend.pid"
+
+echo ""
+echo "=== Local Endpoints ==="
+echo "Backend API:        http://localhost:8000"
+echo "Backend health:     http://localhost:8000/healthz"
+echo "Backend docs:       http://localhost:8000/docs"
+
+if [ -n "$frontend_port" ]; then
+  echo "Frontend (Next.js): http://localhost:${frontend_port}"
+else
+  echo "Frontend (Next.js): not detected yet (check npm logs)"
+fi
+
+echo "Prometheus:         http://localhost:9090"
+echo "Grafana:            http://localhost:3300"
+echo "Loki API:           http://localhost:3100/ready"
+echo "Tempo API:          http://localhost:3200/ready"
+echo ""
 
 echo "Press Ctrl+C to stop."
 trap "bash \"$ROOT_DIR/scripts/stop.sh\" >/dev/null 2>&1; exit 0" SIGINT SIGTERM

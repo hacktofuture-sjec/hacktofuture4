@@ -73,9 +73,48 @@ class K8sEventsCollector:
             return []
 
         pods = self.v1.list_namespaced_pod(namespace=namespace, label_selector=f"app={deployment}")
-        all_events: list[dict[str, str | int]] = []
+        pod_names: set[str] = set()
+        replica_sets: set[str] = set()
         for pod in pods.items:
-            all_events.extend(self.get_pod_events(namespace, pod.metadata.name, window_minutes))
+            pod_name = str(pod.metadata.name or "")
+            if pod_name:
+                pod_names.add(pod_name)
+            for owner in pod.metadata.owner_references or []:
+                if str(owner.kind or "") == "ReplicaSet" and owner.name:
+                    replica_sets.add(str(owner.name))
+
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
+        all_events: list[dict[str, str | int]] = []
+        events = self.v1.list_namespaced_event(namespace=namespace)
+
+        for event in events.items:
+            involved = event.involved_object
+            name = str(involved.name or "")
+            kind = str(involved.kind or "")
+            if not name:
+                continue
+
+            if not (
+                (kind == "Pod" and name in pod_names)
+                or (kind == "ReplicaSet" and name in replica_sets)
+                or (kind == "Deployment" and name == deployment)
+            ):
+                continue
+
+            last = event.last_timestamp or event.event_time or event.first_timestamp
+            if last:
+                try:
+                    if last.tzinfo is None:
+                        last = last.replace(tzinfo=timezone.utc)
+                    if last < cutoff:
+                        continue
+                except Exception:
+                    pass
+
+            pod_name = name if kind == "Pod" else (next(iter(pod_names)) if pod_names else f"{deployment}-unknown")
+            all_events.append(self._event_to_dict(event, namespace, pod_name))
+
+        all_events.sort(key=lambda item: str(item.get("last_seen") or item.get("first_seen") or ""), reverse=True)
         return all_events
 
     @staticmethod

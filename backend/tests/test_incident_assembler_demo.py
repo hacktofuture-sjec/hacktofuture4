@@ -243,9 +243,10 @@ def demo_config_error_scenario():
     
     # Validate
     assert incident["scenario_id"] == "bad-image-tag"
-    assert incident["severity"] in ("low", "medium")  # No metrics anomalies, only K8s events
+    assert incident["severity"] in ("low", "medium")
     assert incident["snapshot"]["failure_class"] == "config_error"
-    assert incident["snapshot"]["monitor_confidence"] <= 0.3  # Low confidence (only events, no metrics)
+    assert incident["snapshot"]["monitor_confidence"] >= 0.5
+    assert len(incident["snapshot"]["logs_summary"]) > 0
     
     print("\n✓ Config error scenario validated")
 
@@ -263,3 +264,45 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
         exit(1)
+
+
+def test_failed_event_message_is_normalized_to_imagepull_reason():
+    now = datetime.now(timezone.utc)
+    incident = IncidentAssembler.assemble(
+        injection_event={
+            "scenario_id": "crash-loop-001",
+            "service": "auth-service",
+            "namespace": "prod",
+            "pod": "auth-service-abc",
+            "deployment": "auth-service",
+            "started_at": (now - timedelta(seconds=30)).isoformat(),
+        },
+        collected_signals={
+            "metrics": {
+                "memory_usage_percent": 1.0,
+                "cpu_usage_percent": 0.0,
+                "restart_count": 0.0,
+                "latency_p95_seconds": 0.0,
+                "error_rate_rps": 0.0,
+            },
+            "logs": [],
+            "traces": [],
+            "events": [
+                {
+                    "reason": "Failed",
+                    "message": "Error: ImagePullBackOff",
+                    "count": 4,
+                    "first_seen": (now - timedelta(seconds=20)).isoformat(),
+                    "last_seen": (now - timedelta(seconds=5)).isoformat(),
+                    "pod": "auth-service-abc",
+                    "namespace": "prod",
+                    "type": "Warning",
+                }
+            ],
+        },
+        context={"baseline_values": {}, "dependency_graph_summary": "auth-service -> dependencies"},
+    )
+
+    reasons = [event.get("reason") for event in incident["snapshot"]["events"]]
+    assert "ImagePullBackOff" in reasons
+    assert incident["snapshot"]["monitor_confidence"] >= 0.5

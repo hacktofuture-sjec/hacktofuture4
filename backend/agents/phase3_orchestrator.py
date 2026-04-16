@@ -41,6 +41,49 @@ def _coerce_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _build_evidence(snapshot: dict[str, Any], fingerprint: Optional[dict[str, Any]]) -> list[str]:
+    evidence: list[str] = []
+
+    for event in snapshot.get("events", [])[:3]:
+        if isinstance(event, dict):
+            reason = str(event.get("reason", "")).strip()
+            message = str(event.get("message", "")).strip()
+            if reason:
+                evidence.append(f"event:{reason}")
+            if message:
+                evidence.append(f"event_msg:{message[:140]}")
+        elif str(event).strip():
+            evidence.append(f"event:{str(event).strip()[:140]}")
+
+    for log in snapshot.get("logs_summary", [])[:3]:
+        if isinstance(log, dict):
+            signature = str(log.get("signature", "")).strip()
+            count = int(log.get("count", 0) or 0)
+            if signature:
+                evidence.append(f"log:{signature[:140]} (x{count})")
+        elif str(log).strip():
+            evidence.append(f"log:{str(log).strip()[:140]}")
+
+    trace = snapshot.get("trace") or {}
+    if isinstance(trace, dict):
+        hot_span = str(trace.get("hot_span", "")).strip()
+        if hot_span:
+            evidence.append(f"trace_hot_span:{hot_span[:140]}")
+
+    if fingerprint:
+        evidence.append(f"fingerprint:{fingerprint.get('fingerprint_id')}")
+
+    # Preserve insertion order while dropping duplicates.
+    seen = set()
+    deduped: list[str] = []
+    for item in evidence:
+        if item in seen:
+            continue
+        seen.add(item)
+        deduped.append(item)
+    return deduped[:8]
+
+
 def collect_monitor_snapshot(monitor_agent: Optional[MonitorAgent] = None) -> dict[str, Any]:
     """Collect and normalize a monitor snapshot from the active agent."""
     agent = monitor_agent or GLOBAL_MONITOR_AGENT
@@ -89,6 +132,7 @@ def diagnose_snapshot(
             )
 
     if llm_result is not None:
+        evidence = _build_evidence(normalized, fingerprint)
         return {
             "source": "llm_fallback",
             "root_cause": llm_result.get("root_cause", "unknown"),
@@ -97,12 +141,14 @@ def diagnose_snapshot(
             "suggested_actions": llm_result.get("suggested_actions", []),
             "fingerprint_id": fingerprint.get("fingerprint_id") if fingerprint else None,
             "recommended_fix": fingerprint.get("recommended_fix") if fingerprint else None,
+            "evidence": evidence,
             "features": features,
             "diagnosed_at": _utc_now(),
         }
 
     if fingerprint is not None:
         root_cause = str(fingerprint.get("name", "unknown")).replace("_", " ")
+        evidence = _build_evidence(normalized, fingerprint)
         return {
             "source": "rule",
             "root_cause": root_cause,
@@ -111,6 +157,7 @@ def diagnose_snapshot(
             "suggested_actions": [fingerprint.get("recommended_fix", "investigate service")],
             "fingerprint_id": fingerprint["fingerprint_id"],
             "recommended_fix": fingerprint.get("recommended_fix"),
+            "evidence": evidence,
             "features": features,
             "diagnosed_at": _utc_now(),
         }
@@ -123,6 +170,7 @@ def diagnose_snapshot(
         "suggested_actions": ["collect more telemetry and inspect pod logs"],
         "fingerprint_id": None,
         "recommended_fix": None,
+        "evidence": _build_evidence(normalized, None),
         "features": features,
         "diagnosed_at": _utc_now(),
     }

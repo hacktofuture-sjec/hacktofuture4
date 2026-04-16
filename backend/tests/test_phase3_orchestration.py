@@ -47,6 +47,7 @@ def test_diagnose_endpoint_uses_rule_engine_for_high_confidence() -> None:
     assert diagnosis["source"] == "rule"
     assert diagnosis["fingerprint_id"] == "FP-001"
     assert diagnosis["confidence"] >= 0.9
+    assert diagnosis["evidence"]
 
 
 def test_plan_endpoint_formats_context_for_policy_commands() -> None:
@@ -84,6 +85,7 @@ def test_pipeline_endpoint_runs_end_to_end() -> None:
     assert "diagnosis" in body
     assert "plan" in body
     assert body["plan"]["actions"]
+    assert "evidence" in body["diagnosis"]
 
 
 def test_cost_report_exposes_runtime_counters() -> None:
