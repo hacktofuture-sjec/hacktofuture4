@@ -15,6 +15,7 @@ export interface Incident {
   timestamp: string;
   duration: string;
   assignedAgent: string;
+  cost: number;
 }
 
 export interface Agent {
@@ -57,6 +58,7 @@ export const incidents: Incident[] = [
     timestamp: '2 min ago',
     duration: '00:02:14',
     assignedAgent: 'Diagnosis Agent',
+    cost: 8.0,
   },
   {
     id: 'INC-2024-0890',
@@ -69,6 +71,7 @@ export const incidents: Incident[] = [
     timestamp: '14 min ago',
     duration: '00:14:33',
     assignedAgent: 'Planning Agent',
+    cost: 5.0,
   },
   {
     id: 'INC-2024-0889',
@@ -81,6 +84,7 @@ export const incidents: Incident[] = [
     timestamp: '31 min ago',
     duration: '00:31:07',
     assignedAgent: 'Filter Agent',
+    cost: 5.0,
   },
   {
     id: 'INC-2024-0888',
@@ -93,6 +97,7 @@ export const incidents: Incident[] = [
     timestamp: '38 min ago',
     duration: '00:12:44',
     assignedAgent: 'Executor Agent',
+    cost: 2.5,
   },
   {
     id: 'INC-2024-0887',
@@ -105,6 +110,7 @@ export const incidents: Incident[] = [
     timestamp: '1h ago',
     duration: '00:08:22',
     assignedAgent: 'Executor Agent',
+    cost: 1.0,
   },
 ];
 

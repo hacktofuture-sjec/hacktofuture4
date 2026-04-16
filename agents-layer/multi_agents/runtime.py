@@ -30,14 +30,34 @@ async def execute_incident_workflow(
     workflow_id: str,
 ) -> dict[str, object | None]:
     workflow = _workflow_payload(workflow_id, incident)
+    workflow["result"] = {}
+    workflow["current_stage"] = None
     await store.save_workflow(workflow_id, workflow)
     try:
-        result = await asyncio.to_thread(run_langgraph_workflow, incident)
+        loop = asyncio.get_running_loop()
+
+        async def _save_stage(stage_name: str, stage_output: dict[str, object | None]) -> None:
+            current_result = workflow.get("result")
+            if not isinstance(current_result, dict):
+                current_result = {}
+                workflow["result"] = current_result
+            current_result[stage_name] = stage_output
+            workflow["current_stage"] = stage_name
+            await store.save_workflow(workflow_id, workflow)
+
+        def _on_stage_complete(stage_name: str, stage_output: dict[str, object | None]) -> None:
+            future = asyncio.run_coroutine_threadsafe(_save_stage(stage_name, stage_output), loop)
+            future.result(timeout=15)
+
+        result = await asyncio.to_thread(run_langgraph_workflow, incident, _on_stage_complete)
         workflow["status"] = "completed"
         workflow["result"] = result
+        workflow["current_stage"] = "completed"
     except Exception as exc:  # pylint: disable=broad-except
         workflow["status"] = "failed"
-        workflow["result"] = str(exc)
+        # Keep `result` as a dict so the backend response schema remains valid.
+        workflow["result"] = {"error": str(exc)}
+        workflow["current_stage"] = "failed"
     workflow["finished_at"] = datetime.now(tz=timezone.utc).isoformat()
     await store.save_workflow(workflow_id, workflow)
     return workflow

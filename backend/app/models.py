@@ -65,7 +65,23 @@ class AgentWorkflowResponse(BaseModel):
     accepted_at: str
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
-    result: Optional[Dict[str, Any]] = None
+    # Agent runtimes may store `result` as either a structured dict (success)
+    # or a stringified exception message (failure).
+    result: Optional[Any] = None
+
+
+class AgentWorkflowListResponse(BaseModel):
+    workflows: List[AgentWorkflowResponse]
+
+
+class AgentCostSettingsUpdateRequest(BaseModel):
+    max_daily_cost: float
+
+
+class AgentCostSettingsResponse(BaseModel):
+    max_daily_cost: Optional[float] = None
+    spent_today: float
+    remaining_today: Optional[float] = None
 
 
 class OrchestratorChatRequest(BaseModel):

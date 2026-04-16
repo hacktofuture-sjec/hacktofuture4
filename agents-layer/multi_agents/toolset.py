@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any, Callable, Iterable
 
-from langchain.tools import BaseTool, tool
+from langchain_core.tools import BaseTool, tool
 from tools import (
     check_observability_backends,
     cordon_node,

@@ -5,7 +5,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${API_BASE_URL}${path}`
   const response = await fetch(url, { cache: 'no-store', ...init })
   if (!response.ok) {
-    throw new Error(`Request failed (${response.status}): ${url}`)
+    const error = new Error(`Request failed (${response.status}): ${url}`) as Error & {
+      status?: number
+    }
+    error.status = response.status
+    throw error
   }
   return (await response.json()) as T
 }
@@ -94,12 +98,23 @@ export interface AgentWorkflowResponse {
   accepted_at: string
   started_at?: string | null
   finished_at?: string | null
-  result?: Record<string, any>
+  // Runtime stores may set this to a stringified exception message.
+  result?: Record<string, unknown> | string | null
+}
+
+export interface AgentWorkflowListResponse {
+  workflows: AgentWorkflowResponse[]
 }
 
 export interface AgentChatResponse {
   message: string
   workflow_id?: string
+}
+
+export interface AgentCostSettingsResponse {
+  max_daily_cost?: number | null
+  spent_today: number
+  remaining_today?: number | null
 }
 
 export async function fetchClusterHealth() {
@@ -138,6 +153,10 @@ export async function fetchLatestAgentWorkflow() {
   return request<AgentWorkflowResponse>(`/agents/workflows/latest`)
 }
 
+export async function fetchAgentWorkflows(limit = 25) {
+  return request<AgentWorkflowListResponse>(`/agents/workflows?limit=${limit}`)
+}
+
 export async function fetchAgentWorkflow(workflowId: string) {
   return request<AgentWorkflowResponse>(`/agents/workflows/${encodeURIComponent(workflowId)}`)
 }
@@ -147,5 +166,17 @@ export async function chatWithOrchestrator(message: string, workflowId?: string,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message, workflow_id: workflowId, incident_id: incidentId }),
+  })
+}
+
+export async function fetchAgentCostSettings() {
+  return request<AgentCostSettingsResponse>('/agents/cost-settings')
+}
+
+export async function updateAgentCostSettings(maxDailyCost: number) {
+  return request<AgentCostSettingsResponse>('/agents/cost-settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ max_daily_cost: maxDailyCost }),
   })
 }

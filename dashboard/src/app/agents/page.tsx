@@ -1,6 +1,7 @@
 "use client";
 // src/app/agents/page.tsx
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import {
   CircleCheckBig,
@@ -15,6 +16,7 @@ import { agents, type Agent } from "@/lib/mock-data";
 import {
   fetchAgentPrompts,
   fetchAgentWorkflow,
+  fetchAgentWorkflows,
   fetchLatestAgentWorkflow,
   resetAgentPrompt,
   updateAgentPrompt,
@@ -118,6 +120,7 @@ export default function AgentsPage() {
   const [resettingAgentId, setResettingAgentId] = useState<string | null>(null);
   const [loadingPrompts, setLoadingPrompts] = useState(true);
   const [workflow, setWorkflow] = useState<AgentWorkflowResponse | null>(null);
+  const [workflowHistory, setWorkflowHistory] = useState<AgentWorkflowResponse[]>([]);
   const [loadingWorkflow, setLoadingWorkflow] = useState(true);
   const [notice, setNotice] = useState<{
     type: "success" | "error";
@@ -164,19 +167,53 @@ export default function AgentsPage() {
     let active = true;
     const loadWorkflow = async () => {
       try {
+        const listResponse = await fetchAgentWorkflows();
+        if (!active) return;
+        const history = listResponse.workflows ?? [];
+        setWorkflowHistory(history);
+
         const storedWorkflowId =
           typeof window !== "undefined"
             ? window.localStorage.getItem("lerna:lastWorkflowId")
             : null;
-        const workflow = storedWorkflowId
-          ? await fetchAgentWorkflow(storedWorkflowId)
-          : await fetchLatestAgentWorkflow();
+        let nextWorkflow =
+          history.find((item) => item.workflow_id === storedWorkflowId) ??
+          null;
+
+        if (!nextWorkflow && storedWorkflowId) {
+          try {
+            nextWorkflow = await fetchAgentWorkflow(storedWorkflowId);
+          } catch {
+            nextWorkflow = null;
+          }
+        }
+
+        if (!nextWorkflow) {
+          nextWorkflow = history[0] ?? null;
+        }
+
+        if (!nextWorkflow) {
+          try {
+            nextWorkflow = await fetchLatestAgentWorkflow();
+          } catch (err) {
+            const status = (err as Error & { status?: number }).status;
+            if (status !== 404) throw err;
+          }
+        }
 
         if (!active) return;
-        setWorkflow(workflow);
+        setWorkflow(nextWorkflow);
+        if (typeof window !== "undefined") {
+          if (nextWorkflow?.workflow_id) {
+            window.localStorage.setItem("lerna:lastWorkflowId", nextWorkflow.workflow_id);
+          } else {
+            window.localStorage.removeItem("lerna:lastWorkflowId");
+          }
+        }
       } catch {
         if (!active) return;
         setWorkflow(null);
+        setWorkflowHistory([]);
       } finally {
         if (active) setLoadingWorkflow(false);
       }
@@ -282,7 +319,9 @@ export default function AgentsPage() {
       "executor",
       "validation",
     ];
-    const result = workflow.result as Record<string, any> | undefined;
+    const result = typeof workflow.result === 'object' && workflow.result !== null
+      ? (workflow.result as Record<string, any>)
+      : undefined;
     const hasOutput = (stage: string) => Boolean(result?.[stage]?.text);
     const completedStages = stageOrder.filter((stage) => hasOutput(stage));
     const nextStage = stageOrder.find((stage) => !hasOutput(stage));
@@ -347,9 +386,15 @@ export default function AgentsPage() {
         title="Autonomous Agents"
         subtitle="Multi-agent remediation pipeline · Prompt tuning enabled"
       >
-        <Badge variant="green">
-          ● {workflow ? workflow.status.toUpperCase() : "5/5 RUNNING"}
+        <Badge variant={workflow ? "green" : "amber"}>
+          ● {workflow ? workflow.status.toUpperCase() : "NO ACTIVE WORKFLOW"}
         </Badge>
+        <Link
+          href="/agents/workflow"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold border border-border-2 text-[#8A9BBB] hover:text-white hover:border-lerna-blue hover:bg-bg-4 transition-all duration-150"
+        >
+          View Detailed Workflow
+        </Link>
       </PageHeader>
 
       {notice && (
@@ -424,7 +469,7 @@ export default function AgentsPage() {
             </>
           ) : (
             <>
-              Processing <strong className="text-white">INC-2024-0891</strong>
+              No active workflow. Showing agent status with the last known history below.
             </>
           )}
         </div>
@@ -437,6 +482,49 @@ export default function AgentsPage() {
             Status: <span className="text-white">{workflow.status}</span>
             {workflow.started_at ? ` · started ${workflow.started_at}` : ""}
             {workflow.finished_at ? ` · finished ${workflow.finished_at}` : ""}
+          </div>
+        </div>
+      )}
+
+      {!loadingWorkflow && !workflow && workflowHistory.length === 0 && (
+        <div className="bg-bg-3 border border-border rounded-2xl px-5 py-4 text-sm text-[#8A9BBB]">
+          No workflows have been recorded yet.
+        </div>
+      )}
+
+      {workflowHistory.length > 0 && (
+        <div className="bg-bg-2 border border-border rounded-2xl px-5 py-4">
+          <div className="text-[11px] text-[#4A5B7A] font-mono tracking-widest mb-3">
+            RECENT WORKFLOWS
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {workflowHistory.slice(0, 6).map((item) => {
+              const selected = workflow?.workflow_id === item.workflow_id;
+              return (
+                <button
+                  key={item.workflow_id}
+                  type="button"
+                  onClick={() => {
+                    setWorkflow(item);
+                    if (typeof window !== "undefined") {
+                      window.localStorage.setItem("lerna:lastWorkflowId", item.workflow_id);
+                    }
+                  }}
+                  className={clsx(
+                    "text-left rounded-xl border p-3 transition-colors",
+                    selected
+                      ? "border-lerna-blue bg-bg-3"
+                      : "border-border bg-bg-3/50 hover:border-border-2",
+                  )}
+                >
+                  <div className="text-sm text-white font-semibold">{item.workflow_id}</div>
+                  <div className="text-[12px] text-[#8A9BBB] mt-1">{item.incident_id}</div>
+                  <div className="text-[11px] text-[#4A5B7A] font-mono mt-2">
+                    {item.status.toUpperCase()} · {item.accepted_at}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

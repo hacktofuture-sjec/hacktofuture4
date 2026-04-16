@@ -24,7 +24,25 @@ class AgentsService:
         response.raise_for_status()
         return response.json()
 
+    async def list_workflows(self, limit: int = 25) -> Dict[str, Any]:
+        response = await self._client.get(f"{settings.agents_service_url}/workflows", params={"limit": limit})
+        response.raise_for_status()
+        return response.json()
+
     async def orchestrator_chat(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         response = await self._client.post(f"{settings.agents_service_url}/orchestrator/chat", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+    async def get_cost_settings(self) -> Dict[str, Any]:
+        response = await self._client.get(f"{settings.agents_service_url}/cost-settings")
+        response.raise_for_status()
+        return response.json()
+
+    async def update_cost_settings(self, max_daily_cost: float) -> Dict[str, Any]:
+        response = await self._client.put(
+            f"{settings.agents_service_url}/cost-settings",
+            json={"max_daily_cost": max_daily_cost},
+        )
         response.raise_for_status()
         return response.json()

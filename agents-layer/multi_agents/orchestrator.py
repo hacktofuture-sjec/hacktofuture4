@@ -4,9 +4,7 @@ import os
 from functools import lru_cache
 from typing import Any
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage
-from langgraph.prebuilt import create_react_agent
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from .agents import _build_chat_model
 from .agent_prompts import incident_summary
@@ -19,12 +17,27 @@ Be concise, factual, and avoid fabricating steps.
 
 
 def _build_orchestrator_agent() -> Any:
-    return create_react_agent(
-        model=_build_chat_model(),
-        tools=[],
-        prompt=SystemMessage(content=ORCHESTRATOR_AGENT_PROMPT),
-        name="OrchestratorAgent",
-    )
+    model = _build_chat_model()
+
+    class _OrchestratorAgent:
+        def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
+            messages = [SystemMessage(content=ORCHESTRATOR_AGENT_PROMPT)]
+            for message in payload.get("messages", []):
+                content = str(message.get("content", ""))
+                messages.append(HumanMessage(content=content))
+
+            result = model.invoke(messages)
+            return {
+                "messages": [
+                    *payload.get("messages", []),
+                    {
+                        "role": "assistant",
+                        "content": result.content if isinstance(result.content, str) else str(result.content),
+                    },
+                ]
+            }
+
+    return _OrchestratorAgent()
 
 
 @lru_cache(maxsize=None)

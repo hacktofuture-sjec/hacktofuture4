@@ -5,6 +5,8 @@ import hashlib
 import logging
 from typing import Any, Dict, Optional
 
+import httpx
+
 from app.config import settings
 from app.services.agent_client import AgentsClient
 from app.services.cluster_snapshot import ClusterSnapshotService
@@ -112,6 +114,29 @@ class DetectionWorker:
                 response.get("workflow_id"),
                 response.get("status"),
             )
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code if exc.response is not None else None
+            try:
+                body = exc.response.json() if exc.response is not None else {}
+            except Exception:  # pylint: disable=broad-except
+                body = {}
+
+            error_code = body.get("detail", {}).get("error")
+            is_budget_reached = status_code == 429 and error_code == "DAILY_COST_LIMIT_REACHED"
+            if is_budget_reached:
+                logger.warning(
+                    "Detection: daily budget reached; not retrying incident_id=%s spent=%s max=%s",
+                    result.incident.incident_id,
+                    body.get("detail", {}).get("spent_today"),
+                    body.get("detail", {}).get("max_daily_cost"),
+                )
+                await self._state_store.mark_emitted(result.incident.fingerprint, summary_hash, "budget_exceeded")
+                self._last_result = {"status": "budget_exceeded", "incident_id": result.incident.incident_id, "error": error_code}
+                return
+
+            logger.warning("Detection: failed to trigger agents workflow (HTTP %s)", status_code)
+            await self._state_store.mark_emitted(result.incident.fingerprint, summary_hash, "queued")
+            await self._state_store.enqueue_retry(result.incident.incident_id, payload, str(exc))
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning("Failed to trigger agents workflow", exc_info=True)
             await self._state_store.mark_emitted(result.incident.fingerprint, summary_hash, "queued")
@@ -123,5 +148,23 @@ class DetectionWorker:
             try:
                 await self._agents_client.trigger_incident(item["payload"])
                 await self._state_store.clear_retry(item["incident_id"])
+            except httpx.HTTPStatusError as exc:
+                status_code = exc.response.status_code if exc.response is not None else None
+                try:
+                    body = exc.response.json() if exc.response is not None else {}
+                except Exception:  # pylint: disable=broad-except
+                    body = {}
+
+                error_code = body.get("detail", {}).get("error")
+                is_budget_reached = status_code == 429 and error_code == "DAILY_COST_LIMIT_REACHED"
+                if is_budget_reached:
+                    await self._state_store.clear_retry(item["incident_id"])
+                    logger.warning(
+                        "Detection: daily budget reached; clearing retry for incident_id=%s",
+                        item["incident_id"],
+                    )
+                    continue
+
+                logger.warning("Retry handoff failed for %s (HTTP %s)", item["incident_id"], status_code, exc_info=True)
             except Exception:  # pylint: disable=broad-except
                 logger.warning("Retry handoff failed for %s", item["incident_id"], exc_info=True)

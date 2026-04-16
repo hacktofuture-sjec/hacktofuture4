@@ -28,6 +28,8 @@ spec:
                 name: lerna-agents-secrets
                 optional: true
           env:
+            - name: LERNA_WORKFLOW_ENGINE
+              value: langgraph
             - name: PROMETHEUS_URL
               value: http://prometheus.observability.svc.cluster.local:9090
             - name: LOKI_URL

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 
@@ -21,14 +22,15 @@ import logging
 import sys
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from lerna_shared.detection import AgentTriggerResponse, DetectionIncident
 
 from lerna_agent.runtime import accept_incident
 from lerna_agent.store import WorkflowStore
-from langgraph.runtime import accept_incident as accept_langgraph_incident
-from langgraph.orchestrator import orchestrator_chat
+from multi_agents.runtime import accept_incident as accept_langgraph_incident
+from multi_agents.orchestrator import orchestrator_chat
 
 _pkg_log = logging.getLogger("lerna_agent")
 _pkg_log.setLevel(logging.INFO)
@@ -39,6 +41,56 @@ if not _pkg_log.handlers:
     _pkg_log.propagate = False
 
 workflow_store = WorkflowStore()
+_WORKFLOW_ENGINE_RAW = os.getenv("LERNA_WORKFLOW_ENGINE", "single").strip().lower()
+_USE_LANGGRAPH_ENGINE = _WORKFLOW_ENGINE_RAW in {"langgraph", "multi", "multi-agent", "multi_agents"}
+
+
+async def _accept_incident_with_config(payload: DetectionIncident) -> AgentTriggerResponse:
+    if _USE_LANGGRAPH_ENGINE:
+        return await accept_langgraph_incident(payload, workflow_store)
+    return await accept_incident(payload, workflow_store)
+
+
+class CostSettingsRequest(BaseModel):
+    max_daily_cost: float = Field(ge=0)
+
+
+class CostSettingsResponse(BaseModel):
+    max_daily_cost: float | None
+    spent_today: float
+    remaining_today: float | None
+
+
+async def _cost_snapshot() -> CostSettingsResponse:
+    max_daily_cost = await workflow_store.get_max_daily_cost()
+    spent_today = await workflow_store.get_daily_spend()
+    remaining_today = None if max_daily_cost is None else max(0.0, max_daily_cost - spent_today)
+    return CostSettingsResponse(
+        max_daily_cost=max_daily_cost,
+        spent_today=spent_today,
+        remaining_today=remaining_today,
+    )
+
+
+async def _ensure_budget_allows(cost: float) -> None:
+    snapshot = await _cost_snapshot()
+    max_daily_cost = snapshot.max_daily_cost
+    if max_daily_cost is None:
+        return
+    projected_spend = snapshot.spent_today + cost
+    if projected_spend <= max_daily_cost:
+        return
+    raise HTTPException(
+        status_code=429,
+        detail={
+            "error": "DAILY_COST_LIMIT_REACHED",
+            "message": "Daily max cost reached. Agents will not execute until the limit is increased or a new day starts.",
+            "max_daily_cost": max_daily_cost,
+            "spent_today": snapshot.spent_today,
+            "incident_cost": cost,
+            "projected_spend": projected_spend,
+        },
+    )
 
 
 @asynccontextmanager
@@ -60,7 +112,16 @@ async def health() -> dict[str, bool]:
 @app.post("/incidents", response_model=AgentTriggerResponse)
 async def create_incident_workflow(payload: DetectionIncident) -> AgentTriggerResponse:
     try:
-        return await accept_incident(payload, workflow_store)
+        existing = await workflow_store.get_workflow_for_incident(payload.incident_id)
+        is_new_incident = existing is None
+        if is_new_incident:
+            await _ensure_budget_allows(payload.cost)
+        response = await _accept_incident_with_config(payload)
+        if is_new_incident and response.accepted:
+            await workflow_store.add_daily_spend(payload.cost)
+        return response
+    except HTTPException:
+        raise
     except Exception as exc:  # pylint: disable=broad-except
         raise HTTPException(status_code=502, detail=f"Failed to start incident workflow: {exc}") from exc
 
@@ -68,9 +129,29 @@ async def create_incident_workflow(payload: DetectionIncident) -> AgentTriggerRe
 @app.post("/langgraph-incidents", response_model=AgentTriggerResponse)
 async def create_langgraph_incident_workflow(payload: DetectionIncident) -> AgentTriggerResponse:
     try:
-        return await accept_langgraph_incident(payload, workflow_store)
+        existing = await workflow_store.get_workflow_for_incident(payload.incident_id)
+        is_new_incident = existing is None
+        if is_new_incident:
+            await _ensure_budget_allows(payload.cost)
+        response = await accept_langgraph_incident(payload, workflow_store)
+        if is_new_incident and response.accepted:
+            await workflow_store.add_daily_spend(payload.cost)
+        return response
+    except HTTPException:
+        raise
     except Exception as exc:  # pylint: disable=broad-except
         raise HTTPException(status_code=502, detail=f"Failed to start LangGraph incident workflow: {exc}") from exc
+
+
+@app.get("/cost-settings", response_model=CostSettingsResponse)
+async def get_cost_settings() -> CostSettingsResponse:
+    return await _cost_snapshot()
+
+
+@app.put("/cost-settings", response_model=CostSettingsResponse)
+async def update_cost_settings(payload: CostSettingsRequest) -> CostSettingsResponse:
+    await workflow_store.set_max_daily_cost(payload.max_daily_cost)
+    return await _cost_snapshot()
 
 
 @app.get("/workflows/latest")
@@ -79,6 +160,11 @@ async def get_latest_workflow():
     if not workflow:
         raise HTTPException(status_code=404, detail="No workflow found")
     return workflow
+
+
+@app.get("/workflows")
+async def list_workflows(limit: int = Query(25, ge=1, le=200)):
+    return {"workflows": await workflow_store.list_workflows(limit=limit)}
 
 
 @app.get("/workflows/{workflow_id}")

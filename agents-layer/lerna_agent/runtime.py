@@ -67,7 +67,8 @@ async def execute_incident_workflow(
         logger.info("Agents: workflow %s completed (incident %s)", workflow_id, incident.incident_id)
     except Exception as exc:  # pylint: disable=broad-except
         workflow["status"] = "failed"
-        workflow["result"] = str(exc)
+        # Keep `result` as a dict so API response validation stays stable.
+        workflow["result"] = {"error": str(exc)}
         logger.warning(
             "Agents: workflow %s failed for incident %s: %s",
             workflow_id,

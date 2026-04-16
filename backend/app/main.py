@@ -8,10 +8,13 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query
 
 from app.models import (
+    AgentCostSettingsResponse,
+    AgentCostSettingsUpdateRequest,
     AgentPromptEntry,
     AgentPromptResetResponse,
     AgentPromptsResponse,
     AgentPromptUpdateRequest,
+    AgentWorkflowListResponse,
     AgentWorkflowResponse,
     OrchestratorChatRequest,
     OrchestratorChatResponse,
@@ -169,6 +172,18 @@ async def get_latest_agent_workflow():
         raise HTTPException(status_code=502, detail=f"Failed to query latest workflow: {exc}") from exc
 
 
+@app.get("/api/agents/workflows", response_model=AgentWorkflowListResponse)
+async def list_agent_workflows(limit: int = Query(25, ge=1, le=200)):
+    try:
+        return await agents_service.list_workflows(limit=limit)
+    except httpx.HTTPStatusError as exc:
+        logger.exception("Failed to query workflow list")
+        raise HTTPException(status_code=502, detail="Failed to query workflow list") from exc
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.exception("Failed to query workflow list")
+        raise HTTPException(status_code=502, detail=f"Failed to query workflow list: {exc}") from exc
+
+
 @app.get("/api/agents/workflows/{workflow_id}", response_model=AgentWorkflowResponse)
 async def get_agent_workflow(workflow_id: str):
     try:
@@ -193,6 +208,30 @@ async def orchestrator_chat(payload: OrchestratorChatRequest):
     except Exception as exc:  # pylint: disable=broad-except
         logger.exception("Orchestrator chat failed")
         raise HTTPException(status_code=502, detail=f"Orchestrator chat failed: {exc}") from exc
+
+
+@app.get("/api/agents/cost-settings", response_model=AgentCostSettingsResponse)
+async def get_agent_cost_settings():
+    try:
+        return await agents_service.get_cost_settings()
+    except httpx.HTTPStatusError as exc:
+        logger.exception("Failed to query agent cost settings")
+        raise HTTPException(status_code=502, detail="Failed to query cost settings") from exc
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.exception("Failed to query agent cost settings")
+        raise HTTPException(status_code=502, detail=f"Failed to query cost settings: {exc}") from exc
+
+
+@app.put("/api/agents/cost-settings", response_model=AgentCostSettingsResponse)
+async def update_agent_cost_settings(payload: AgentCostSettingsUpdateRequest):
+    try:
+        return await agents_service.update_cost_settings(payload.max_daily_cost)
+    except httpx.HTTPStatusError as exc:
+        logger.exception("Failed to update agent cost settings")
+        raise HTTPException(status_code=502, detail="Failed to update cost settings") from exc
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.exception("Failed to update agent cost settings")
+        raise HTTPException(status_code=502, detail=f"Failed to update cost settings: {exc}") from exc
 
 
 @app.put("/api/agents/prompts/{agent_id}", response_model=AgentPromptEntry)
