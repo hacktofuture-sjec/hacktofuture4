@@ -27,7 +27,7 @@ from .toolset import (
     build_toolset,
 )
 
-DEFAULT_MODEL_NAME = os.getenv("LERNA_AGENT_MODEL", "minimax/minimax-m2.5:free")
+DEFAULT_MODEL_NAME = os.getenv("LERNA_AGENT_MODEL", "gpt-4.1-nano-2025-04-14")
 DEFAULT_BASE_URL = os.getenv("OPENROUTER_BASE_URL") or os.getenv("OPENAI_BASE_URL")
 DEFAULT_API_KEY = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
 DEFAULT_MAX_TOOL_ROUNDS = int(os.getenv("LERNA_AGENT_MAX_TOOL_ROUNDS", "12"))

@@ -5,10 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Send } from "lucide-react";
 import { Badge, PageHeader } from "@/components/ui";
 import { chatWithOrchestrator } from "@/lib/observation-api";
-import {
-  initialChatMessages,
-  type ChatMessage,
-} from "@/lib/mock-data";
+import type { ChatMessage } from "@/lib/mock-data";
 import clsx from "clsx";
 
 function renderContent(text: string) {
@@ -42,15 +39,8 @@ function renderContent(text: string) {
   });
 }
 
-const quickActions = [
-  "Apply fix to production",
-  "Show all active incidents",
-  "What is the cluster health?",
-  "Run sandbox simulation",
-];
-
 export default function ChatPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>(initialChatMessages);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -154,6 +144,14 @@ export default function ChatPage() {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto flex flex-col gap-4 min-h-0 pb-4">
+        {messages.length === 0 && !isTyping && (
+          <div className="flex-1 flex items-center justify-center min-h-[12rem] px-4">
+            <p className="text-[13px] text-[#4A5B7A] text-center max-w-md">
+              Messages appear here. Ask the orchestrator about the cluster, incidents, or
+              the workflow linked from Agents.
+            </p>
+          </div>
+        )}
         {messages.map((msg) => (
           <motion.div
             key={msg.id}
@@ -228,19 +226,6 @@ export default function ChatPage() {
 
       {/* Input Area */}
       <div className="border-t border-border pt-4 shrink-0">
-        {/* Quick actions */}
-        <div className="flex gap-2 mb-3 flex-wrap">
-          {quickActions.map((action) => (
-            <button
-              key={action}
-              onClick={() => send(action)}
-              className="text-[11px] px-3 py-1.5 rounded-lg bg-bg-3 border border-border text-[#8A9BBB] hover:border-border-2 hover:text-white transition-all font-mono cursor-pointer"
-            >
-              {action}
-            </button>
-          ))}
-        </div>
-
         <div className="bg-bg-3 border border-border-2 rounded-2xl flex items-end gap-2 px-4 py-3 focus-within:border-lerna-blue transition-colors">
           <textarea
             ref={textareaRef}
