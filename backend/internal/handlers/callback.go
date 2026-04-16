@@ -48,6 +48,19 @@ type fixProposalData struct {
 	Reasoning      string   `json:"reasoning"`
 }
 
+type sandboxResultData struct {
+	IncidentID      string  `json:"incident_id"`
+	Passed          bool    `json:"passed"`
+	TestCount       int     `json:"test_count"`
+	FailureCount    int     `json:"failure_count"`
+	TestLog         string  `json:"test_log"`
+	PREvidence      string  `json:"pr_evidence"`
+	Namespace       string  `json:"namespace"`
+	DurationSeconds float64 `json:"duration_seconds"`
+	ValKeyDeployed  bool    `json:"valkey_deployed"`
+	DemoMode        bool    `json:"demo_mode"`
+}
+
 // Handle processes a single event from the Python engine service.
 func (h *CallbackHandler) Handle(c *gin.Context) {
 	var ev callbackEvent
@@ -121,6 +134,31 @@ func (h *CallbackHandler) Handle(c *gin.Context) {
 			FixDiff:        d.FixDiff,
 		}
 		_ = store.UpsertFixProposal(ctx, fix)
+
+	case "sandbox_result":
+		// Minikube sandbox validation result — store and publish to SSE.
+		var d sandboxResultData
+		if err := json.Unmarshal(ev.Data, &d); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "bad sandbox_result payload"})
+			return
+		}
+		r := &models.SandboxResult{
+			IncidentID:      d.IncidentID,
+			Passed:          d.Passed,
+			TestCount:       d.TestCount,
+			FailureCount:    d.FailureCount,
+			TestLog:         d.TestLog,
+			PREvidence:      d.PREvidence,
+			Namespace:       d.Namespace,
+			DurationSeconds: d.DurationSeconds,
+			ValKeyDeployed:  d.ValKeyDeployed,
+			DemoMode:        d.DemoMode,
+		}
+		_ = store.UpsertSandboxResult(ctx, r)
+		h.broker.Publish(d.IncidentID, sse.Event{
+			Type: "sandbox_result",
+			Data: r,
+		})
 	}
 
 	c.Status(http.StatusOK)

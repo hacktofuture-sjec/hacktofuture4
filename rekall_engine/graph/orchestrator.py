@@ -41,7 +41,8 @@ from ..agents.simulation import SimulationAgent
 from ..agents.governance import GovernanceAgent
 from ..agents.publish_guard import PublishGuardAgent
 from ..agents.learning   import LearningAgent
-from ..types             import AgentLogEntry, DiagnosticBundle, GovernanceDecision, Outcome, FixProposal
+from ..agents.sandbox    import SandboxAgent
+from ..types             import AgentLogEntry, DiagnosticBundle, GovernanceDecision, Outcome, FixProposal, SandboxResult
 
 log = logging.getLogger("rekall.orchestrator")
 
@@ -57,6 +58,7 @@ def get_agent(name: str) -> Any:
         elif name == "governance": _agents[name] = GovernanceAgent()
         elif name == "publish_guard": _agents[name] = PublishGuardAgent()
         elif name == "learning": _agents[name] = LearningAgent()
+        elif name == "sandbox": _agents[name] = SandboxAgent()
     return _agents[name]
 
 
@@ -194,6 +196,82 @@ async def run_pipeline(
     decision = gov.decision if gov else "block_await_human"
 
     if decision == "block_await_human":
+        # ── Minikube Sandbox Validation ───────────────────────────────────────
+        # When SANDBOX_ENABLED=true, deploy the fix into an ephemeral Minikube
+        # namespace and run the CI suite before deciding to pause.
+        # If sandbox passes → auto-create PR with evidence (no human gate).
+        # If sandbox fails or is disabled → pause for human review as before.
+        from ..config import engine_config
+        sandbox_enabled = getattr(engine_config, "sandbox_enabled", False)
+
+        if sandbox_enabled:
+            await _emit(log_queue, incident_id, "sandbox", "running",
+                        "Provisioning Minikube sandbox namespace")
+            try:
+                state = await get_agent("sandbox").run(state)
+                sandbox: SandboxResult = state.get("sandbox_result")
+
+                if sandbox and sandbox.passed:
+                    # ── Sandbox passed → auto PR with evidence ────────────────
+                    mode_label = " (demo)" if sandbox.demo_mode else ""
+                    await _emit(log_queue, incident_id, "sandbox", "done",
+                                f"Sandbox PASSED{mode_label} — "
+                                f"{sandbox.test_count} tests, 0 failures "
+                                f"({sandbox.duration_seconds:.1f}s)")
+
+                    await _emit(log_queue, incident_id, "execute", "running",
+                                "Sandbox validated — opening PR with test evidence")
+
+                    # Signal to engine/main.py that sandbox passed → create PR
+                    state["sandbox_validated_pr"] = True
+
+                    await _emit(log_queue, incident_id, "execute", "done",
+                                "Pull request opened (sandbox-validated fix)")
+
+                    # Run LearningAgent immediately
+                    await _emit(log_queue, incident_id, "learning", "running",
+                                "Updating vault confidence")
+                    try:
+                        fix_proposal: FixProposal = state.get("fix_proposal")
+                        if fix_proposal:
+                            outcome = Outcome(
+                                incident_id=incident_id,
+                                fix_proposal_id=str(uuid.uuid4()),
+                                result="success",
+                                reviewed_by=None,
+                                notes="sandbox_validated",
+                            )
+                            state["outcome"] = outcome
+                            state = await get_agent("learning").run(state)
+                        await _emit(log_queue, incident_id, "learning", "done",
+                                    "Vault confidence updated")
+                    except Exception as exc:
+                        if isinstance(exc, NotImplementedError): raise
+                        log.error("[orchestrator] LearningAgent failed: %s", exc, exc_info=True)
+                        await _emit(log_queue, incident_id, "learning", "error", str(exc))
+
+                    # Pipeline complete — not paused
+                    await log_queue.put(None)
+                    return state
+
+                else:
+                    # Sandbox failed or no result
+                    if sandbox:
+                        await _emit(log_queue, incident_id, "sandbox", "done",
+                                    f"Sandbox FAILED — {sandbox.failure_count} failure(s) — "
+                                    f"requiring human review")
+                    else:
+                        await _emit(log_queue, incident_id, "sandbox", "error",
+                                    "Sandbox returned no result — requiring human review")
+
+            except Exception as exc:
+                if isinstance(exc, NotImplementedError):
+                    raise
+                log.error("[orchestrator] SandboxAgent failed: %s", exc, exc_info=True)
+                await _emit(log_queue, incident_id, "sandbox", "error",
+                            f"Sandbox error: {exc} — falling back to human review")
+
+        # ── Pause for human review (sandbox disabled or failed) ───────────────
         await _emit(log_queue, incident_id, "execute", "done",
                     "Awaiting human review before applying fix")
         # Pipeline pauses here — LearningAgent will be triggered via

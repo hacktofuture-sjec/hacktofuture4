@@ -25,10 +25,9 @@ import re
 import uuid
 from typing import Any, Dict, List, Optional
 
-from groq import AsyncGroq
-
 from .repl import REPLEnvironment
 from ..config import engine_config
+from ..groq_pool import get_pool
 from ..types import FailureObject, FixSuggestion, FixDetail
 
 log = logging.getLogger("rekall.rlm")
@@ -116,14 +115,7 @@ class RLMEngine:
     """
 
     def __init__(self) -> None:
-        self._client: Optional[AsyncGroq] = None
-
-    def _get_client(self) -> AsyncGroq:
-        if self._client is None:
-            self._client = AsyncGroq(
-                api_key=engine_config.groq_api_key or None
-            )
-        return self._client
+        pass  # client handled by groq_pool
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -371,16 +363,14 @@ class RLMEngine:
     # ── LLM calling ──────────────────────────────────────────────────────────
 
     async def _call_llm(self, messages: List[Dict[str, str]], model: Optional[str] = None) -> str:
-        """Call Groq and return the raw text response."""
-        client = self._get_client()
+        """Call Groq via the key-rotation pool and return the raw text response."""
         target_model = model or engine_config.rlm_model
-        response = await client.chat.completions.create(
+        return await get_pool().call(
             model=target_model,
             messages=messages,
             max_tokens=2048,
-            temperature=0.1,  # low temp for precise code generation
+            temperature=0.1,
         )
-        return response.choices[0].message.content
 
     # ── Code extraction ──────────────────────────────────────────────────────
 

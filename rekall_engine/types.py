@@ -102,6 +102,20 @@ class AgentLogEntry:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+@dataclass
+class SandboxResult:
+    incident_id: str
+    passed: bool
+    test_count: int
+    failure_count: int
+    test_log: str           # raw test output (truncated to ~5000 chars)
+    pr_evidence: str        # formatted markdown evidence for PR body
+    namespace: str          # kubernetes namespace used
+    duration_seconds: float
+    valkey_deployed: bool = False
+    demo_mode: bool = False  # True when minikube not available — simulated result
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION B — Pydantic contracts (AI agent layer ↔ memory layer)
 #             Aligned with rlm-e-temp/contracts/types.py

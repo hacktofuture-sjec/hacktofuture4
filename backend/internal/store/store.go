@@ -30,6 +30,7 @@ type incidentRecord struct {
 	bundle     *models.DiagnosticBundle
 	fix        *models.FixProposal
 	governance *models.GovernanceDecision
+	sandbox    *models.SandboxResult
 	logs       []models.AgentLog
 }
 
@@ -44,6 +45,7 @@ type SerializableRecord struct {
 	Bundle     *models.DiagnosticBundle   `json:"bundle"`
 	Fix        *models.FixProposal        `json:"fix"`
 	Governance *models.GovernanceDecision `json:"governance"`
+	Sandbox    *models.SandboxResult      `json:"sandbox"`
 	Logs       []models.AgentLog          `json:"logs"`
 }
 
@@ -68,6 +70,7 @@ func Load(vaultPath string) error {
 			bundle:     v.Bundle,
 			fix:        v.Fix,
 			governance: v.Governance,
+			sandbox:    v.Sandbox,
 			logs:       v.Logs,
 		}
 	}
@@ -85,6 +88,7 @@ func Save(vaultPath string) error {
 			Bundle:     v.bundle,
 			Fix:        v.fix,
 			Governance: v.governance,
+			Sandbox:    v.sandbox,
 			Logs:       v.logs,
 		}
 	}
@@ -286,6 +290,31 @@ func GetDiagnosticBundle(_ context.Context, incidentID string) (*models.Diagnost
 		return nil, nil
 	}
 	return rec.bundle, nil
+}
+
+// ── Sandbox Results ───────────────────────────────────────────────────────────
+
+// UpsertSandboxResult stores the Minikube sandbox result for an incident.
+func UpsertSandboxResult(_ context.Context, r *models.SandboxResult) error {
+	mu.Lock()
+	defer mu.Unlock()
+	rec, ok := records[r.IncidentID]
+	if !ok {
+		return ErrNotFound
+	}
+	rec.sandbox = r
+	return nil
+}
+
+// GetSandboxResult returns the sandbox result for an incident (nil if not run).
+func GetSandboxResult(_ context.Context, incidentID string) (*models.SandboxResult, error) {
+	mu.RLock()
+	rec, ok := records[incidentID]
+	mu.RUnlock()
+	if !ok {
+		return nil, nil
+	}
+	return rec.sandbox, nil
 }
 
 // ── Metrics ───────────────────────────────────────────────────────────────────

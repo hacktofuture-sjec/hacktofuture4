@@ -97,6 +97,19 @@ export interface VaultEntry {
   updated_at: string;
 }
 
+export interface SandboxResult {
+  incident_id: string;
+  passed: boolean;
+  test_count: number;
+  failure_count: number;
+  test_log: string;
+  pr_evidence: string;
+  namespace: string;
+  duration_seconds: number;
+  valkey_deployed: boolean;
+  demo_mode: boolean;
+}
+
 export interface MetricsSummary {
   total_incidents: number;
   resolved_count: number;

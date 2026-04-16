@@ -61,6 +61,17 @@ try:
         github_repo:     str  = ""     # e.g. "owner/repo" (GITHUB_REPO)
         github_live_pr:  bool = False  # set True to enable real PR creation
 
+        # ── Minikube Sandbox (optional) ───────────────────────────────────
+        # When sandbox_enabled=True, the pipeline deploys the fix into a
+        # Minikube namespace, runs the CI test suite, and validates the fix
+        # before raising a PR. Requires minikube + kubectl on PATH.
+        sandbox_enabled:       bool = False
+        minikube_profile:      str  = "rekall"
+        minikube_cpus:         int  = 4
+        minikube_memory:       int  = 8192   # MB
+        sandbox_timeout:       int  = 300    # seconds
+        sandbox_valkey_image:  str  = "valkey/valkey:7.2-alpine"
+
         class Config:
             env_file = ".env"
             env_file_encoding = "utf-8"
@@ -96,6 +107,12 @@ except ImportError:
         github_token               = os.getenv("GITHUB_TOKEN", "")
         github_repo                = os.getenv("GITHUB_REPO", "")
         github_live_pr             = os.getenv("GITHUB_LIVE_PR", "false").lower() == "true"
+        sandbox_enabled            = os.getenv("SANDBOX_ENABLED", "false").lower() == "true"
+        minikube_profile           = os.getenv("MINIKUBE_PROFILE", "rekall")
+        minikube_cpus              = int(os.getenv("MINIKUBE_CPUS", "4"))
+        minikube_memory            = int(os.getenv("MINIKUBE_MEMORY", "8192"))
+        sandbox_timeout            = int(os.getenv("SANDBOX_TIMEOUT", "300"))
+        sandbox_valkey_image       = os.getenv("SANDBOX_VALKEY_IMAGE", "valkey/valkey:7.2-alpine")
 
     engine_config = _FallbackConfig()
 

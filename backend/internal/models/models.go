@@ -148,10 +148,25 @@ type GitLabWebhookPayload struct {
 	Status     string `json:"status"`
 }
 
+// SandboxResult holds the outcome of the Minikube sandbox validation.
+type SandboxResult struct {
+	IncidentID      string  `json:"incident_id"`
+	Passed          bool    `json:"passed"`
+	TestCount       int     `json:"test_count"`
+	FailureCount    int     `json:"failure_count"`
+	TestLog         string  `json:"test_log"`
+	PREvidence      string  `json:"pr_evidence"`
+	Namespace       string  `json:"namespace"`
+	DurationSeconds float64 `json:"duration_seconds"`
+	ValKeyDeployed  bool    `json:"valkey_deployed"`
+	DemoMode        bool    `json:"demo_mode"`
+}
+
 type IncidentDetail struct {
 	Incident           *Incident           `json:"incident"`
 	DiagnosticBundle   *DiagnosticBundle   `json:"diagnostic_bundle"`
 	FixProposal        *FixProposal        `json:"fix_proposal"`
 	GovernanceDecision *GovernanceDecision `json:"governance_decision"`
+	SandboxResult      *SandboxResult      `json:"sandbox_result"`
 	AgentLogs          []AgentLog          `json:"agent_logs"`
 }

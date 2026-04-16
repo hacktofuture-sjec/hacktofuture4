@@ -1,20 +1,22 @@
 "use client";
 
 import {
-  CheckCircle2, Loader2, XCircle, Circle,
-  Radio, Microscope, Wrench, Scale, Rocket, Brain, Shield,
+  CheckCircle2, Loader2, XCircle,
+  Radio, Microscope, Wrench, Scale, Rocket, Brain, Shield, Container, Play,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AgentLog } from "@/lib/types";
 
 const STEPS = [
-  { key: "monitor",    label: "Monitor",    sub: "Detect & normalise event",    icon: Radio },
-  { key: "diagnostic", label: "Diagnostic", sub: "Fetch logs, diff, tests",     icon: Microscope },
-  { key: "fix",        label: "Fix",        sub: "Search vault T1 → T2 → T3",  icon: Wrench },
-  { key: "simulation", label: "Simulation", sub: "Counterfactual sandbox",      icon: Rocket },
-  { key: "governance", label: "Governance", sub: "Score risk, decide action",   icon: Scale },
-  { key: "publish_guard", label: "Publish", sub: "Supply chain gate",           icon: Shield },
-  { key: "learning",   label: "Learning",   sub: "Update vault confidence",     icon: Brain },
+  { key: "monitor",      label: "Monitor",     sub: "Detect & normalise event",      icon: Radio },
+  { key: "diagnostic",   label: "Diagnostic",  sub: "Fetch logs, diff, tests",       icon: Microscope },
+  { key: "fix",          label: "Fix",         sub: "Search vault T1 → T2 → T3",    icon: Wrench },
+  { key: "simulation",   label: "Simulation",  sub: "Counterfactual dry-run",        icon: Rocket },
+  { key: "governance",   label: "Governance",  sub: "Score risk, decide action",     icon: Scale },
+  { key: "publish_guard",label: "Publish",     sub: "Supply chain gate",             icon: Shield },
+  { key: "sandbox",      label: "Sandbox",     sub: "Minikube validation",           icon: Container },
+  { key: "execute",      label: "Execute",     sub: "Apply fix / open PR",           icon: Play },
+  { key: "learning",     label: "Learning",    sub: "Update vault confidence",       icon: Brain },
 ];
 
 interface Props {

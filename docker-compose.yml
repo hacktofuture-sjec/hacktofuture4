@@ -22,6 +22,11 @@ services:
       - "8002:8002"
     environment:
       GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_API_KEYS: ${GROQ_API_KEYS:-}
+      GROQ_API_KEY_2: ${GROQ_API_KEY_2:-}
+      GROQ_API_KEY_3: ${GROQ_API_KEY_3:-}
+      GROQ_API_KEY_4: ${GROQ_API_KEY_4:-}
+      GROQ_API_KEY_5: ${GROQ_API_KEY_5:-}
       GO_BACKEND_URL: http://backend:8000
       VAULT_PATH: /app/vault
       LOG_LEVEL: INFO
@@ -34,6 +39,13 @@ services:
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
       NOTION_TOKEN: ${NOTION_TOKEN}
       NOTION_DATABASE_ID: ${NOTION_DATABASE_ID}
+      # Minikube sandbox (optional — requires minikube + kubectl on PATH)
+      SANDBOX_ENABLED: ${SANDBOX_ENABLED:-false}
+      MINIKUBE_PROFILE: ${MINIKUBE_PROFILE:-rekall}
+      MINIKUBE_CPUS: ${MINIKUBE_CPUS:-4}
+      MINIKUBE_MEMORY: ${MINIKUBE_MEMORY:-8192}
+      SANDBOX_TIMEOUT: ${SANDBOX_TIMEOUT:-300}
+      SANDBOX_VALKEY_IMAGE: ${SANDBOX_VALKEY_IMAGE:-valkey/valkey:7.2-alpine}
     volumes:
       - ./vault:/app/vault
     healthcheck:

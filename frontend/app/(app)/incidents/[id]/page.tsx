@@ -9,12 +9,13 @@ import { AgentTimeline } from "@/components/agent-timeline";
 import { FixProposalCard } from "@/components/fix-proposal-card";
 import { RiskGauge } from "@/components/risk-gauge";
 import { ApprovalPanel } from "@/components/approval-panel";
+import { SandboxResultCard } from "@/components/sandbox-result-card";
 import { Badge } from "@/components/ui/badge";
 import { SkeletonTimeline } from "@/components/ui/skeleton";
 import { cn, timeAgo } from "@/lib/utils";
 import type {
   Incident, DiagnosticBundle, FixProposal,
-  GovernanceDecision, AgentLog,
+  GovernanceDecision, AgentLog, SandboxResult,
 } from "@/lib/types";
 
 interface Detail {
@@ -22,6 +23,7 @@ interface Detail {
   diagnostic_bundle:  DiagnosticBundle | null;
   fix_proposal:       FixProposal      | null;
   governance_decision: GovernanceDecision | null;
+  sandbox_result:     SandboxResult    | null;
   agent_logs:         AgentLog[];
 }
 
@@ -40,7 +42,7 @@ export default function IncidentDetailPage({
   const { id } = use(params);
   const [data,    setData]    = useState<Detail | null>(null);
   const [loading, setLoading] = useState(true);
-  const { logs, done } = useAgentStream(id);
+  const { logs, done, sandboxResult: liveSandbox } = useAgentStream(id);
 
   const fetchData = useCallback(async () => {
     try {
@@ -80,7 +82,9 @@ export default function IncidentDetailPage({
     );
   }
 
-  const { incident, diagnostic_bundle: bundle, fix_proposal: fix, governance_decision: gov } = data;
+  const { incident, diagnostic_bundle: bundle, fix_proposal: fix, governance_decision: gov, sandbox_result: storedSandbox } = data;
+  // Prefer live SSE sandbox_result over stored value (shows in real time)
+  const sandbox = liveSandbox ?? storedSandbox;
   const allLogs       = logs.length > 0 ? logs : data.agent_logs;
   const needsApproval = incident.status === "awaiting_approval"
     || gov?.decision === "block_await_human";
@@ -189,6 +193,9 @@ export default function IncidentDetailPage({
               </p>
             </div>
           )}
+
+          {/* Sandbox validation result */}
+          {sandbox && <SandboxResultCard result={sandbox} />}
         </div>
 
         {/* Col 3: Governance + approval */}
