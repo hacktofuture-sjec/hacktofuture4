@@ -5,8 +5,8 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rekall/backend/internal/db"
 	"github.com/rekall/backend/internal/models"
+	"github.com/rekall/backend/internal/store"
 )
 
 // ListIncidents returns paginated incidents sorted by created_at DESC.
@@ -18,7 +18,7 @@ func ListIncidents(c *gin.Context) {
 		limit = 50
 	}
 
-	incidents, err := db.ListIncidents(c.Request.Context(), limit, offset)
+	incidents, err := store.ListIncidents(c.Request.Context(), limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -33,13 +33,12 @@ func ListIncidents(c *gin.Context) {
 	})
 }
 
-// GetIncident returns the full detail view of a single incident:
-// incident metadata, diagnostic bundle, fix proposal, governance decision, and agent logs.
+// GetIncident returns the full detail view of a single incident.
 func GetIncident(c *gin.Context) {
 	id := c.Param("id")
 	ctx := c.Request.Context()
 
-	incident, err := db.GetIncident(ctx, id)
+	incident, err := store.GetIncident(ctx, id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -49,10 +48,10 @@ func GetIncident(c *gin.Context) {
 		return
 	}
 
-	bundle, _ := db.GetDiagnosticBundle(ctx, id)
-	fix, _ := db.GetLatestFixProposal(ctx, id)
-	gov, _ := db.GetLatestGovernanceDecision(ctx, id)
-	logs, _ := db.GetAgentLogs(ctx, id)
+	bundle, _ := store.GetDiagnosticBundle(ctx, id)
+	fix, _ := store.GetLatestFixProposal(ctx, id)
+	gov, _ := store.GetLatestGovernanceDecision(ctx, id)
+	logs, _ := store.GetAgentLogs(ctx, id)
 
 	c.JSON(http.StatusOK, models.IncidentDetail{
 		Incident:           incident,

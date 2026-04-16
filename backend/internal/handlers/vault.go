@@ -5,7 +5,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rekall/backend/internal/db"
+	"github.com/rekall/backend/internal/vault"
 )
 
 // ListVault returns paginated vault entries, optionally filtered by source.
@@ -23,7 +23,7 @@ func ListVault(c *gin.Context) {
 		src = &source
 	}
 
-	entries, err := db.ListVaultEntries(c.Request.Context(), src, limit, offset)
+	entries, err := vault.ListAll(src, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -33,7 +33,7 @@ func ListVault(c *gin.Context) {
 
 // VaultStats returns aggregate statistics for the vault.
 func VaultStats(c *gin.Context) {
-	stats, err := db.GetVaultStats(c.Request.Context())
+	stats, err := vault.Stats()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

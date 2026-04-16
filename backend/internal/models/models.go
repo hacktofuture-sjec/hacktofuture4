@@ -64,10 +64,8 @@ type FixProposal struct {
 	FixCommands     []string  `json:"fix_commands"`
 	FixDiff         *string   `json:"fix_diff"`
 	Confidence      float64   `json:"confidence"`
-	RewardScore     float64   `json:"reward_score"`
 	Reasoning       string    `json:"reasoning"`
-	SkippedFixes    []byte    `json:"skipped_fixes,omitempty"` // JSONB — array of skipped fix objects
-	RLMTrace        []byte    `json:"rlm_trace,omitempty"`     // JSONB — Depth-0/1 scan trace
+	RLMTrace        []byte    `json:"rlm_trace,omitempty"`     // JSONB depth 0/1 scan trace
 	CreatedAt       time.Time `json:"created_at"`
 }
 
@@ -91,38 +89,27 @@ type AgentLog struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
-// RLEpisode tracks the RL reward signal for a completed pipeline run.
-type RLEpisode struct {
-	ID               string    `json:"id"`
-	IncidentID       string    `json:"incident_id"`
-	FixTier          *string   `json:"fix_tier"`
-	Outcome          *string   `json:"outcome"` // success | failure | rejected
-	Reward           float64   `json:"reward"`
-	CumulativeReward float64   `json:"cumulative_reward"`
-	CreatedAt        time.Time `json:"created_at"`
-}
-
-// VaultEntry mirrors ChromaDB metadata in Postgres for fast browsing.
+// VaultEntry mirrors the flat-file vault JSON schema for the UI.
+// No chromadb_id — keyed by failure_signature only.
 type VaultEntry struct {
-	ID             string    `json:"id"`
-	ChromaID       string    `json:"chroma_id"`
-	FailureType    *string   `json:"failure_type"`
-	FixDescription *string   `json:"fix_description"`
-	Source         string    `json:"source"` // human | synthetic
-	Confidence     float64   `json:"confidence"`
-	RewardScore    float64   `json:"reward_score"` // running RL reward (±1.0 per outcome)
-	RetrievalCount int       `json:"retrieval_count"`
-	SuccessCount   int       `json:"success_count"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID               string    `json:"id"`
+	FailureSignature string    `json:"failure_signature"`
+	FailureType      *string   `json:"failure_type"`
+	FixDescription   *string   `json:"fix_description"`
+	Source           string    `json:"source"` // human | synthetic
+	Confidence       float64   `json:"confidence"`
+	RetrievalCount   int       `json:"retrieval_count"`
+	SuccessCount     int       `json:"success_count"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // VaultStats aggregates vault summary metrics.
 type VaultStats struct {
-	Total            int      `json:"total"`
-	HumanCount       int      `json:"human_count"`
-	SyntheticCount   int      `json:"synthetic_count"`
-	AvgConfidence    *float64 `json:"avg_confidence"`
+	Total          int      `json:"total"`
+	HumanCount     int      `json:"human_count"`
+	SyntheticCount int      `json:"synthetic_count"`
+	AvgConfidence  *float64 `json:"avg_confidence"`
 }
 
 // MetricsSummary provides the dashboard headline figures.
@@ -131,7 +118,6 @@ type MetricsSummary struct {
 	ResolvedCount  int      `json:"resolved_count"`
 	VaultSize      int      `json:"vault_size"`
 	AvgConfidence  *float64 `json:"avg_confidence"`
-	TotalReward    *float64 `json:"total_reward"`
 }
 
 // --- Request / response DTOs ---

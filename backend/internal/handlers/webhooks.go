@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rekall/backend/internal/db"
 	"github.com/rekall/backend/internal/engine"
 	"github.com/rekall/backend/internal/models"
 	"github.com/rekall/backend/internal/sse"
+	"github.com/rekall/backend/internal/store"
 )
 
 // webhookSimulatorScenarios defines pre-built failure payloads for demo use.
@@ -44,7 +44,7 @@ var webhookSimulatorScenarios = map[string]map[string]any{
 	"image_pull_backoff": {
 		"failure_type": "deploy",
 		"description":  "Image tag v2.1.0 not found in registry",
-		"log_excerpt":  "Warning: Failed to pull image 'registry.io/app:v2.1.0': manifest not found",
+		"log_excerpt":  "Warning: Failed to pull image 'registry.io/app:v2.1.0': manifest not found\nImagePullBackOff",
 		"git_diff":     "--- a/.github/workflows/deploy.yml\n+++ b/.github/workflows/deploy.yml\n@@ -8 +8 @@\n-  IMAGE_TAG: v2.0.9\n+  IMAGE_TAG: v2.1.0",
 		"simulated":    true,
 	},
@@ -84,14 +84,13 @@ func (h *WebhookHandler) HandleGitHub(c *gin.Context) {
 		"repository":   payload.Repository,
 	}
 
-	incident, err := db.CreateIncident(c.Request.Context(), "github_actions", failureType, raw)
+	incident, err := store.CreateIncident(c.Request.Context(), "github_actions", failureType, raw)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "create incident: " + err.Error()})
 		return
 	}
 
 	go h.runPipeline(incident.ID, raw)
-
 	c.JSON(http.StatusOK, gin.H{"accepted": true, "incident_id": incident.ID})
 }
 
@@ -109,7 +108,7 @@ func (h *WebhookHandler) HandleGitLab(c *gin.Context) {
 	}
 
 	raw := map[string]any{"object_kind": payload.ObjectKind, "status": payload.Status}
-	incident, err := db.CreateIncident(c.Request.Context(), "gitlab", "deploy", raw)
+	incident, err := store.CreateIncident(c.Request.Context(), "gitlab", "deploy", raw)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -134,7 +133,7 @@ func (h *WebhookHandler) HandleSimulate(c *gin.Context) {
 	}
 
 	ft, _ := scenario["failure_type"].(string)
-	incident, err := db.CreateIncident(c.Request.Context(), "simulator", ft, scenario)
+	incident, err := store.CreateIncident(c.Request.Context(), "simulator", ft, scenario)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -150,8 +149,7 @@ func (h *WebhookHandler) HandleSimulate(c *gin.Context) {
 }
 
 // runPipeline is called in a goroutine to drive the agent pipeline.
-// It first tries to invoke the Python engine service; if unavailable it
-// falls back to an emulated stepped timeline so the demo still works.
+// Tries the Python engine first; falls back to emulation if unavailable.
 func (h *WebhookHandler) runPipeline(incidentID string, payload map[string]any) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -164,7 +162,6 @@ func (h *WebhookHandler) runPipeline(incidentID string, payload map[string]any) 
 			Payload:    payload,
 		})
 		if err != nil {
-			// Fall back to emulation on error
 			engineOK = false
 		}
 	}
@@ -174,8 +171,7 @@ func (h *WebhookHandler) runPipeline(incidentID string, payload map[string]any) 
 	}
 }
 
-// emulatedPipeline replays a step-by-step simulation when the engine service
-// is offline. This keeps the dashboard functional during development.
+// emulatedPipeline replays a step-by-step simulation when the engine is offline.
 func (h *WebhookHandler) emulatedPipeline(ctx context.Context, incidentID string) {
 	steps := []struct {
 		name   string
@@ -185,7 +181,7 @@ func (h *WebhookHandler) emulatedPipeline(ctx context.Context, incidentID string
 		{"diagnostic", "Fetching logs, git diff, and test reports"},
 		{"fix", "Searching memory vault: T1 → T2 → T3 fallback"},
 		{"governance", "Computing risk score across 6 dimensions"},
-		{"execute", "Applying fix / opening pull request"},
+		{"publish_guard", "Supply-chain safety gate"},
 		{"learning", "Updating vault confidence and logging RL episode"},
 	}
 
@@ -196,18 +192,18 @@ func (h *WebhookHandler) emulatedPipeline(ctx context.Context, incidentID string
 		default:
 		}
 
-		if log, err := db.AppendAgentLog(ctx, incidentID, step.name, "running", step.detail); err == nil {
-			h.broker.Publish(incidentID, sse.Event{Type: "agent_log", Data: log})
+		if logEntry, err := store.AppendAgentLog(ctx, incidentID, step.name, "running", step.detail); err == nil {
+			h.broker.Publish(incidentID, sse.Event{Type: "agent_log", Data: logEntry})
 		}
 
 		time.Sleep(1200 * time.Millisecond)
 
-		if log, err := db.AppendAgentLog(ctx, incidentID, step.name, "done", step.detail); err == nil {
-			h.broker.Publish(incidentID, sse.Event{Type: "agent_log", Data: log})
+		if logEntry, err := store.AppendAgentLog(ctx, incidentID, step.name, "done", step.detail); err == nil {
+			h.broker.Publish(incidentID, sse.Event{Type: "agent_log", Data: logEntry})
 		}
 	}
 
-	_ = db.UpdateIncidentStatus(ctx, incidentID, models.StatusResolved)
+	_ = store.UpdateIncidentStatus(ctx, incidentID, models.StatusResolved)
 	h.broker.Publish(incidentID, sse.Event{Type: "status", Data: map[string]string{"status": "resolved"}})
 	h.broker.PublishDone(incidentID)
 }
