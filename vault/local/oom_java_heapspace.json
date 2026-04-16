@@ -1,0 +1,19 @@
+{
+  "failure_signature": "oom:java:heapspace",
+  "failure_type": "oom",
+  "source": "human",
+  "confidence": 0.89,
+  "fix_description": "Java heap space exhausted \u2014 container OOM killed. Increase JVM heap size via JAVA_OPTS and raise the container memory limit.",
+  "fix_commands": [
+    "export JAVA_OPTS='-Xms512m -Xmx2g -XX:+UseG1GC'",
+    "kubectl set resources deployment/api --limits=memory=3Gi --requests=memory=1Gi",
+    "kubectl rollout restart deployment/api"
+  ],
+  "fix_diff": null,
+  "id": "2c14385b-4a0d-4060-b43a-c57ffb253395",
+  "created_at": "2026-04-15T21:42:29.081455",
+  "updated_at": "2026-04-15T21:42:29.081462",
+  "retrieval_count": 0,
+  "success_count": 0,
+  "reward_score": 0.0
+}

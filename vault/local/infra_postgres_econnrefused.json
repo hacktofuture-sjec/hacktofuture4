@@ -1,0 +1,19 @@
+{
+  "failure_signature": "infra:postgres:econnrefused",
+  "failure_type": "infra",
+  "source": "human",
+  "confidence": 0.92,
+  "fix_description": "PostgreSQL connection refused on port 5432. The database pod is down or the service name has changed. Restart the database deployment and verify the service endpoint.",
+  "fix_commands": [
+    "kubectl rollout restart deployment/postgres -n database",
+    "kubectl rollout status deployment/postgres -n database",
+    "kubectl get svc postgres -n database"
+  ],
+  "fix_diff": null,
+  "id": "4aba9dfd-913d-4200-bd58-23ae6b350711",
+  "created_at": "2026-04-15T21:42:29.080000",
+  "updated_at": "2026-04-15T21:42:29.080000",
+  "retrieval_count": 0,
+  "success_count": 0,
+  "reward_score": 0.0
+}

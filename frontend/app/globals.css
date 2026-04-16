@@ -1,0 +1,237 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─────────────────────────────────────────────────────────────
+   REKALL Design System
+   Dark = default command-room aesthetic
+   Light = clean slate mode
+───────────────────────────────────────────────────────────── */
+
+@layer base {
+  :root {
+    /* ── REKALL Bright Theme ─────────────────────────── */
+    --background:        0 0% 100%;
+    --background-subtle: 210 20% 98%;
+    --foreground:        222 47% 11%;
+
+    --card:              0 0% 100%;
+    --card-hover:        0 0% 99%;
+    --card-foreground:   222 47% 11%;
+
+    --border:            214 32% 91%;
+    --border-strong:     214 32% 80%;
+    --input:             214 32% 95%;
+    --ring:              25 100% 50%; /* REKALL Orange */
+
+    --primary:           25 100% 50%;
+    --primary-hover:     25 100% 42%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary:         210 20% 96%;
+    --secondary-foreground: 222 47% 20%;
+
+    --muted:             210 40% 96%;
+    --muted-foreground:  215 16% 47%;
+
+    --accent:            25 100% 50%;
+    --accent-subtle:     25 100% 97%;
+
+    --popover:           0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --destructive:       0 84% 60%;
+    --success:           142 76% 36%;
+    --warning:           38 92% 50%;
+    --info:              217 91% 60%;
+
+    /* Status */
+    --status-processing: 38 92% 50%;
+    --status-awaiting:   262 83% 58%;
+    --status-resolved:   142 76% 36%;
+    --status-failed:     0 84% 60%;
+
+    /* Sidebar */
+    --sidebar-width:     240px;
+    --sidebar-bg:        210 20% 98%;
+    --sidebar-border:    214 32% 91%;
+
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Inter", "SF Pro Display", system-ui, -apple-system, sans-serif;
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+
+  code, pre, kbd {
+    font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", monospace;
+  }
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border-strong));
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* ── Animations ────────────────────────────────────────────── */
+@keyframes step-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes progress-fill {
+  from { width: 0%; }
+  to   { width: var(--target-width, 100%); }
+}
+
+.step-running     { animation: step-pulse 1.4s ease-in-out infinite; }
+.fade-up          { animation: fade-up 0.35s ease-out both; }
+.fade-in          { animation: fade-in 0.25s ease-out both; }
+.slide-in-left    { animation: slide-in-left 0.3s ease-out both; }
+.scale-in         { animation: scale-in 0.25s ease-out both; }
+
+/* ── Skeleton shimmer ──────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted)) 25%,
+    hsl(var(--muted-foreground) / 0.08) 50%,
+    hsl(var(--muted)) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s infinite;
+  border-radius: var(--radius);
+}
+
+/* ── Sidebar nav active indicator ─────────────────────────── */
+.nav-active {
+  position: relative;
+}
+.nav-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 60%;
+  width: 3px;
+  background: hsl(var(--primary));
+  border-radius: 0 99px 99px 0;
+}
+
+/* ── Gradient text ─────────────────────────────────────────── */
+.gradient-text {
+  background: linear-gradient(135deg, hsl(25 100% 50%), hsl(45 100% 50%));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.gradient-text-warm {
+  background: linear-gradient(135deg, hsl(20 100% 50%), hsl(0 100% 60%));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Card hover lift ───────────────────────────────────────── */
+.card-lift {
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1), border-color 200ms ease, box-shadow 200ms ease;
+}
+.card-lift:hover {
+  transform: translateY(-4px);
+  border-color: hsl(var(--primary) / 0.5);
+  box-shadow: 0 12px 24px -10px hsl(var(--primary) / 0.15), 0 4px 12px -4px hsl(222 47% 11% / 0.05);
+}
+
+/* ── Glass panel ───────────────────────────────────────────── */
+.glass {
+  backdrop-filter: blur(12px) saturate(180%);
+  background: hsl(var(--card) / 0.7);
+  border: 1px solid hsl(var(--border));
+}
+
+/* ── Status dot ────────────────────────────────────────────── */
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.status-dot.live {
+  background: hsl(var(--success));
+  box-shadow: 0 0 0 3px hsl(var(--success) / 0.2);
+  animation: step-pulse 2s ease-in-out infinite;
+}
+
+/* ── Monospace terminal block ──────────────────────────────── */
+.terminal {
+  background: hsl(224 30% 5%);
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+/* ── Diff colors ───────────────────────────────────────────── */
+.diff-add  { color: hsl(142 69% 50%); }
+.diff-del  { color: hsl(0 72% 55%);   }
+.diff-meta { color: hsl(var(--muted-foreground)); }
+
+/* ── Focus ring override ───────────────────────────────────── */
+.focus-ring {
+  @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
+}
+*:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* ── Chip / inline tag ─────────────────────────────────────── */
+.chip {
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
+}
