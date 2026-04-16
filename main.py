@@ -958,6 +958,36 @@ def _broadcast_edit(
             tg_edit_message(cid, mid, text, buttons)
 
 
+def _broadcast_new_message(
+    incident: dict[str, Any],
+    text: str,
+    buttons: list[list[dict[str, Any]]] | None,
+) -> list[dict[str, Any]]:
+    """Post a brand-new message to every chat that got the original alert.
+
+    Each pipeline stage (initial alert → PR opened → merged/rolled-back)
+    is its own standalone message so the Telegram chat shows the full
+    timeline instead of one edited bubble. Returns the new targets so
+    callers can append them to the incident for future broadcasts.
+    """
+    new_targets: list[dict[str, Any]] = []
+    seen_chats: set[Any] = set()
+    for tgt in incident.get("message_targets") or []:
+        cid = tgt.get("chat_id")
+        if cid is None or cid in seen_chats:
+            continue
+        seen_chats.add(cid)
+        try:
+            resp = tg_send_with_buttons(cid, text, buttons or [])
+        except Exception as e:
+            print(f"[PipelineMedic] broadcast send failed for {cid}: {e}", flush=True)
+            continue
+        mid = ((resp or {}).get("result") or {}).get("message_id")
+        if mid is not None:
+            new_targets.append({"chat_id": cid, "message_id": mid})
+    return new_targets
+
+
 # --- Interactive message builders ---------------------------------------------
 
 _PATCH_SOURCE_LABEL = {
@@ -1793,22 +1823,26 @@ async def handle_telegram_callback(body: dict[str, Any]) -> JSONResponse:
     if not inc:
         if callback_id:
             tg_answer_callback(callback_id, "Session expired — please re-run CI")
-        if clicked_chat is not None and clicked_msg_id is not None:
+        if clicked_chat is not None:
             try:
-                tg_edit_message(
+                tg_send_with_buttons(
                     clicked_chat,
-                    int(clicked_msg_id),
                     build_expired_message({"repository": ""}),
                     buttons=[],
                 )
             except Exception as e:
-                print(f"[PipelineMedic] expired-edit failed: {e}", flush=True)
+                print(f"[PipelineMedic] expired-send failed: {e}", flush=True)
         return JSONResponse({"ok": True})
 
-    def _refresh_buttons_edit(new_text: str, buttons: list[list[dict[str, Any]]] | None, snap_state: dict[str, Any] | None) -> None:
-        """Edit all known message targets, always re-attaching state if given."""
-        final_text = _attach_state(new_text, snap_state) if snap_state is not None else new_text
-        _broadcast_edit(inc, final_text, buttons)
+    def _post(new_text: str, buttons: list[list[dict[str, Any]]] | None) -> None:
+        """Send a brand-new Telegram message to every recipient of this incident."""
+        sent = _broadcast_new_message(inc, new_text, buttons)
+        if not sent:
+            return
+        existing = list(inc.get("message_targets") or [])
+        existing.extend(sent)
+        inc["message_targets"] = existing
+        update_incident(tok, message_targets=existing)
 
     # Only the initial decision (auto/manual) is gated by the TTL;
     # merge/rollback buttons remain valid once a PR is open.
@@ -1816,14 +1850,14 @@ async def handle_telegram_callback(body: dict[str, Any]) -> JSONResponse:
         tg_answer_callback(callback_id, "Decision window expired")
         update_incident(tok, status="expired")
         inc["status"] = "expired"
-        _refresh_buttons_edit(build_expired_message(inc), [], None)
+        _post(build_expired_message(inc), [])
         return JSONResponse({"ok": True})
 
     if action == "manual":
         tg_answer_callback(callback_id, "Marked as manual fix")
         update_incident(tok, status="manual")
         inc["status"] = "manual"
-        _refresh_buttons_edit(build_manual_message(inc), [], None)
+        _post(build_manual_message(inc), [])
         return JSONResponse({"ok": True})
 
     if action == "autofix":
@@ -1853,21 +1887,9 @@ async def handle_telegram_callback(body: dict[str, Any]) -> JSONResponse:
                     {"text": "↩️ Rollback", "callback_data": f"roll:{tok}"},
                 ]
             ]
-            snap = _build_state_snapshot(
-                token=tok,
-                incident=inc,
-                github_override=github_info,
-                status_override="pr_open",
-            )
-            _refresh_buttons_edit(
-                build_pr_created_message(inc, github_info),
-                new_buttons,
-                snap,
-            )
+            _post(build_pr_created_message(inc, github_info), new_buttons)
         else:
-            _refresh_buttons_edit(
-                build_pr_failed_message(inc, github_info), [], None
-            )
+            _post(build_pr_failed_message(inc, github_info), [])
         return JSONResponse({"ok": True})
 
     if action == "merge":
@@ -1879,7 +1901,7 @@ async def handle_telegram_callback(body: dict[str, Any]) -> JSONResponse:
         new_status = "merged" if result.get("ok") else "merge_failed"
         update_incident(tok, merge=result, status=new_status)
         inc["status"] = new_status
-        _refresh_buttons_edit(build_merged_message(inc, result), [], None)
+        _post(build_merged_message(inc, result), [])
         return JSONResponse({"ok": True})
 
     if action == "roll":
@@ -1891,7 +1913,7 @@ async def handle_telegram_callback(body: dict[str, Any]) -> JSONResponse:
         new_status = "rolled_back" if result.get("ok") else "rollback_failed"
         update_incident(tok, rollback=result, status=new_status)
         inc["status"] = new_status
-        _refresh_buttons_edit(build_rollback_message(inc, result), [], None)
+        _post(build_rollback_message(inc, result), [])
         return JSONResponse({"ok": True})
 
     tg_answer_callback(callback_id, "Unknown action")
