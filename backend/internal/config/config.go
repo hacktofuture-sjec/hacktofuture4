@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"os"
 )
 
@@ -40,14 +39,7 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-// mustGetEnv kept for legacy code references — now unused but harmless.
-func mustGetEnv(key string) string {
-	v := os.Getenv(key)
-	if v == "" {
-		panic(fmt.Sprintf("required environment variable %q is not set", key))
-	}
-	return v
-}
+
 
 func getEnvSlice(key string, fallback []string) []string {
 	v := os.Getenv(key)

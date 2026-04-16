@@ -71,9 +71,10 @@ func main() {
 	// Webhooks
 	wh := r.Group("/webhook")
 	{
-		wh.POST("/github",   webhookHandler.HandleGitHub)
-		wh.POST("/gitlab",   webhookHandler.HandleGitLab)
-		wh.POST("/simulate", webhookHandler.HandleSimulate)
+		wh.POST("/github",     webhookHandler.HandleGitHub)
+		wh.POST("/gitlab",     webhookHandler.HandleGitLab)
+		wh.POST("/simulate",   webhookHandler.HandleSimulate)
+		wh.POST("/fetch-live", webhookHandler.HandleFetchLive)
 	}
 
 	// Incidents
