@@ -29,44 +29,32 @@ This repository template will be used for development, tracking progress, and fi
 # The Final README Template 
 
 ## Problem Statement / Idea
-
-Clearly describe the problem you are solving.
-
-- What is the problem?
-- Why is it important?
-- Who are the target users?
+- Cloud-native microservices deployed on Kubernetes are susceptible to runtime failures such as CrashLoopBackOff, resource exhaustion, and traffic spikes, making real-time system stability challenging.
+- Existing solutions rely on threshold-based autoscaling and manual intervention, lacking context-aware decision-making, root cause analysis, and adaptive recovery mechanisms.
+- Target users include DevOps engineers, SRE teams, and cloud platform operators who require automated, intelligent systems for self-healing, resilience, and performance optimization.
 
 ---
 
 ## Proposed Solution
-
-Explain your approach:
-
-- What are you building?
-- How does it solve the problem?
-- What makes your solution unique?
+- We are building an agent-driven, Kubernetes-based microservices platform that continuously monitors system health, performs root cause analysis (RCA), and autonomously executes remediation actions such as scaling and recovery.
+- The system combines observability signals (logs, restart counts, latency) with ML-based prediction and a capacity-aware model to enable context-driven decision-making and graceful degradation under load.
+- The uniqueness lies in its agentic architecture, where multiple specialized agents (SRE, Capacity, Learning, Log Intelligence) collaborate to create a self-healing, self-optimizing, and resilient infrastructure system.
 
 ---
 
 ## Features
-
-List the core features of your project:
-
-- Feature 1
-- Feature 2
-- Feature 3
+- Agent-Based Self-Healing System — Autonomous monitoring, root cause analysis, and remediation using a centralized SRE agent with specialized supporting agents.
+- Intelligent Scaling & Capacity Buffering — Context-aware scaling combined with dynamic reserve capacity to ensure graceful degradation and continuous service availability.
+- ML-Driven Prediction & Learning Loop — Lightweight ML pipeline that predicts failures, learns from past incidents, and improves decision-making over time.
 
 ---
 
 ## Tech Stack
-
-Mention all technologies used:
-
-- Frontend:
-- Backend:
-- Database:
-- APIs / Services:
-- Tools / Libraries:
+- Frontend: React.js (Dashboard UI for monitoring, visualization, and system insights)
+- Backend: Node.js, Express.js (Microservices architecture with agent-based logic)
+- Database: MongoDB / JSON-based storage (for logs, incidents, and ML dataset)
+- APIs / Services: REST APIs, Kubernetes API (for deployments, scaling, and monitoring), Groq API (LLM-based reasoning)
+- Tools / Libraries: Docker, Kubernetes (Minikube), Socket.IO, Axios, Tailwind CSS, @kubernetes/client-node
 
 ---
 
