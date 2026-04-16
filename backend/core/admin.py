@@ -26,31 +26,11 @@ from accounts.models import (
     UserProfile,
 )
 
-# ── integrations ──────────────────────────────────────────────────────────────
-from integrations.models import Integration, IntegrationAccount
+# ── chat ──────────────────────────────────────────────────────────────────────
+from chat.models import ChatMessage, ChatSession
 
 # ── events ────────────────────────────────────────────────────────────────────
 from events.models import DeadLetterQueue, RawWebhookEvent
-
-# ── processing ────────────────────────────────────────────────────────────────
-from processing.models import (
-    MappedPayload,
-    ProcessingRun,
-    ProcessingStepLog,
-    ValidationResult,
-)
-
-# ── tickets ───────────────────────────────────────────────────────────────────
-from tickets.models import (
-    ExternalIdentity,
-    TicketActivity,
-    TicketComment,
-    TicketLink,
-    UnifiedTicket,
-)
-
-# ── sync ──────────────────────────────────────────────────────────────────────
-from sync.models import IdempotencyKey, SyncCheckpoint
 
 # ── insights ──────────────────────────────────────────────────────────────────
 from insights.models import (
@@ -61,11 +41,31 @@ from insights.models import (
     SavedQuery,
 )
 
-# ── chat ──────────────────────────────────────────────────────────────────────
-from chat.models import ChatMessage, ChatSession
+# ── integrations ──────────────────────────────────────────────────────────────
+from integrations.models import Integration, IntegrationAccount
+
+# ── processing ────────────────────────────────────────────────────────────────
+from processing.models import (
+    MappedPayload,
+    ProcessingRun,
+    ProcessingStepLog,
+    ValidationResult,
+)
 
 # ── security ──────────────────────────────────────────────────────────────────
 from security.models import ApiKey, AuditLog
+
+# ── sync ──────────────────────────────────────────────────────────────────────
+from sync.models import IdempotencyKey, SyncCheckpoint
+
+# ── tickets ───────────────────────────────────────────────────────────────────
+from tickets.models import (
+    ExternalIdentity,
+    TicketActivity,
+    TicketComment,
+    TicketLink,
+    UnifiedTicket,
+)
 
 # ============================================================================
 # accounts

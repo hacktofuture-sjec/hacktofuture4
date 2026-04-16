@@ -32,9 +32,10 @@ class TestIntegrationListView:
     def test_list_returns_org_integrations_only(
         self, auth_client, integration_fixture, db
     ):
+        from django.contrib.auth import get_user_model
+
         from accounts.models import Organization
         from integrations.models import Integration
-        from django.contrib.auth import get_user_model
 
         other_org = Organization.objects.create(
             name="Other Integration Org", slug="other-int-org", plan_tier="free"
@@ -100,9 +101,10 @@ class TestIntegrationDetailView:
         assert not Integration.objects.filter(pk=integration.pk).exists()
 
     def test_cannot_access_other_org_integration(self, auth_client, db):
+        from django.contrib.auth import get_user_model
+
         from accounts.models import Organization
         from integrations.models import Integration
-        from django.contrib.auth import get_user_model
 
         other_org = Organization.objects.create(
             name="Other Int Detail", slug="other-int-detail", plan_tier="free"

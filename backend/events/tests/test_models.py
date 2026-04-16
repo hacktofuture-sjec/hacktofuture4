@@ -90,9 +90,8 @@ class TestRawWebhookEventModel:
         assert refreshed.status == "processed"
 
     def test_event_payload_filtered_by_org(self, org_fixture, integration_fixture):
-        from events.models import RawWebhookEvent
-
         from accounts.models import Organization
+        from events.models import RawWebhookEvent
 
         other_org = Organization.objects.create(name="Other Org", slug="other-org")
         RawWebhookEvent.objects.create(

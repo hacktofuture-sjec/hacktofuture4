@@ -5,10 +5,11 @@ Tests the autonomous NL → action pipeline WITHOUT real LLM calls.
 All LLM interactions are mocked to test schema handling and routing.
 """
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.schemas import ActionResult, ActionItemData
+import pytest
+
+from src.schemas import ActionItemData, ActionResult
 
 # ── Schema validation tests ──────────────────────────────────────────────────
 
@@ -73,8 +74,8 @@ def test_action_item_data_schema():
 async def test_orchestrator_returns_action_result_on_success():
     """Orchestrator should return ActionResult with actions on LLM success."""
     from src.agents.action_orchestrator import (
-        run_action_orchestrator,
         ActionPlannerSchema,
+        run_action_orchestrator,
     )
 
     mock_plan = ActionPlannerSchema(
@@ -96,7 +97,7 @@ async def test_orchestrator_returns_action_result_on_success():
     mock_chain = MagicMock()
     mock_chain.ainvoke = AsyncMock(return_value=mock_plan)
 
-    with patch("src.agents.action_orchestrator.ChatOpenAI") as MockLLM:
+    with patch("src.agents.action_orchestrator.ChatOpenAI"):
         with patch("src.agents.action_orchestrator.ChatPromptTemplate") as MockPrompt:
             MockPrompt.from_messages.return_value.__or__ = MagicMock(
                 return_value=mock_chain
@@ -120,7 +121,7 @@ async def test_orchestrator_handles_llm_failure_gracefully():
     mock_chain = MagicMock()
     mock_chain.ainvoke = AsyncMock(side_effect=Exception("LLM timeout"))
 
-    with patch("src.agents.action_orchestrator.ChatOpenAI") as MockLLM:
+    with patch("src.agents.action_orchestrator.ChatOpenAI"):
         with patch("src.agents.action_orchestrator.ChatPromptTemplate") as MockPrompt:
             MockPrompt.from_messages.return_value.__or__ = MagicMock(
                 return_value=mock_chain
@@ -138,8 +139,8 @@ async def test_orchestrator_handles_llm_failure_gracefully():
 async def test_orchestrator_handles_empty_actions():
     """If LLM returns zero actions, result should still be valid."""
     from src.agents.action_orchestrator import (
-        run_action_orchestrator,
         ActionPlannerSchema,
+        run_action_orchestrator,
     )
 
     mock_plan = ActionPlannerSchema(
@@ -150,7 +151,7 @@ async def test_orchestrator_handles_empty_actions():
     mock_chain = MagicMock()
     mock_chain.ainvoke = AsyncMock(return_value=mock_plan)
 
-    with patch("src.agents.action_orchestrator.ChatOpenAI") as MockLLM:
+    with patch("src.agents.action_orchestrator.ChatOpenAI"):
         with patch("src.agents.action_orchestrator.ChatPromptTemplate") as MockPrompt:
             MockPrompt.from_messages.return_value.__or__ = MagicMock(
                 return_value=mock_chain
@@ -169,7 +170,8 @@ async def test_orchestrator_handles_empty_actions():
 @pytest.mark.asyncio
 async def test_action_endpoint_returns_200():
     """POST /pipeline/action should return 200 with valid ActionResult."""
-    from httpx import AsyncClient, ASGITransport
+    from httpx import ASGITransport, AsyncClient
+
     from src.main import app
 
     mock_result = ActionResult(
@@ -209,7 +211,8 @@ async def test_action_endpoint_returns_200():
 @pytest.mark.asyncio
 async def test_action_endpoint_requires_text():
     """POST /pipeline/action should return 422 when text is missing."""
-    from httpx import AsyncClient, ASGITransport
+    from httpx import ASGITransport, AsyncClient
+
     from src.main import app
 
     transport = ASGITransport(app=app)
