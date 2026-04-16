@@ -340,3 +340,32 @@ def test_incident_verify_endpoint_rejects_invalid_metric_values(metrics: dict[st
     )
     assert response.status_code == 400
     assert "metric values" in response.json()["detail"]
+
+
+def test_incident_verify_endpoint_preserves_sub_threshold_boundary_values() -> None:
+    plan_payload = {
+        "diagnosis": {
+            "fingerprint_id": "FP-001",
+            "confidence": 0.95,
+            "suggested_actions": [],
+        },
+        "context": {
+            "deployment": "payment-api",
+            "namespace": "default",
+            "container": "payment-api",
+            "image": "payment-api",
+        },
+    }
+    client.post("/incidents/inc-001/plan", json=plan_payload)
+    client.post("/incidents/inc-001/approve")
+    client.post("/incidents/inc-001/execute", json={"action_index": 0})
+
+    response = client.post(
+        "/incidents/inc-001/verify",
+        json={"window_seconds": 60, "metrics": {"memory": "89.6%", "cpu": "79.9%"}},
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["status"] == "resolved"
+    assert body["verification"]["recovered"] is True

@@ -48,7 +48,7 @@ Expected:
 ## Run Backend
 
 ```powershell
-uvicorn backend.main:app --reload
+uvicorn --app-dir backend main:app --reload
 ```
 
 ## Minimal Incident API Flow

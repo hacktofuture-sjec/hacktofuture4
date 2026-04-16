@@ -80,7 +80,7 @@ def _coerce_percent(value: Any, *, required: bool) -> str:
             raise HTTPException(status_code=400, detail="metric values must be valid percentages")
         if numeric < 0:
             raise HTTPException(status_code=400, detail="metric values must be non-negative percentages")
-        return f"{numeric:.0f}%"
+        return f"{math.floor(numeric)}%"
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="metric values must be valid percentages") from exc
 
