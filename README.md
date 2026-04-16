@@ -1,86 +1,106 @@
+<<<<<<< HEAD
+SHECODES
+=======
+#SheCodes
 # HackToFuture 4.0 — Template
+>>>>>>> 76a8c92793877c61d8ad7cfa4401659e91cd5af8
 
-Welcome to your official HackToFuture 4 repository.
-
-This repository template will be used for development, tracking progress, and final submission of your project. Ensure that all work is committed here within the allowed hackathon duration.
-
----
-
-### Instructions for the teams:
-
-- Fork the Repository and name the forked repo in this convention: hacktofuture4-team_id (for eg: hacktofuture4-A01)
+# HackToFuture 4.0 — Decision-Driven Autonomous Recovery for Kubernetes Systems  
 
 ---
-
-## Rules
-
-- Work must be done ONLY in the forked repository
-- Only Four Contributors are allowed.
-- After 36 hours, Please make PR to the Main Repository. A Form will be sent to fill the required information.
-- Do not copy code from other teams
-- All commits must be from individual GitHub accounts
-- Please provide meaningful commits for tracking.
-- Do not share your repository with other teams
-- Final submission must be pushed before the deadline
-- Any violation may lead to disqualification
-
----
-
-# The Final README Template 
 
 ## Problem Statement / Idea
 
-Clearly describe the problem you are solving.
+Modern cloud applications run on Kubernetes using multiple interconnected microservices. When something fails, Kubernetes can restart containers, but it does not understand the root cause of the problem.
 
-- What is the problem?
-- Why is it important?
-- Who are the target users?
+Because of this:
+
+* Failures can spread across services
+* Systems can experience downtime quickly
+* Engineers must manually analyze logs and metrics
+
+This manual process is slow and does not scale well for large systems.
+
+This problem mainly affects:
+
+* Site Reliability Engineers (SREs)
+* DevOps teams
+* Developers managing cloud-native applications
 
 ---
 
 ## Proposed Solution
 
-Explain your approach:
+We built an Autonomous Recovery System that monitors system signals, detects issues, analyzes them, and suggests recovery actions.
 
-- What are you building?
-- How does it solve the problem?
-- What makes your solution unique?
+### How it works:
+
+1. Telemetry Collection
+   The system collects signals such as CPU usage, memory usage, restart count, latency, and error rate.
+
+2. Anomaly Detection
+   A rule-based detection system checks if the signals cross defined thresholds.
+
+3. AI-Based Analysis
+   Gemini analyzes the detected anomaly and provides:
+
+   * Root Cause
+   * Recommended Action
+
+4. Recovery Suggestion
+   The system suggests actions like restarting a pod or scaling a deployment.
+
+### What makes it different
+
+Most systems only monitor and alert.
+Our system helps in understanding the issue and suggests what action to take, reducing manual effort.
 
 ---
 
 ## Features
 
-List the core features of your project:
-
-- Feature 1
-- Feature 2
-- Feature 3
+* Real-time telemetry collection
+* Rule-based anomaly detection
+* AI-based root cause analysis
+* Recovery action suggestions
+* Monitoring using Prometheus and Grafana
+* Docker-based deployment
 
 ---
 
 ## Tech Stack
 
-Mention all technologies used:
-
-- Frontend:
-- Backend:
-- Database:
-- APIs / Services:
-- Tools / Libraries:
+* Frontend: Streamlit
+* Backend: FastAPI
+* Monitoring: Prometheus
+* Observability: OpenTelemetry
+* Infrastructure: Docker
+* Database: Redis
+* AI: Gemini API
 
 ---
 
 ## Project Setup Instructions
 
-Provide clear steps to run your project:
-
 ```bash
 # Clone the repository
-git clone <repo-link>
+git clone https://github.com/NehaRaii029/hacktofuture4-A08
 
-# Install dependencies
-...
+# Go into the project folder
+cd hacktofuture4-A08
 
 # Run the project
-...
+docker-compose up -d --build
 ```
+
+### Access the services
+
+Backend API: [http://localhost:8000/docs](http://localhost:8000/docs)
+Grafana Dashboard: [http://localhost:3000](http://localhost:3000)
+Prometheus: [http://localhost:9090](http://localhost:9090)
+
+---
+
+## Final Note
+
+This project improves system reliability by turning monitoring data into clear insights and actionable recovery suggestions.

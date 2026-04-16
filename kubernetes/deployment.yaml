@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autonomous-recovery
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: autonomous-recovery
+  template:
+    metadata:
+      labels:
+        app: autonomous-recovery
+    spec:
+      containers:
+      - name: backend
+        image: autonomous-recovery:latest
+        ports:
+        - containerPort: 8000
