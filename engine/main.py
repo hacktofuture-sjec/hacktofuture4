@@ -1,3 +1,16 @@
+"""
+REKALL Engine Service — Python FastAPI microservice.
+
+This service wraps `rekall_engine` and exposes two endpoints for the Go backend:
+  POST /pipeline/run    — start async pipeline for an incident
+  POST /pipeline/learn  — submit outcome for LearningAgent
+  GET  /health          — liveness probe
+
+The Go backend calls these endpoints; the engine service runs the AI agent
+graph (LangGraph) asynchronously and can notify the Go backend via a callback
+URL when agent log events are emitted.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -19,9 +32,8 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     groq_api_key: str = ""
-    chromadb_host: str = "localhost"
-    chromadb_port: int = 8001
     go_backend_url: str = "http://localhost:8000"   # callback target
+    vault_path: str = "vault"                       # flat-file vault directory
     log_level: str = "INFO"
 
     class Config:
@@ -189,20 +201,27 @@ async def _run_pipeline_async(incident_id: str, payload: Dict[str, Any]) -> None
             },
         })
 
-    except (NotImplementedError, ImportError):
-        log.warning("rekall_engine not yet implemented — running emulated pipeline")
-        await _emulated_pipeline(incident_id, payload)
     except Exception as exc:
         log.exception("pipeline error: %s", exc)
-        await _post_callback(incident_id, {
-            "type": "agent_log",
-            "data": {
-                "incident_id": incident_id,
-                "step_name": "error",
-                "status": "error",
-                "detail": str(exc),
-            },
-        })
+        # Only fall back to emulation if it's clearly a missing implementation
+        if isinstance(exc, (NotImplementedError, ImportError)):
+            log.warning("rekall_engine not implemented — running emulated pipeline")
+            await _emulated_pipeline(incident_id, payload)
+        else:
+            # Real error — report it to the dashboard
+            await _post_callback(incident_id, {
+                "type": "agent_log",
+                "data": {
+                    "incident_id": incident_id,
+                    "step_name": "error",
+                    "status": "error",
+                    "detail": f"Pipeline error: {type(exc).__name__}: {exc}",
+                },
+            })
+            await _post_callback(incident_id, {
+                "type": "status",
+                "data": {"incident_id": incident_id, "status": "failed"},
+            })
 
 
 async def _emulated_pipeline(incident_id: str, payload: Dict[str, Any]) -> None:
@@ -211,12 +230,12 @@ async def _emulated_pipeline(incident_id: str, payload: Dict[str, Any]) -> None:
     when the real engine graph is not yet implemented.
     """
     steps = [
-        ("monitor",     "Normalising failure event payload"),
-        ("diagnostic",  "Fetching logs, git diff, and test reports"),
-        ("fix",         "Searching memory vault: T1 → T2 → T3 fallback"),
-        ("governance",  "Computing risk score across 6 dimensions"),
-        ("execute",     "Applying fix / opening pull request"),
-        ("learning",    "Updating vault confidence and logging RL episode"),
+        ("monitor",       "Normalising failure event payload"),
+        ("diagnostic",    "Fetching logs, git diff, and test reports"),
+        ("fix",           "Searching memory vault: T1 → T2 → T3 fallback"),
+        ("governance",    "Computing risk score across 6 dimensions"),
+        ("publish_guard", "Supply-chain safety gate: checking commands"),
+        ("learning",      "Slack & Notion notifications dispatched"),
     ]
 
     for step_name, detail in steps:
