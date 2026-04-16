@@ -5,6 +5,7 @@ import IdentityView from './components/IdentityView'
 import TelemetryView from './components/TelemetryView'
 import AnalyticsView from './components/AnalyticsView'
 import EnforcementView from './components/EnforcementView'
+import HackerTerminal from './components/HackerTerminal'
 
 const TABS = [
   { id: 'command',     label: 'Command Center', icon: Shield },
@@ -261,6 +262,20 @@ export default function App() {
   }, [auditLogs])
 
   // Red Team Ambush — now gates through biometric modal
+  // Network Sync Listener for Cross-Laptop Presentation
+  useEffect(() => {
+    let interval = setInterval(async () => {
+      try {
+        const res = await fetch('/aegis-sync/state')
+        const data = await res.json()
+        if (data.triggered && ambushStatus === 'idle') {
+          executeAmbush()
+        }
+      } catch (e) { }
+    }, 500)
+    return () => clearInterval(interval)
+  }, [ambushStatus])
+
   const executeAmbush = () => {
     if (ambushStatus !== 'idle') return
     setAmbushStatus('pending_auth')
@@ -317,11 +332,14 @@ export default function App() {
     setTimeout(() => { setActiveTab('enforcement'); setAmbushStatus('done') }, 5500)
   }
 
-  const resetSystem = () => {
+  const resetSystem = async () => {
+    setTrustScore(99.8)
     setIsUnderAttack(false)
     setAmbushStatus('idle')
+    setShowBiometricPrompt(false)
     setHitlDecision(null)
-    setTrustScore(94.2)
+    setAuditLogs([])
+    try { await fetch('/aegis-sync/reset', { method: 'POST' }) } catch {}
     setHumanTrustScore(99.8)
     setAuditLogs([mkLog(NOISE[0])])
     setActiveTab('command')
@@ -342,6 +360,11 @@ export default function App() {
     telemetry:   <TelemetryView auditLogs={auditLogs} isUnderAttack={isUnderAttack} />,
     analytics:   <AnalyticsView trustScore={trustScore} trustHistory={trustHistory} isUnderAttack={isUnderAttack} />,
     enforcement: <EnforcementView isUnderAttack={isUnderAttack} hitlDecision={hitlDecision} />,
+  }
+
+  // Route Hacker Terminal
+  if (window.location.pathname === '/hacker') {
+    return <HackerTerminal />
   }
 
   return (
