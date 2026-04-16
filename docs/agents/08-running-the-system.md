@@ -1,3 +1,85 @@
+# Running the System (Current)
+
+## Prerequisites
+
+- Python 3.13
+- Node.js + npm
+- PowerShell (Windows) or bash-compatible shell
+
+## Backend Setup
+
+```powershell
+cd c:\Users\vivek\projects\hacktofuture\hacktofuture4-A07
+python -m venv venv
+venv\Scripts\Activate.ps1
+pip install -r backend\requirements.txt
+```
+
+## Validate Backend
+
+```powershell
+pytest backend/tests/ -q
+```
+
+Expected baseline:
+
+- `47 passed`
+
+## Run Backend Server
+
+```powershell
+uvicorn backend.main:app --reload
+```
+
+## Frontend Setup and Build Check
+
+```powershell
+npm --prefix frontend install
+npm --prefix frontend run build
+```
+
+## Minimal API Flow Demo
+
+1. Generate plan:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/incidents/inc-001/plan
+```
+
+2. Simulate first action:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/incidents/inc-001/simulate -ContentType "application/json" -Body '{"action_index":0}'
+```
+
+3. Approve:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/incidents/inc-001/approve
+```
+
+4. Execute approved action:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/incidents/inc-001/execute -ContentType "application/json" -Body '{"action_index":0}'
+```
+
+5. Verify and close:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/incidents/inc-001/verify -ContentType "application/json" -Body '{"window_seconds":60, "metrics":{"memory":"55%", "cpu":"40%"}}'
+```
+
+## Troubleshooting
+
+- If `execute` returns failed, inspect allowlist compatibility of planned command.
+- If `verify` returns failed, provide healthier test metrics or increase stabilization handling in checker logic.
+- If tests fail after route edits, run:
+
+```powershell
+pytest backend/tests/test_phase4_planner_orchestration.py -q
+```
+
 # Running the System: Quick Start & Demo
 
 ## Prerequisites

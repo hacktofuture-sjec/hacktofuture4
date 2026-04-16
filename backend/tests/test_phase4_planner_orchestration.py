@@ -113,3 +113,112 @@ def test_incident_approve_endpoint_transitions_status() -> None:
 
     assert body["incident_id"] == "inc-001"
     assert body["status"] == "approved"
+
+
+def test_incident_execute_endpoint_transitions_to_verifying() -> None:
+    plan_payload = {
+        "diagnosis": {
+            "fingerprint_id": "FP-001",
+            "confidence": 0.95,
+            "suggested_actions": [],
+        },
+        "context": {
+            "deployment": "payment-api",
+            "namespace": "default",
+            "container": "payment-api",
+            "image": "payment-api",
+        },
+    }
+    client.post("/incidents/inc-001/plan", json=plan_payload)
+    client.post("/incidents/inc-001/approve")
+
+    response = client.post("/incidents/inc-001/execute", json={"action_index": 0})
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["status"] == "verifying"
+    assert body["execution"]["status"] == "success"
+
+
+def test_incident_verify_endpoint_resolves_after_successful_execution() -> None:
+    plan_payload = {
+        "diagnosis": {
+            "fingerprint_id": "FP-001",
+            "confidence": 0.95,
+            "suggested_actions": [],
+        },
+        "context": {
+            "deployment": "payment-api",
+            "namespace": "default",
+            "container": "payment-api",
+            "image": "payment-api",
+        },
+    }
+    client.post("/incidents/inc-001/plan", json=plan_payload)
+    client.post("/incidents/inc-001/approve")
+    client.post("/incidents/inc-001/execute", json={"action_index": 0})
+
+    response = client.post(
+        "/incidents/inc-001/verify",
+        json={
+            "window_seconds": 60,
+            "metrics": {"memory": "55%", "cpu": "40%"},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["status"] == "resolved"
+    assert body["verification"]["recovered"] is True
+
+
+def test_incident_execute_endpoint_blocks_non_allowlisted_action() -> None:
+    unsafe_payload = {
+        "diagnosis": {
+            "fingerprint_id": None,
+            "confidence": 0.61,
+            "suggested_actions": ["rm -rf /"],
+        },
+        "context": {
+            "deployment": "payment-api",
+            "namespace": "default",
+            "container": "payment-api",
+            "image": "payment-api",
+        },
+    }
+    client.post("/incidents/inc-001/plan", json=unsafe_payload)
+    client.post("/incidents/inc-001/approve")
+
+    response = client.post("/incidents/inc-001/execute", json={"action_index": 0})
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["status"] == "failed"
+    assert body["execution"]["status"] == "sandbox_failed"
+
+
+def test_incident_execute_endpoint_requires_approved_state() -> None:
+    plan_payload = {
+        "diagnosis": {
+            "fingerprint_id": "FP-001",
+            "confidence": 0.95,
+            "suggested_actions": [],
+        },
+        "context": {
+            "deployment": "payment-api",
+            "namespace": "default",
+            "container": "payment-api",
+            "image": "payment-api",
+        },
+    }
+    client.post("/incidents/inc-001/plan", json=plan_payload)
+
+    response = client.post("/incidents/inc-001/execute", json={"action_index": 0})
+    assert response.status_code == 400
+    assert "approved" in response.json()["detail"].lower()
+
+
+def test_incident_verify_endpoint_requires_verifying_state() -> None:
+    response = client.post("/incidents/inc-001/verify")
+    assert response.status_code == 400
+    assert "verifying" in response.json()["detail"].lower()

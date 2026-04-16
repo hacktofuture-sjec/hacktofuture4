@@ -1,14 +1,21 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
 from agents.phase3_orchestrator import collect_monitor_snapshot, diagnose_snapshot
+from agents.executor_agent import ExecutorAgent
+from executor.action_runner import ActionRunner
+from executor.vcluster_manager import VClusterManager
 from planner.plan_simulator import simulate_action
 from planner.planner_agent import PlannerAgent
+from verifier.recovery_checker import RecoveryChecker
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 planner_agent = PlannerAgent()
+executor_agent = ExecutorAgent(VClusterManager(), ActionRunner())
+recovery_checker = RecoveryChecker()
 
 INCIDENTS: list[dict] = [
     {
@@ -29,6 +36,39 @@ def _find_incident(incident_id: str) -> dict[str, Any]:
         if incident["incident_id"] == incident_id:
             return incident
     raise HTTPException(status_code=404, detail="Incident not found")
+
+
+def _parse_action_index(payload: dict[str, Any]) -> int:
+    try:
+        return int(payload.get("action_index", 0))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="action_index must be a valid integer") from exc
+
+
+def _coerce_percent(value: Any) -> str:
+    text = str(value).strip()
+    if not text:
+        return "0%"
+    if text.endswith("%"):
+        return text
+    try:
+        numeric = float(text)
+        return f"{numeric:.0f}%"
+    except ValueError:
+        return "0%"
+
+
+def _build_verifier_snapshot(incident: dict[str, Any], payload: dict[str, Any]) -> Any:
+    metrics = payload.get("metrics") or incident.get("snapshot", {}).get("metrics", {})
+    memory = metrics.get("memory")
+    if memory is None:
+        memory = metrics.get("memory_pct", 0)
+
+    cpu = metrics.get("cpu")
+    if cpu is None:
+        cpu = metrics.get("cpu_pct", 0)
+
+    return SimpleNamespace(metrics=SimpleNamespace(memory=_coerce_percent(memory), cpu=_coerce_percent(cpu)))
 
 
 @router.get("")
@@ -62,6 +102,7 @@ def plan_incident(incident_id: str, payload: dict[str, Any] | None = None) -> di
 
     snapshot = body.get("snapshot") or collect_monitor_snapshot()
     diagnosis = body.get("diagnosis") or diagnose_snapshot(snapshot)
+    incident["snapshot"] = snapshot
 
     plan_output = planner_agent.run(
         diagnosis=diagnosis,
@@ -97,10 +138,7 @@ def simulate_incident_action(incident_id: str, payload: dict[str, Any] | None = 
         raise HTTPException(status_code=400, detail="No plan available. Run /plan first.")
 
     body = payload or {}
-    try:
-        action_index = int(body.get("action_index", 0))
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail="action_index must be a valid integer") from exc
+    action_index = _parse_action_index(body)
 
     actions = incident["plan_json"]["actions"]
 
@@ -141,4 +179,68 @@ def approve_incident_action(incident_id: str) -> dict:
         "incident_id": incident_id,
         "status": incident["status"],
         "message": "Approval accepted. Executor integration is next.",
+    }
+
+
+@router.post("/{incident_id}/execute")
+async def execute_incident_action(incident_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Execute an approved action through sandbox and production flow."""
+    incident = _find_incident(incident_id)
+    body = payload or {}
+
+    if incident.get("status") != "approved":
+        raise HTTPException(status_code=400, detail="Incident must be approved before execution")
+
+    if "plan_json" not in incident or not incident["plan_json"].get("actions"):
+        raise HTTPException(status_code=400, detail="No plan available. Run /plan first.")
+
+    actions = incident["plan_json"]["actions"]
+    action_index = _parse_action_index(body)
+    if action_index < 0 or action_index >= len(actions):
+        raise HTTPException(status_code=400, detail="Invalid action_index")
+
+    action = actions[action_index]
+    command = str(action.get("action", ""))
+
+    incident["status"] = "executing"
+    execution_result = await executor_agent.execute(incident_id=incident_id, action_command=command)
+    incident["execution"] = execution_result.model_dump(mode="json")
+
+    if execution_result.status.value == "success":
+        incident["status"] = "verifying"
+    else:
+        incident["status"] = "failed"
+
+    return {
+        "incident_id": incident_id,
+        "status": incident["status"],
+        "execution": incident["execution"],
+    }
+
+
+@router.post("/{incident_id}/verify")
+async def verify_incident_recovery(incident_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Verify recovery thresholds and close the incident as resolved or failed."""
+    incident = _find_incident(incident_id)
+    if incident.get("status") != "verifying":
+        raise HTTPException(status_code=400, detail="Incident must be in verifying state before verification")
+
+    body = payload or {}
+    window_seconds = int(body.get("window_seconds", 120))
+    snapshot = _build_verifier_snapshot(incident, body)
+
+    verification = await recovery_checker.check_recovery(snapshot=snapshot, window_seconds=window_seconds)
+    incident["verification"] = verification.model_dump(mode="json")
+    incident["verified_at"] = datetime.now(timezone.utc).isoformat()
+
+    if verification.recovered:
+        incident["status"] = "resolved"
+        incident["resolved_at"] = incident["verified_at"]
+    else:
+        incident["status"] = "failed"
+
+    return {
+        "incident_id": incident_id,
+        "status": incident["status"],
+        "verification": incident["verification"],
     }
