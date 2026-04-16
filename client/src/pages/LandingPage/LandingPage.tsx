@@ -36,6 +36,13 @@ export default function LandingPage() {
 
         <div className="landing-nav__links">
           <button
+            className="landing-nav__link"
+            onClick={() => navigate('/about')}
+            type="button"
+          >
+            Mission Core
+          </button>
+          <button
             className="landing-nav__cta"
             onClick={handleAppConsole}
             disabled={isLoading}
@@ -54,11 +61,9 @@ export default function LandingPage() {
           </div>
 
           <h1 className="hero-section__title">
-            DETERMINISTIC<br />
-            <span className="opacity-90">RESOLUTION.</span><br />
-            STRUCTURAL<br />
+            GET YOUR <br />
             <span className="hero-section__title-engine">
-              ENGINE.
+              CONTEXT RIGHT.
             </span>
           </h1>
 
@@ -76,9 +81,18 @@ export default function LandingPage() {
               {isAuthenticated ? '[ EXPLORE_CONSOLE ]' : '[ ESTABLISH_UPLINK ]'}
               <span className="material-symbols-outlined text-xl transition-transform group-hover:translate-x-1 group-hover:rotate-12">bolt</span>
             </button>
+            <button
+              className="hero-section__cta-secondary group"
+              onClick={() => navigate('/about')}
+              type="button"
+            >
+              [ DISCOVER_MORE ]
+            </button>
           </div>
         </div>
       </section>
+
+
 
 
     </main>

@@ -24,21 +24,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
     <aside className={`sidebar ${isCollapsed ? 'sidebar--collapsed' : ''}`}>
       <div className="sidebar__header">
         <div className="sidebar__brand-container">
-          <Link to="/" className="sidebar__brand group">
+          <Link to="/" className="sidebar__brand group" title={isCollapsed ? "EasyOps" : ""}>
             <div className="sidebar__logo-wrapper">
               <img src={logoSrc} alt="EasyOps Logo" className="sidebar__logo-img" />
             </div>
             {!isCollapsed && <span className="sidebar__brand-name">EasyOps</span>}
           </Link>
-          <button 
-            className="sidebar__collapse-toggle" 
-            onClick={onToggle}
-            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            <span className="material-symbols-outlined">
-              {isCollapsed ? 'last_page' : 'first_page'}
-            </span>
-          </button>
         </div>
 
         <nav className="sidebar__nav">
@@ -77,6 +68,18 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
           </button>
         </div>
       )}
+
+      {/* Put toggle exactly at the bottom border/corner */}
+      <button 
+        className="sidebar__collapse-toggle" 
+        onClick={onToggle}
+        aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        <span className="material-symbols-outlined">
+          {isCollapsed ? 'menu_open' : 'menu_open'} 
+        </span>
+      </button>
     </aside>
   );
 };

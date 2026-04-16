@@ -7,6 +7,7 @@ import LandingPage from './pages/LandingPage/LandingPage';
 import OAuthScreen from './pages/OAuthScreen/OAuthScreen';
 import InitRepoScreen from './pages/InitRepoScreen/InitRepoScreen';
 import MonitorScreen from './pages/MonitorScreen/MonitorScreen';
+import AboutUsPage from './pages/AboutUsPage/AboutUsPage';
 import DashboardLayout from './components/DashboardLayout/DashboardLayout';
 
 /**
@@ -58,6 +59,7 @@ const AppRoutes: React.FC = () => {
       <Toaster position="top-right" richColors />
       <Routes>
         <Route path="/"        element={<LandingPage />} />
+        <Route path="/about"   element={<AboutUsPage />} />
         
         {/* Protected Routes */}
         <Route 

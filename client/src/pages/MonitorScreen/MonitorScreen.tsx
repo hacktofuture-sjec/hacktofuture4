@@ -4,10 +4,8 @@ import {
   fetchMonitoredRepos,
   connectEventStream,
   removeMonitoredRepo,
-  fetchMemoryStats,
   type MonitoredRepo,
   type SSEEvent,
-  type MemoryStats,
 } from '../../api/api';
 import './MonitorScreen.css';
 
@@ -47,7 +45,6 @@ export default function MonitorScreen() {
   const [monitoredRepos, setMonitoredRepos] = useState<MonitoredRepo[]>([]);
   const [events, setEvents] = useState<SSEEvent[]>([]);
   const [isLoadingRepos, setIsLoadingRepos] = useState(true);
-  const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
   const [removingRepo, setRemovingRepo] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState('all');
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -58,10 +55,6 @@ export default function MonitorScreen() {
       .then((data) => setMonitoredRepos(Array.isArray(data) ? data : []))
       .catch(console.error)
       .finally(() => setIsLoadingRepos(false));
-
-    fetchMemoryStats()
-      .then(setMemoryStats)
-      .catch(console.error);
 
     const es = connectEventStream((event) => {
       setEvents((prev) => [...prev.slice(-100), event]);

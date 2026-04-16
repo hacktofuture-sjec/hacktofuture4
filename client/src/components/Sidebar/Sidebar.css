@@ -17,11 +17,12 @@
 }
 
 .sidebar__header {
-  @apply p-5 h-full flex flex-col;
+  @apply pt-6 px-5 pb-5 h-full flex flex-col items-center;
 }
 
 .sidebar__brand-container {
-  @apply flex items-center justify-between mb-8 px-2;
+  @apply flex items-center mb-8 w-full overflow-hidden;
+  /* Removed px-2 to avoid clipping the 32px logo inside 72px area (with 40px px-5 from header) */
 }
 
 .sidebar__brand {
@@ -41,11 +42,15 @@
 }
 
 .sidebar__collapse-toggle {
-  @apply flex items-center justify-center p-1 rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-primary transition-colors border-none bg-transparent cursor-pointer;
+  @apply absolute -right-4 bottom-8 flex items-center justify-center p-2 rounded-full text-on-surface-variant bg-surface-container-high border border-outline-variant shadow-sm hover:text-primary transition-all z-50 cursor-pointer;
 }
 
-.sidebar--collapsed .sidebar__collapse-toggle {
-  @apply absolute -right-3 top-12 bg-surface-container-lowest border border-outline-variant shadow-sm z-50;
+.sidebar__collapse-toggle span {
+  @apply transition-transform duration-300;
+}
+
+.sidebar--collapsed .sidebar__collapse-toggle span {
+  @apply rotate-180;
 }
 
 .sidebar__nav {
