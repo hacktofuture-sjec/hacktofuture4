@@ -16,12 +16,12 @@ from sse_starlette.sse import EventSourceResponse
 
 from ..graph import run_pipeline
 from ..schemas import (
+    ActionRequest,
+    ActionResult,
     PipelineRunRequest,
     ProcessingResult,
     SyncRequest,
     SyncResult,
-    ActionRequest,
-    ActionResult,
 )
 
 logger = logging.getLogger(__name__)

@@ -4,11 +4,10 @@ This is the core of the Proactive PM USP!
 """
 
 import logging
-import json
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 from ..config import settings
@@ -22,21 +21,25 @@ class ActionPlannerSchema(BaseModel):
 
     analysis: str = Field(description="Brief explanation of what needs to be done.")
     actions: List[Dict[str, Any]] = Field(
-        description="List of exact actions to take. Each dict must contain 'tool' (e.g. jira, slack), 'action' (e.g. update_ticket, create_ticket, send_message) and 'payload' (relevant data)."
+        description="List of exact actions to take. Each dict must contain "
+        "'tool' (e.g. jira, slack), 'action' (e.g. update_ticket, create_ticket, "
+        "send_message) and 'payload' (relevant data)."
     )
 
 
 SYSTEM_PROMPT = """You are the core of an Autonomous Proactive Product Manager.
 
 The user will provide natural language text (e.g. checking in standup updates, reporting a bug).
-Your job is to parse this text, determine what actions need to occur across various platforms, and output a structured plan.
+Your job is to parse this text, determine what actions need to occur across various platforms,
+and output a structured plan.
 
 AVAILABLE TOOLS:
 - jira: [update_ticket, create_ticket, transition_status]
 - slack: [send_message, alert_user]
 - linear: [create_issue, update_issue]
 
-Read the user input, deduce constraints (like moving a block to someone else, moving ticket status), and output the JSON mapping of exact tools and payloads.
+Read the user input, deduce constraints (like moving a block to someone else, moving ticket status),
+and output the JSON mapping of exact tools and payloads.
 """
 
 
