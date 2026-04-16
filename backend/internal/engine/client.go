@@ -58,9 +58,36 @@ func (c *Client) RunPipeline(ctx context.Context, req PipelineRequest) (*Pipelin
 	return c.post(ctx, "/pipeline/run", req)
 }
 
+// FetchFromGitHubRequest is sent to POST /pipeline/run-from-github.
+type FetchFromGitHubRequest struct {
+	IncidentID string `json:"incident_id"`
+	Repo       string `json:"repo,omitempty"`
+}
+
+// RunFromGitHub instructs the engine to fetch the latest failed GitHub Actions
+// run from the given repo and process it through the full AI pipeline.
+func (c *Client) RunFromGitHub(ctx context.Context, req FetchFromGitHubRequest) (*PipelineResponse, error) {
+	return c.post(ctx, "/pipeline/run-from-github", req)
+}
+
 // Learn submits an outcome so the engine can update vault confidence.
 func (c *Client) Learn(ctx context.Context, req LearnRequest) (*PipelineResponse, error) {
 	return c.post(ctx, "/pipeline/learn", req)
+}
+
+// CreatePRRequest is sent to POST /pipeline/create-pr.
+type CreatePRRequest struct {
+	IncidentID     string   `json:"incident_id"`
+	FixCommands    []string `json:"fix_commands"`
+	FixDescription string   `json:"fix_description"`
+	FixTier        string   `json:"fix_tier"`
+	FixDiff        string   `json:"fix_diff,omitempty"`
+}
+
+// CreatePR instructs the engine to open a GitHub PR for a human-approved fix.
+// This is called from the Approve handler after governance blocked the pipeline.
+func (c *Client) CreatePR(ctx context.Context, req CreatePRRequest) (*PipelineResponse, error) {
+	return c.post(ctx, "/pipeline/create-pr", req)
 }
 
 // Healthy returns true if the engine service responds to its health endpoint.

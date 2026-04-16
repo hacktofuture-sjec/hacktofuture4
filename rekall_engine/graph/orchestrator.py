@@ -41,18 +41,23 @@ from ..agents.simulation import SimulationAgent
 from ..agents.governance import GovernanceAgent
 from ..agents.publish_guard import PublishGuardAgent
 from ..agents.learning   import LearningAgent
-from ..types             import AgentLogEntry, GovernanceDecision, Outcome, FixProposal
+from ..types             import AgentLogEntry, DiagnosticBundle, GovernanceDecision, Outcome, FixProposal
 
 log = logging.getLogger("rekall.orchestrator")
 
-# Agent singletons (shared across pipeline runs)
-_monitor      = MonitorAgent()
-_diagnostic   = DiagnosticAgent()
-_fix          = FixAgent()
-_simulation   = SimulationAgent()
-_governance   = GovernanceAgent()
-_publish_guard = PublishGuardAgent()
-_learning     = LearningAgent()
+# Agent singletons (lazy loaded)
+_agents: Dict[str, Any] = {}
+
+def get_agent(name: str) -> Any:
+    if name not in _agents:
+        if name == "monitor": _agents[name] = MonitorAgent()
+        elif name == "diagnostic": _agents[name] = DiagnosticAgent()
+        elif name == "fix": _agents[name] = FixAgent()
+        elif name == "simulation": _agents[name] = SimulationAgent()
+        elif name == "governance": _agents[name] = GovernanceAgent()
+        elif name == "publish_guard": _agents[name] = PublishGuardAgent()
+        elif name == "learning": _agents[name] = LearningAgent()
+    return _agents[name]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -109,10 +114,11 @@ async def run_pipeline(
     # ── 1. Monitor ────────────────────────────────────────────────────────────
     await _emit(log_queue, incident_id, "monitor", "running", "Detecting and normalising event")
     try:
-        state = await _monitor.run(state)
+        state = await get_agent("monitor").run(state)
         await _emit(log_queue, incident_id, "monitor", "done",
                     _last_detail(state, "monitor"))
     except Exception as exc:
+        if isinstance(exc, NotImplementedError): raise
         log.error("[orchestrator] MonitorAgent failed: %s", exc, exc_info=True)
         await _emit(log_queue, incident_id, "monitor", "error", str(exc))
         return state
@@ -120,10 +126,11 @@ async def run_pipeline(
     # ── 2. Diagnostic ─────────────────────────────────────────────────────────
     await _emit(log_queue, incident_id, "diagnostic", "running", "Fetching logs, diff, building signature")
     try:
-        state = await _diagnostic.run(state)
+        state = await get_agent("diagnostic").run(state)
         await _emit(log_queue, incident_id, "diagnostic", "done",
                     _last_detail(state, "diagnostic"))
     except Exception as exc:
+        if isinstance(exc, NotImplementedError): raise
         log.error("[orchestrator] DiagnosticAgent failed: %s", exc, exc_info=True)
         await _emit(log_queue, incident_id, "diagnostic", "error", str(exc))
         return state
@@ -131,12 +138,13 @@ async def run_pipeline(
     # ── 3. Fix ────────────────────────────────────────────────────────────────
     await _emit(log_queue, incident_id, "fix", "running", "Searching vault T1 → T2 → T3")
     try:
-        state = await _fix.run(state)
+        state = await get_agent("fix").run(state)
         fix: FixProposal = state.get("fix_proposal")
         tier_label = fix.tier if fix else "unknown"
         await _emit(log_queue, incident_id, "fix", "done",
                     f"Fix selected via {tier_label} (confidence {fix.confidence:.0%})" if fix else "No fix found")
     except Exception as exc:
+        if isinstance(exc, NotImplementedError): raise
         log.error("[orchestrator] FixAgent failed: %s", exc, exc_info=True)
         await _emit(log_queue, incident_id, "fix", "error", str(exc))
         return state
@@ -146,10 +154,11 @@ async def run_pipeline(
     if getattr(engine_config, "simulation_enabled", False):
         await _emit(log_queue, incident_id, "simulation", "running", "Simulating fix in sandbox")
         try:
-            state = await _simulation.run(state)
+            state = await get_agent("simulation").run(state)
             await _emit(log_queue, incident_id, "simulation", "done",
                         _last_detail(state, "simulation"))
         except Exception as exc:
+            if isinstance(exc, NotImplementedError): raise
             log.error("[orchestrator] SimulationAgent failed: %s", exc, exc_info=True)
             await _emit(log_queue, incident_id, "simulation", "error", str(exc))
             return state
@@ -157,11 +166,12 @@ async def run_pipeline(
     # ── 4. Governance ─────────────────────────────────────────────────────────
     await _emit(log_queue, incident_id, "governance", "running", "Scoring risk, deciding action")
     try:
-        state = await _governance.run(state)
+        state = await get_agent("governance").run(state)
         gov: GovernanceDecision = state.get("governance_decision")
         await _emit(log_queue, incident_id, "governance", "done",
                     f"Risk {gov.risk_score:.0%} → {gov.decision}" if gov else "Governance complete")
     except Exception as exc:
+        if isinstance(exc, NotImplementedError): raise
         log.error("[orchestrator] GovernanceAgent failed: %s", exc, exc_info=True)
         await _emit(log_queue, incident_id, "governance", "error", str(exc))
         return state
@@ -169,11 +179,12 @@ async def run_pipeline(
     # ── 5. PublishGuard ───────────────────────────────────────────────────────
     await _emit(log_queue, incident_id, "publish_guard", "running", "Running supply-chain safety gate")
     try:
-        state = await _publish_guard.run(state)
+        state = await get_agent("publish_guard").run(state)
         flags = state.get("publish_guard_flags", [])
         await _emit(log_queue, incident_id, "publish_guard", "done",
                     f"Supply-chain gate: {'ESCALATED' if flags else 'passed'} ({len(flags)} flags)")
     except Exception as exc:
+        if isinstance(exc, NotImplementedError): raise
         log.error("[orchestrator] PublishGuardAgent failed: %s", exc, exc_info=True)
         await _emit(log_queue, incident_id, "publish_guard", "error", str(exc))
         # Non-fatal: continue with existing governance decision
@@ -191,6 +202,64 @@ async def run_pipeline(
         await log_queue.put(None)  # sentinel: stream not done, but pipeline paused
         return state
 
+
+    # ── Demo-mode vs Production: Execute / Apply Fix ──────────────────────────
+    #
+    # CURRENT (Demo mode):
+    #   When GovernanceAgent decides auto_apply or create_pr, the pipeline emits
+    #   a status trace to the Next.js UI ("Fix applied" / "Pull request opened")
+    #   but does NOT mutate any codebase. This bypasses slow Git commit cycles
+    #   so you can present the AI's reasoning to judges in seconds with zero
+    #   API failures or rate limits.
+    #
+    # PRODUCTION (enable via GITHUB_LIVE_PR=true in .env):
+    #   Set `github_live_pr = True` in config and provide GITHUB_TOKEN + GITHUB_REPO.
+    #   The block below will execute and open a real PR using PyGithub:
+    
+    from ..config import engine_config
+    if engine_config.github_live_pr and decision in ("auto_apply", "create_pr"):
+        try:
+            from github import Github
+        except ImportError:
+            log.warning("[execute] PyGithub not installed — cannot create PR")
+            return state
+
+        g    = Github(engine_config.github_token)
+        repo = g.get_repo(engine_config.github_repo)
+    
+        branch_name = f"auto-fix-{incident_id[:8]}"
+        base_sha    = repo.get_branch(repo.default_branch).commit.sha
+        repo.create_git_ref(f"refs/heads/{branch_name}", base_sha)
+    
+        fix_proposal: FixProposal = state.get("fix_proposal")
+        if fix_proposal and hasattr(fix_proposal, "fix_diff") and getattr(fix_proposal, "fix_diff", None):
+            # Commit the diff file by file (requires parsing the unified diff)
+            # For simplicity, write fix_commands as a shell script and commit it
+            pass
+        
+        script_content = "\n".join(fix_proposal.fix_commands) if getattr(fix_proposal, "fix_commands", None) else "# No fix commands provided"
+        repo.create_file(
+            path=f".rekall/fix-{incident_id[:8]}.sh",
+            message=f"fix({incident_id[:8]}): auto-fix by REKALL agent",
+            content=script_content.encode(),
+            branch=branch_name,
+        )
+    
+        pr = repo.create_pull(
+            title=f"[REKALL] Auto-fix: {fix_proposal.fix_description[:80] if fix_proposal and hasattr(fix_proposal, 'fix_description') else incident_id}",
+            body=(
+                f"**Incident ID:** `{incident_id}`\n"
+                f"**Risk score:** {gov.risk_score:.0%}\n"
+                f"**Decision:** `{decision}`\n"
+                f"**Fix tier:** {getattr(fix_proposal, 'tier', 'unknown') if fix_proposal else 'unknown'}\n"
+                f"**Confidence:** {getattr(fix_proposal, 'confidence', 0.0):.0%}\n\n"
+                f"*Auto-generated by REKALL. Review before merging.*"
+            ),
+            head=branch_name,
+            base=repo.default_branch,
+        )
+        log.info("[execute] PR opened: %s", pr.html_url)
+    # ──────────────────────────────────────────────────────────────────────────
 
     # auto_apply or create_pr — treat both as "success" outcome for now
     await _emit(log_queue, incident_id, "execute", "running",
@@ -212,10 +281,11 @@ async def run_pipeline(
                 notes=f"decision={decision}",
             )
             state["outcome"] = outcome
-            state = await _learning.run(state)
+            state = await get_agent("learning").run(state)
         await _emit(log_queue, incident_id, "learning", "done",
                     "Vault confidence updated")
     except Exception as exc:
+        if isinstance(exc, NotImplementedError): raise
         log.error("[orchestrator] LearningAgent failed: %s", exc, exc_info=True)
         await _emit(log_queue, incident_id, "learning", "error", str(exc))
 
@@ -267,7 +337,7 @@ async def run_learning_callback(
                 context_summary="",
                 metadata={"source": "manual_trigger"}
             )
-        await _learning.run(state)
+        await get_agent("learning").run(state)
         await _emit(log_queue, incident_id, "learning", "done", f"Reported ({result})")
     except Exception as exc:
         log.error("[orchestrator] LearningAgent (callback) failed: %s", exc, exc_info=True)
@@ -307,13 +377,13 @@ async def build_graph():
 
     graph = StateGraph(State)
 
-    graph.add_node("monitor",       _monitor.run)
-    graph.add_node("diagnostic",    _diagnostic.run)
-    graph.add_node("fix",           _fix.run)
-    graph.add_node("simulation",    _simulation.run)
-    graph.add_node("governance",    _governance.run)
-    graph.add_node("publish_guard", _publish_guard.run)
-    graph.add_node("learning",      _learning.run)
+    graph.add_node("monitor",       get_agent("monitor").run)
+    graph.add_node("diagnostic",    get_agent("diagnostic").run)
+    graph.add_node("fix",           get_agent("fix").run)
+    graph.add_node("simulation",    get_agent("simulation").run)
+    graph.add_node("governance",    get_agent("governance").run)
+    graph.add_node("publish_guard", get_agent("publish_guard").run)
+    graph.add_node("learning",      get_agent("learning").run)
 
     graph.set_entry_point("monitor")
     graph.add_edge("monitor",       "diagnostic")

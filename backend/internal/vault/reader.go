@@ -74,7 +74,7 @@ func ListAll(source *string, limit, offset int) ([]*models.VaultEntry, error) {
 
 	// Filter by source if requested
 	if source != nil && *source != "" {
-		filtered := all[:0]
+		var filtered []*models.VaultEntry
 		for _, e := range all {
 			if e.Source == *source {
 				filtered = append(filtered, e)

@@ -1,0 +1,1087 @@
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║                          R E K A L L   —   C O N T E X T                      ║
+║                Agentic CI/CD Failure Remediation System                        ║
+║                       Last updated: 2026-04-16                                 ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+This document is the canonical, highly-detailed reference for the REKALL system.
+It covers: what it is, what every file does, how data flows, what is implemented,
+what is planned, and architectural decisions made along the way.
+
+Keep this file updated whenever a new feature lands or a significant design
+decision is made. It is read by the AI coding assistant at the start of every
+new conversation to provide full project context.
+
+───────────────────────────────────────────────────────────────────────────────────
+  1. WHAT IS REKALL?
+───────────────────────────────────────────────────────────────────────────────────
+
+REKALL is an Agentic CI/CD Orchestration system. When a CI/CD pipeline (GitHub
+Actions, GitLab CI, Jenkins) fails, REKALL:
+
+  1. Detects the failure (webhook or polling GitHub API)
+  2. Diagnoses the root cause using an LLM-backed agent pipeline
+  3. Searches a memory vault for known fixes (T1 → T2 → T3 fallback)
+  4. Proposes a fix with confidence scoring
+  5. Scores governance risk across 6 dimensions
+  6. Decides: auto-apply, create PR immediately, or block for human review
+  7. [UPCOMING] If block_await_human: deploy the proposed fix into a Minikube
+     sandbox environment, run the CI suite against it, validate the fix works,
+     THEN raise a final GitHub PR with full test evidence attached
+  8. If human approves (or tests pass in sandbox): opens a real GitHub PR
+  9. Learns from the outcome — updates vault confidence via reward signals
+
+REKALL surfaces everything in a real-time Next.js dashboard via SSE streaming.
+Every agent step (monitor, diagnostic, fix, governance, execute, learning) emits
+a "running → done/error" event that the UI renders as a live agent timeline.
+
+Built for the RNSIT Hackathon. Demo-capable on a laptop. Production-capable with
+GITHUB_LIVE_PR=true and the upcoming Minikube sandbox integration.
+
+───────────────────────────────────────────────────────────────────────────────────
+  2. ARCHITECTURE OVERVIEW
+───────────────────────────────────────────────────────────────────────────────────
+
+  ┌───────────────────────────────────────────────────────────────────────────┐
+  │   GitHub / GitLab / Jenkins / Simulator                                   │
+  │   (webhook POST or polling via GITHUB_TOKEN)                              │
+  └────────────────────────────────┬──────────────────────────────────────────┘
+                                   │ POST /webhooks/github  (or /simulate)
+                                   ▼
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │   Go Backend   (Gin)   port 8000                                        │
+  │                                                                         │
+  │   Handlers:                                                             │
+  │     POST /webhooks/github          — real webhook receiver              │
+  │     POST /webhooks/gitlab          — GitLab CI webhook                  │
+  │     POST /webhooks/simulate        — demo simulator (5 scenarios)       │
+  │     POST /webhooks/trigger-github  — manual: fetch latest GH failure    │
+  │     GET  /incidents                — list all incidents (newest first)  │
+  │     GET  /incidents/:id            — full incident detail                │
+  │     GET  /stream/:id               — SSE event stream for one incident  │
+  │     POST /incidents/:id/approve    — human approves a blocked fix       │
+  │     POST /incidents/:id/reject     — human rejects a blocked fix        │
+  │     GET  /vault/entries            — list vault entries                 │
+  │     GET  /vault/stats              — vault summary metrics              │
+  │     GET  /metrics                  — dashboard headline figures         │
+  │     GET  /health                   — liveness probe                     │
+  │     POST /internal/engine-callback — receives async events from engine  │
+  │                                                                         │
+  │   Store:  in-memory (sync.RWMutex map)  + incidents.json persistence   │
+  │   SSE:    per-incident event broker (fan-out to multiple browsers)      │
+  └───────────┬──────────────────────────────────────────────────────────────┘
+              │ POST /pipeline/run-from-github  (or /pipeline/run)
+              │ POST /pipeline/learn
+              │ POST /pipeline/create-pr
+              ▼
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │   Python Engine  (FastAPI + uvicorn)   port 8002                       │
+  │                                                                         │
+  │   Endpoints:                                                            │
+  │     POST /pipeline/run             — start pipeline from raw payload    │
+  │     POST /pipeline/run-from-github — fetch GH failure & run pipeline   │
+  │     POST /pipeline/learn           — LearningAgent outcome callback     │
+  │     POST /pipeline/create-pr       — open GitHub PR (human-approved)   │
+  │     GET  /health                   — liveness probe                     │
+  │                                                                         │
+  │   Agent Pipeline (rekall_engine/graph/orchestrator.py):                 │
+  │     MonitorAgent → DiagnosticAgent → FixAgent → [SimulationAgent] →    │
+  │     GovernanceAgent → PublishGuardAgent → execute / block_await_human  │
+  │     → LearningAgent                                                     │
+  │                                                                         │
+  │   Async callback: POST http://backend:8000/internal/engine-callback     │
+  │   Event types: agent_log | status | fix_proposal                        │
+  └───────────┬──────────────────────────────────────────────────────────────┘
+              │  shared volume  /app/vault/
+              ▼
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │   Flat-File Vault  (./vault/)                                           │
+  │                                                                         │
+  │   vault/local/    — per-repo fix entries (JSON files)                  │
+  │   vault/org/      — cross-repo shared memory (optional)                │
+  │   vault/incidents.json — persisted incident records                    │
+  │                                                                         │
+  │   NO PostgreSQL. NO ChromaDB. Pure JSON on disk.                       │
+  │   Engine writes. Backend reads (read-only mount in Docker).             │
+  └─────────────────────────────────────────────────────────────────────────┘
+              │
+              │ SSE events → browser
+              ▼
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │   Next.js Frontend   port 3000                                          │
+  │                                                                         │
+  │   Pages:                                                                │
+  │     /dashboard           — headline metrics + incident list             │
+  │     /incidents/[id]      — live agent timeline + fix proposal + approve │
+  │                                                                         │
+  │   Key components:                                                       │
+  │     agent-timeline.tsx   — renders live step log with status badges    │
+  │     fix-proposal-card.tsx— shows fix description, tier, commands       │
+  │     approval-panel.tsx   — approve / reject buttons + status           │
+  │     risk-gauge.tsx       — 0–1 risk score visual                       │
+  │     vault-explorer.tsx   — browse vault entries                        │
+  │     sidebar.tsx          — navigation                                  │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+───────────────────────────────────────────────────────────────────────────────────
+  3. DIRECTORY STRUCTURE (annotated)
+───────────────────────────────────────────────────────────────────────────────────
+
+REKALL1/
+├── .env                         ← Real secrets (gitignored). DO NOT COMMIT.
+├── .env.example                 ← Template. Safe to commit.
+├── CONTEXT.txt                  ← THIS FILE. Canonical project reference.
+├── DEMO_VS_PRODUCTION.md        ← Explains demo vs real GitHub API paths.
+├── HARDCODED.md                 ← Values that must change before real prod.
+├── QUICKSTART.md                ← Getting started guide.
+├── Makefile                     ← make dev / make test / make seed / etc.
+├── docker-compose.yml           ← 3 services: backend, engine, frontend.
+├── run.sh                       ← Convenience wrapper for docker compose.
+├── pyrightconfig.json           ← Python type checking config.
+│
+├── backend/                     ← Go (Gin) REST API + SSE broker
+│   ├── Dockerfile
+│   ├── go.mod / go.sum          ← Module: github.com/rekall/backend
+│   ├── Makefile
+│   ├── cmd/server/main.go       ← Entry point: wires all routes
+│   └── internal/
+│       ├── config/config.go     ← Reads env vars (ENGINE_URL, VAULT_PATH, etc.)
+│       ├── engine/
+│       │   ├── client.go        ← HTTP client for Python engine endpoints
+│       │   └── client_test.go
+│       ├── handlers/
+│       │   ├── approvals.go     ← POST /approve, /reject → engine.Learn + engine.CreatePR
+│       │   ├── callback.go      ← POST /internal/engine-callback (agent_log|status|fix_proposal)
+│       │   ├── incidents.go     ← GET /incidents, GET /incidents/:id
+│       │   ├── metrics.go       ← GET /metrics
+│       │   ├── stream.go        ← GET /stream/:id (SSE)
+│       │   ├── vault.go         ← GET /vault/entries, /vault/stats
+│       │   └── webhooks.go      ← POST /webhooks/* + simulate + trigger-github
+│       ├── middleware/
+│       │   ├── cors.go          ← CORS (CORS_ORIGINS env var)
+│       │   └── logger.go        ← Structured request logging
+│       ├── models/models.go     ← All shared Go structs (Incident, FixProposal, etc.)
+│       ├── sse/broker.go        ← Fan-out SSE broker (one channel per incident ID)
+│       ├── vault/reader.go      ← Reads flat-file vault JSON from disk
+│       └── store/store.go       ← In-memory store; persists to incidents.json
+│
+├── engine/                      ← Python FastAPI engine container
+│   ├── Dockerfile
+│   ├── main.py                  ← FastAPI app, endpoints, pipeline dispatch
+│   ├── requirements.txt         ← groq, fastapi, uvicorn, httpx, PyGithub, etc.
+│   └── pytest.ini
+│
+├── rekall_engine/               ← Core AI agent library (importable package)
+│   ├── __init__.py
+│   ├── config.py                ← EngineConfig dataclass (groq, vault, thresholds)
+│   ├── types.py                 ← All shared Python types (dataclasses + Pydantic)
+│   ├── agents/
+│   │   ├── base.py              ← BaseAgent: call_llm(), shared Groq client
+│   │   ├── monitor.py           ← MonitorAgent: normalise raw webhook → FailureEvent
+│   │   ├── diagnostic.py        ← DiagnosticAgent: build DiagnosticBundle (LLM sig)
+│   │   ├── fix.py               ← FixAgent: T1→T2→T3 vault retrieval
+│   │   ├── simulation.py        ← SimulationAgent: counterfactual dry-run (optional)
+│   │   ├── governance.py        ← GovernanceAgent: risk score → decision
+│   │   ├── publish_guard.py     ← PublishGuardAgent: supply-chain safety check
+│   │   ├── learning.py          ← LearningAgent: update vault confidence
+│   │   ├── repl.py              ← RLM REPL: reasoning loop (iterative investigation)
+│   │   └── rlm_engine.py        ← RLM Zoom & Scan: deep log analysis
+│   ├── graph/
+│   │   └── orchestrator.py      ← Sequential pipeline runner (LangGraph-optional)
+│   ├── integrations/
+│   │   ├── notion.py            ← Notion database logger (optional, fire-and-forget)
+│   │   └── slack.py             ← Slack webhook notifier (optional, fire-and-forget)
+│   └── vault/
+│       └── store.py             ← Flat-file vault read/write (local/ and org/)
+│
+├── frontend/                    ← Next.js 15 + TypeScript + TailwindCSS
+│   ├── app/
+│   │   ├── layout.tsx           ← Root layout, font, theme provider
+│   │   ├── page.tsx             ← Redirects / → /dashboard
+│   │   └── (app)/
+│   │       ├── dashboard/page.tsx       ← Dashboard with headline stats
+│   │       └── incidents/[id]/page.tsx  ← Per-incident detail with live timeline
+│   ├── components/              ← All UI components (see Section 7)
+│   ├── lib/
+│   │   ├── api-client.ts        ← All API calls (fetch wrapper)
+│   │   ├── types.ts             ← TypeScript type definitions
+│   │   ├── utils.ts             ← Shared utilities
+│   │   └── hooks/
+│   │       ├── use-agent-stream.ts  ← SSE subscription hook
+│   │       └── use-incidents.ts    ← Incident list polling hook
+│   ├── __tests__/               ← Jest unit tests
+│   └── e2e/                     ← Playwright E2E tests
+│
+├── scripts/
+│   ├── seed-vault.py            ← Populate vault/local/ with sample entries
+│   ├── simulate.sh              ← Fire webhook simulate requests
+│   ├── health-check.sh          ← Check all 3 services are healthy
+│   ├── test-all.sh              ← Run Go tests + Python tests + Jest
+│   ├── generate_context.py      ← Regenerate CONTEXT.txt from file tree
+│   └── dev-start.sh             ← Start all services locally (no Docker)
+│
+└── vault/
+    ├── local/                   ← Per-repo vault entries (JSON files)
+    └── org/                     ← Cross-repo shared vault (optional)
+
+───────────────────────────────────────────────────────────────────────────────────
+  4. AGENT PIPELINE — DETAILED
+───────────────────────────────────────────────────────────────────────────────────
+
+The REKALL AI pipeline runs sequentially through the following agents. Each agent
+receives a shared `state: Dict[str, Any]` dict and returns an updated version.
+The pipeline is driven by `rekall_engine/graph/orchestrator.py::run_pipeline()`.
+
+──────────────────────────────────────────
+  4.1  MonitorAgent
+──────────────────────────────────────────
+File: rekall_engine/agents/monitor.py
+
+Receives: state["raw_webhook"] — raw dict from Go backend
+Produces: state["failure_event"] (FailureEvent dataclass)
+          state["failure_object"] (FailureObject Pydantic model)
+
+  - Validates the incoming payload against known schemas
+  - Normalises source-specific fields (GitHub Actions vs GitLab vs Jenkins)
+  - Extracts: incident_id, source, failure_type, log_excerpt, branch, commit_sha
+  - Maps raw failure_type strings to canonical values:
+      test | deploy | infra | security | oom | unknown
+  - If validation fails: marks failure_type as "unknown" and continues
+  - LLM call: brief prompt to classify if failure type is ambiguous
+
+──────────────────────────────────────────
+  4.2  DiagnosticAgent
+──────────────────────────────────────────
+File: rekall_engine/agents/diagnostic.py
+
+Receives: state["failure_object"]
+Produces: state["diagnostic_bundle"] (DiagnosticBundle dataclass)
+
+  - Builds the context that will be used for vault lookup and fix generation
+  - Runs RLM Zoom & Scan (rlm_engine.py) on the full log to extract signal:
+      - Depth-0 scan: broad overview, 1024 tokens
+      - Depth-1 investigate: targeted deep-dive, 2048 tokens
+  - Produces a failure_signature: compact string like "infra:github_actions:oom"
+    Used as the primary key for vault lookup (substring and exact match first,
+    vector embedding fallback)
+  - LLM call: "compress this log into a 3-sentence context_summary for the UI"
+  - fields: failure_signature, log_excerpt (< 12000 chars), git_diff, context_summary
+
+──────────────────────────────────────────
+  4.3  FixAgent
+──────────────────────────────────────────
+File: rekall_engine/agents/fix.py
+
+Receives: state["diagnostic_bundle"]
+Produces: state["fix_proposal"] (FixProposal dataclass)
+
+  Three-tier retrieval waterfall:
+
+  T1 — Human vault (vault/local/*.json)
+    - Exact signature match first (O(1) string lookup)
+    - If no exact: substring/partial match on failure_signature
+    - Threshold: similarity_score >= 0.85 to use T1
+    - Fast: no LLM call
+
+  T2 — Synthetic vault (vault/local/ synthetic entries)
+    - Same lookup, lower threshold: >= 0.75
+    - Entries created automatically when T3 fixes are promoted after success
+
+  T3 — LLM first principles (RLM REPL)
+    - Called when vault is empty or below threshold
+    - repl.py runs an iterative reasoning loop:
+        Step 1: scan log → identify root cause candidates
+        Step 2: select top candidate → generate fix steps
+        Step 3: validate fix steps against log context
+    - Produces FixSuggestion with fix_commands (bash commands) + reasoning
+    - vault_candidates=0 when RLM REPL is used (no vault hit)
+    - The generated fix is stored as T3_llm fix proposal
+
+  The FixProposal contains:
+    - tier: "T1_human" | "T2_synthetic" | "T3_llm"
+    - fix_description: human-readable summary
+    - fix_commands: list of bash commands
+    - fix_diff: optional unified diff string
+    - confidence: 0.0 – 1.0 (from vault entry or LLM estimate)
+    - reasoning: why this fix was selected
+
+──────────────────────────────────────────
+  4.4  SimulationAgent  (optional)
+──────────────────────────────────────────
+File: rekall_engine/agents/simulation.py
+Controlled by: SIMULATION_ENABLED=true in .env
+
+Receives: state["fix_proposal"]
+Produces: state["simulation_result"]
+
+  - Counterfactual dry-run: "if this fix had been applied, would the pipeline
+    have passed?"
+  - Currently a stub — raises NotImplementedError (non-fatal, pipeline continues)
+  - Planned: feed fix_commands into the Minikube sandbox (see Section 9)
+
+──────────────────────────────────────────
+  4.5  GovernanceAgent
+──────────────────────────────────────────
+File: rekall_engine/agents/governance.py
+
+Receives: state["fix_proposal"], state["diagnostic_bundle"]
+Produces: state["governance_decision"] (GovernanceDecision dataclass)
+
+  Risk scoring — weighted sum of active factors:
+    Factor              Weight   Trigger condition
+    llm_generated       0.25     tier == T3_llm
+    low_confidence      0.20     fix.confidence < 0.50
+    no_vault_history    0.15     vault_candidates == 0
+    touches_secrets     0.30     fix_commands mention env vars / secret paths
+    production_branch   0.20     branch in {main, master, production, prod, release}
+    infra_failure       0.15     failure_type == "infra"
+    security_failure    0.30     failure_type == "security"
+    negative_reward     0.20     vault entry has negative cumulative reward
+    low_similarity      0.10     similarity_score < 0.80
+
+  Decision thresholds:
+    risk_score < 0.40   → auto_apply      (safe: apply immediately)
+    risk_score < 0.70   → create_pr       (moderate: open PR without human gate)
+    risk_score >= 0.70  → block_await_human  (risky: wait for human approval)
+
+  The governance decision is what drives the rest of the pipeline route.
+  risk_factors is a list of strings for the UI to display.
+
+──────────────────────────────────────────
+  4.6  PublishGuardAgent
+──────────────────────────────────────────
+File: rekall_engine/agents/publish_guard.py
+
+Receives: state["fix_proposal"], state["governance_decision"]
+Produces: state["publish_guard_flags"]
+
+  Supply-chain safety gate. Scans fix_commands for dangerous patterns:
+    - curl | bash / wget | sh (unsandboxed remote execution)
+    - rm -rf (destructive)
+    - secret/key/token mutations in env vars
+    - npm install --global (global package mutation)
+    - Any command touching /etc/ or /root/
+
+  If flags are found AND governance decision is auto_apply or create_pr:
+    - Escalates decision to block_await_human (safety override)
+    - Adds flags to the governance decision risk_factors list
+
+  This is a pure rule-based check — no LLM call.
+
+──────────────────────────────────────────
+  4.7  Execute step (in orchestrator, not a separate agent)
+──────────────────────────────────────────
+File: rekall_engine/graph/orchestrator.py  (lines ~187-260)
+
+  Decision routing after PublishGuardAgent:
+
+  auto_apply / create_pr:
+    - If GITHUB_LIVE_PR=true: create branch, commit fix script, open GitHub PR
+    - If GITHUB_LIVE_PR=false: emit "Pull request opened" trace (demo mode)
+    - Run LearningAgent immediately (no human in the loop)
+    - Pipeline → resolved
+
+  block_await_human:
+    - CRITICAL: serialize the FixProposal and POST it to Go backend as a
+      "fix_proposal" callback event BEFORE posting the awaiting_approval status.
+      (This is what the Go Approve handler reads from store to build the CreatePR call.)
+    - Emit "Awaiting human review" trace to UI
+    - Set state["paused"] = True
+    - Pipeline pauses here — LearningAgent runs later via the callback
+
+──────────────────────────────────────────
+  4.8  LearningAgent
+──────────────────────────────────────────
+File: rekall_engine/agents/learning.py
+
+Receives: state["outcome"] (Outcome dataclass), state["fix_proposal"]
+Produces: (updates vault confidence in-place)
+
+  Called in two contexts:
+    1. Auto (after auto_apply / create_pr): outcome.result = "success"
+    2. Human callback (after POST /approve or /reject): result = "success" or "rejected"
+
+  Updates the vault entry's confidence using the reward signal:
+    - success → confidence += reward_step_size (default +1.0)
+    - rejected → confidence -= 0.5
+    - failure  → confidence -= 1.0, skip_count += 1
+
+  If confidence >= skip_threshold (-2.0 default) and fix was T3: promote to T2
+  (synthetic entry created in vault). This is the "learning" part of REKALL's RL loop.
+
+──────────────────────────────────────────
+  4.9  RLM Engine (Recursive Language Model)
+──────────────────────────────────────────
+Files: rekall_engine/agents/rlm_engine.py
+       rekall_engine/agents/repl.py
+
+  The RLM is invoked when T1 and T2 vault miss (no known fix for this signature).
+  It is REKALL's "think from first principles" engine.
+
+  Zoom & Scan:
+    - Segments the log into overlapping windows (8000 chars each)
+    - Runs Depth-0 scan on each window: "what went wrong here?"
+    - Ranks segments by failure signal confidence
+    - Top-ranked segment gets Depth-1 investigation: root cause + fix suggestion
+    - Token budget: 1024 (depth-0) / 2048 (depth-1)
+
+  REPL loop (repl.py):
+    - Iterative reasoning: starts with scan result, refines over N steps
+    - Each step: LLM call → extract action → update context
+    - Terminates when fix steps are specific enough or step limit hit
+    - Returns FixSuggestion with reasoning trace (rlm_trace stored in FixProposal)
+
+  RLM is rate-limited by Groq. Uses retry logic (1s → 10s backoff).
+  Groq 429 errors are normal under load — the retry loop handles them.
+
+───────────────────────────────────────────────────────────────────────────────────
+  5. DATA FLOW — END TO END
+───────────────────────────────────────────────────────────────────────────────────
+
+  [A] Incident Created
+      POST /webhooks/simulate {"scenario": "postgres_refused"}
+      → webhooks.go creates Incident in store (status=processing)
+      → calls engine.RunFromGitHub() or engine.RunPipeline()
+      → 200 OK immediately (async)
+
+  [B] SSE Stream Opens
+      Browser subscribes: GET /stream/{incident_id}
+      → SSE broker creates channel for this incident ID
+      → Browser receives events in real time
+
+  [C] Agent Pipeline Runs (async in Python)
+      For each agent step:
+        → orchestrator emits AgentLogEntry to asyncio.Queue
+        → engine/main.py drains queue → POST /internal/engine-callback
+        → callback.go stores log in memory + publishes to SSE broker
+        → browser renders step badge in agent-timeline.tsx
+
+  [D] Pipeline Pauses (block_await_human)
+      → orchestrator POSTs fix_proposal callback (NEW — see Section 6.1)
+      → callback.go calls store.UpsertFixProposal()
+      → orchestrator POSTs status=awaiting_approval callback
+      → callback.go calls store.UpdateIncidentStatus()
+      → browser shows "Awaiting human review" + Approve / Reject buttons
+
+  [E] Human Approves
+      POST /incidents/{id}/approve
+      → approvals.go marks incident resolved in store
+      → logs "Fix approved by human"
+      → in a goroutine (background, 2-min timeout):
+          1. engine.Learn() → POST /pipeline/learn → LearningAgent
+          2. engine.CreatePR() → POST /pipeline/create-pr → _create_pr_async()
+      → Python creates GitHub branch + commits fix script + opens PR
+      → POSTs agent_log "execute/done: Pull request opened: <url>"
+      → browser renders PR URL in agent timeline
+
+  [F] Post-Approval SSE
+      The "execute" step timeline entry updates in real time as the goroutine
+      progresses. The SSE stream for this incident is still open (it wasn't
+      closed by the approval, only by a resolved/failed status event).
+
+  [G] Human Rejects
+      POST /incidents/{id}/reject
+      → approvals.go marks incident failed
+      → goroutine: engine.Learn() with result="rejected"
+      → No PR is created
+
+───────────────────────────────────────────────────────────────────────────────────
+  6. KEY FIXES APPLIED (session log)
+───────────────────────────────────────────────────────────────────────────────────
+
+  6.1  fix_proposal callback bridge (2026-04-16)  ← MOST RECENT
+  ─────────────────────────────────────────────────
+  Problem:
+    The Go Approve handler called store.GetLatestFixProposal() → nil every time.
+    The fix_proposal existed only in Python in-memory state (orchestrator.py).
+    The callback handler only knew "agent_log" and "status" event types.
+    Since fix == nil, the engine.CreatePR() call was silently skipped entirely.
+    PRs were never raised after human approval.
+
+  Fix:
+    engine/main.py (_run_pipeline_async):
+      After final_state = await pipeline_task, if paused=True:
+        Serialize fix_proposal fields → POST "fix_proposal" callback event to Go
+        BEFORE posting the awaiting_approval status event.
+
+    backend/internal/handlers/callback.go:
+      Added fixProposalData struct.
+      Added "fix_proposal" switch case → deserializes → store.UpsertFixProposal().
+
+  Result: Approve → GetLatestFixProposal finds the fix → CreatePR fires → PR opens.
+
+  6.2  Approve handler goroutine context (prev session)
+  ──────────────────────────────────────────────────────
+  Problem:
+    engine.Learn() and engine.CreatePR() were called with c.Request.Context().
+    The HTTP response is sent before the goroutine finishes.
+    Go cancels c.Request.Context() when the response is sent → calls failed.
+
+  Fix:
+    Use context.WithTimeout(context.Background(), 2*time.Minute) for the goroutine.
+    This detaches from the request lifecycle entirely.
+
+───────────────────────────────────────────────────────────────────────────────────
+  7. FRONTEND COMPONENTS
+───────────────────────────────────────────────────────────────────────────────────
+
+  agent-timeline.tsx
+    Renders the live pipeline step list. Subscribes to SSE via use-agent-stream.ts.
+    Each step has a status badge: running (spinner) | done (green) | error (red).
+    Steps: monitor → diagnostic → fix → governance → publish_guard → execute → learning.
+
+  fix-proposal-card.tsx
+    Shows the FixProposal after FixAgent completes:
+      - Fix description
+      - Tier badge (T1 Human / T2 Synthetic / T3 LLM)
+      - Confidence bar (0–100%)
+      - Fix commands (code block)
+      - Reasoning text
+
+  approval-panel.tsx
+    Rendered only when incident.status == "awaiting_approval".
+    Shows the governance risk score, risk factors, and Approve / Reject buttons.
+    On click: calls POST /incidents/:id/approve or /reject.
+
+  risk-gauge.tsx
+    Animated semi-circle gauge showing risk_score (0.0–1.0).
+    Color: green < 0.40, yellow < 0.70, red >= 0.70.
+
+  incident-card.tsx
+    Summary card on the dashboard list. Shows source, failure_type, status, age.
+
+  vault-explorer.tsx
+    Paginated list of vault entries. Shows signature, confidence, tier, retrieval count.
+
+  sidebar.tsx
+    Navigation: Dashboard | Incidents | Vault | RL Metrics.
+
+  use-agent-stream.ts (hook)
+    EventSource subscription to GET /stream/:id.
+    Dispatches "agent_log" and "status" events to component state.
+    Handles reconnect on disconnect.
+
+  use-incidents.ts (hook)
+    Polls GET /incidents every 5 seconds for the dashboard list.
+
+  api-client.ts
+    Wraps all API calls. Base URL from NEXT_PUBLIC_API_URL.
+    Methods: getIncidents(), getIncident(), getVaultEntries(), getMetrics(),
+             approveIncident(), rejectIncident(), simulateIncident().
+
+───────────────────────────────────────────────────────────────────────────────────
+  8. DATA MODELS
+───────────────────────────────────────────────────────────────────────────────────
+
+  Go Models (backend/internal/models/models.go)
+  ──────────────────────────────────────────────
+  Incident          {id, source, failure_type, raw_payload, status, created_at, updated_at}
+  DiagnosticBundle  {id, incident_id, failure_signature, log_excerpt, git_diff, test_report, context_summary}
+  FixProposal       {id, incident_id, tier, vault_entry_id, similarity_score, fix_description, fix_commands,
+                     fix_diff, confidence, reasoning, rlm_trace, created_at}
+  GovernanceDecision{id, incident_id, risk_score, decision, risk_factors, created_at}
+  AgentLog          {id, incident_id, step_name, status, detail, created_at}
+  VaultEntry        {id, failure_signature, failure_type, fix_description, source, confidence,
+                     retrieval_count, success_count, created_at, updated_at}
+  Outcome           (request only)
+  ApprovalRequest   {reviewed_by, notes}
+
+  IncidentStatus values: processing | awaiting_approval | resolved | failed
+  FixTier values:        T1_human | T2_synthetic | T3_llm
+  GovernanceDecision:    auto_apply | create_pr | block_await_human
+
+  Python Types (rekall_engine/types.py)
+  ──────────────────────────────────────
+  Section A (dataclasses — Go contract):
+    FailureEvent, DiagnosticBundle, VaultEntry, FixProposal, GovernanceDecision,
+    Outcome, AgentLogEntry
+
+  Section B (Pydantic — AI layer):
+    FailureObject, VaultQuery, VaultCandidate, VaultResponse, FixDetail,
+    FixSuggestion (with to_fix_proposal() converter)
+
+  Callback event types (POST /internal/engine-callback):
+    "agent_log"    → {incident_id, step_name, status, detail}
+    "status"       → {incident_id, status}
+    "fix_proposal" → {id, incident_id, tier, fix_description, fix_commands,
+                       fix_diff, vault_entry_id, confidence, reasoning}
+
+───────────────────────────────────────────────────────────────────────────────────
+  9. MINIKUBE SANDBOX INTEGRATION  (PLANNED — NOT YET IMPLEMENTED)
+───────────────────────────────────────────────────────────────────────────────────
+
+  OVERVIEW
+  ─────────
+  Currently, when governance decides block_await_human, the pipeline pauses and
+  waits for a human to click Approve before any PR is raised. The fix is never
+  actually tested before the PR goes out.
+
+  The Minikube sandbox changes this fundamentally:
+
+    Instead of:  detect → diagnose → fix → governance → PAUSE → human approve → PR
+
+    Future flow:  detect → diagnose → fix → governance → PAUSE → deploy to Minikube
+                  → run CI test suite inside Minikube → validate fix works
+                  → THEN raise a final GitHub PR with test evidence attached
+
+  This makes REKALL move from "proposes fixes" to "proves fixes work before asking
+  for human review." The human approves a validated, tested fix — not just a
+  suggestion.
+
+  MINIKUBE SANDBOX ARCHITECTURE
+  ───────────────────────────────
+  The sandbox is a local Minikube cluster that mirrors the target repository's CI
+  environment. It is provisioned per-incident and torn down after validation.
+
+  Key design decisions:
+    - NO Redis. The sandbox uses Valkey (the Redis-fork, Apache 2.0 licence) for
+      any queue/state needs within the sandbox environment.
+    - Valkey runs as a pod inside Minikube, not as a host service.
+    - The Python engine controls the sandbox via kubectl and the Kubernetes Python
+      client (kubernetes-client/python).
+    - Each sandbox is ephemeral: created for one incident_id, destroyed after tests.
+
+  SANDBOX AGENT (planned — new agent)
+  ─────────────────────────────────────
+  File: rekall_engine/agents/sandbox.py  (TO BE CREATED)
+
+  Inputs:  state["fix_proposal"], state["diagnostic_bundle"]
+  Outputs: state["sandbox_result"] {passed: bool, test_log: str, pr_evidence: str}
+
+  Steps:
+    1. Provision:
+         - minikube start (or reuse existing cluster)
+         - kubectl create namespace rekall-sandbox-{incident_id[:8]}
+         - helm install / kubectl apply the target repo's base manifests
+         - Deploy Valkey pod for any Redis-dependent services in the repo
+
+    2. Apply fix:
+         - Apply fix_commands as a ConfigMap or Job in the sandbox namespace
+         - If fix_diff is available: apply as a patch
+
+    3. Run CI:
+         - kubectl apply the CI job (GitHub Actions workflow translated to a
+           Kubernetes Job, or run the test runner directly as a Pod)
+         - Stream Pod logs back to the engine via kubectl logs --follow
+         - Post agent_log events to the Go callback in real time:
+             step_name="sandbox" status="running" detail="Running test suite..."
+
+    4. Collect evidence:
+         - Parse exit code of the test Job/Pod
+         - Collect test XML / stdout
+         - Build pr_evidence string: summary of pass/fail + key log lines
+
+    5. Teardown:
+         - kubectl delete namespace rekall-sandbox-{incident_id[:8]}
+         - (Optionally keep Minikube cluster running for next incident)
+
+    6. Result:
+         - sandbox_result.passed == True → proceed to PR creation
+         - sandbox_result.passed == False → block, notify human, do NOT create PR
+           (possibly retry with a revised fix via another RLM REPL round)
+
+  ORCHESTRATOR CHANGES (planned)
+  ──────────────────────────────
+  In rekall_engine/graph/orchestrator.py, the block_await_human path becomes:
+
+    block_await_human:
+      → [existing] POST fix_proposal callback to Go
+      → [NEW] run SandboxAgent
+          → if sandbox passes: auto-create PR with pr_evidence in body
+          → if sandbox fails: pause for human, report failure evidence
+      → POST status=awaiting_approval if still paused
+
+  VALKEY (not Redis) — rationale
+  ──────────────────────────────
+  The Minikube sandbox environment uses Valkey instead of Redis because:
+    1. Valkey is the open-source, Apache 2.0 fork of Redis (post SSPL)
+    2. No licence compliance concerns in hackathon or production contexts
+    3. API-compatible with Redis client libraries (no code changes needed)
+    4. Runs as a lightweight pod inside Minikube with the official Valkey image:
+         image: valkey/valkey:7.2-alpine
+    5. Used for: job queuing within the sandbox, short-lived state between
+       sandbox steps, pub/sub for streaming test log lines back to engine
+
+  ENV VARS FOR SANDBOX (to be added to .env and docker-compose.yml)
+  ──────────────────────────────────────────────────────────────────
+    SANDBOX_ENABLED=true            # Enable Minikube sandbox validation
+    MINIKUBE_PROFILE=rekall         # Minikube profile name
+    MINIKUBE_CPUS=4                 # CPUs allocated to Minikube
+    MINIKUBE_MEMORY=8192            # MB RAM for Minikube
+    SANDBOX_TIMEOUT=300             # Max seconds for sandbox validation
+    SANDBOX_VALKEY_IMAGE=valkey/valkey:7.2-alpine
+
+  NEW DEPENDENCIES (engine/requirements.txt additions)
+  ──────────────────────────────────────────────────────
+    kubernetes          # Python k8s client for cluster control
+    valkey              # Valkey client (Redis-compatible API)
+
+  THE FINAL PR BODY (planned)
+  ────────────────────────────
+  When SandboxAgent passes, the GitHub PR body will include:
+
+    ## 🤖 REKALL Auto-Fix (Sandbox Validated)
+
+    **Incident ID:** `{incident_id}`
+    **Fix tier:** `{fix_tier}`
+    **Sandbox validation:** ✅ PASSED ({N} tests, 0 failures)
+
+    ### What happened
+    {context_summary from DiagnosticAgent}
+
+    ### Fix applied
+    {fix_description}
+
+    ```bash
+    {fix_commands}
+    ```
+
+    ### Test Evidence (Minikube sandbox)
+    ```
+    {pr_evidence — key test output lines}
+    ```
+
+    *Fix was automatically validated in a Minikube sandbox before this PR was opened.*
+    *Auto-generated by REKALL. Approved by: human | sandbox-validated.*
+
+───────────────────────────────────────────────────────────────────────────────────
+  10. ENVIRONMENT VARIABLES — COMPLETE REFERENCE
+───────────────────────────────────────────────────────────────────────────────────
+
+  Required:
+    GROQ_API_KEY          Groq API key (console.groq.com, free tier)
+    GITHUB_TOKEN          GitHub fine-grained PAT (Contents+PRs write)
+    GITHUB_REPO           Target repo slug: "owner/repo"
+
+  Service connectivity:
+    GO_BACKEND_URL        Python engine → Go callback URL (default: http://backend:8000)
+    ENGINE_URL            Go backend → Python engine URL (default: http://engine:8002)
+    PORT                  Go backend port (default: 8000)
+    CORS_ORIGINS          Allowed CORS origins (default: http://localhost:3000)
+    GIN_MODE              "debug" | "release"
+    NEXT_PUBLIC_API_URL   Browser → Go backend URL (default: http://localhost:8000)
+
+  Vault:
+    VAULT_PATH            Path to vault dir. Docker: /app/vault. Local: vault
+    ORG_VAULT_ENABLED     Enable vault/org/ cross-repo memory (default: false)
+
+  AI & LLM:
+    LOG_LEVEL             Python engine log level (default: INFO)
+    GROQ_MODEL            Groq model name (default: llama-3.3-70b-versatile)
+
+  GitHub PR:
+    GITHUB_LIVE_PR        "true" = create real PRs. "false" = demo trace only.
+
+  Simulation:
+    SIMULATION_ENABLED    Run SimulationAgent between Fix and Governance (default: false)
+
+  Integrations:
+    INTEGRATIONS_ENABLED  Enable Slack + Notion logging (default: false)
+    SLACK_WEBHOOK_URL     Slack incoming webhook URL
+    NOTION_TOKEN          Notion API secret
+    NOTION_DATABASE_ID    Notion database ID for incident logging
+
+  Minikube Sandbox (PLANNED):
+    SANDBOX_ENABLED       Enable Minikube sandbox validation (default: false)
+    MINIKUBE_PROFILE      Minikube profile (default: rekall)
+    MINIKUBE_CPUS         CPUs for Minikube (default: 4)
+    MINIKUBE_MEMORY       MB RAM for Minikube (default: 8192)
+    SANDBOX_TIMEOUT       Max sandbox validation time in seconds (default: 300)
+    SANDBOX_VALKEY_IMAGE  Valkey image for sandbox (default: valkey/valkey:7.2-alpine)
+
+───────────────────────────────────────────────────────────────────────────────────
+  11. DOCKER COMPOSE SERVICES
+───────────────────────────────────────────────────────────────────────────────────
+
+  engine    (Python FastAPI)   port 8002 → 8002
+    - Dockerfile: engine/Dockerfile
+    - Volume: ./vault → /app/vault (owns writes)
+    - Env: GROQ_API_KEY, GO_BACKEND_URL, VAULT_PATH, LOG_LEVEL, integrations
+    - Healthcheck: HTTP GET localhost:8002/health every 15s
+
+  backend   (Go Gin)           port 8000 → 8000
+    - Dockerfile: backend/Dockerfile
+    - Volume: ./vault → /app/vault:ro (read-only — engine owns writes)
+    - Env: ENGINE_URL, VAULT_PATH, CORS_ORIGINS, GIN_MODE, PORT
+    - depends_on: engine (healthy)
+    - Healthcheck: wget localhost:8000/health every 10s
+
+  frontend  (Next.js)          port 3000 → 3000
+    - Dockerfile: frontend/Dockerfile
+    - Env: NEXT_PUBLIC_API_URL, NODE_ENV=production
+    - depends_on: backend (healthy)
+
+  NO postgres. NO chromadb. NO redis. Flat files only (+ Valkey in sandbox).
+
+───────────────────────────────────────────────────────────────────────────────────
+  12. VAULT SYSTEM
+───────────────────────────────────────────────────────────────────────────────────
+
+  The vault is a directory of JSON files. No vector database, no SQL.
+
+  vault/local/
+    One JSON file per vault entry. Filename: {failure_signature}.json
+    Schema:
+      {
+        "id": "uuid",
+        "failure_signature": "infra:github_actions:oom",
+        "failure_type": "oom",
+        "fix_description": "...",
+        "fix_commands": ["kubectl delete pod ..."],
+        "fix_diff": null,
+        "confidence": 0.85,
+        "retrieval_count": 12,
+        "success_count": 10,
+        "source": "human",
+        "created_at": "2026-04-01T00:00:00Z",
+        "reward_score": 2.0,
+        "skip_count": 0
+      }
+
+  vault/org/
+    Cross-repo shared vault. Same schema. Enabled by ORG_VAULT_ENABLED=true.
+
+  vault/incidents.json
+    Persisted snapshot of the Go in-memory store. Loaded on startup, saved on
+    each incident update. Allows incidents to survive backend restarts.
+
+  Vault lookup strategy (FixAgent):
+    1. Exact match on failure_signature
+    2. Substring match (signature contains failure_signature or vice versa)
+    3. No match → T3 LLM (RLM REPL)
+
+  Confidence update (LearningAgent):
+    On success: entry.confidence += 0.1 (capped at 1.0)
+    On reject:  entry.confidence -= 0.05 (floored at 0.0)
+    On failure: entry.confidence -= 0.1
+    Decay: 0.995 per day (applied on retrieval)
+
+  Ranker (FixAgent):
+    Entries with reward_score < -2.0 are excluded from T1/T2 retrieval.
+    Excluded entries are shown in the UI as "skipped by RL ranker".
+
+───────────────────────────────────────────────────────────────────────────────────
+  13. SSE (SERVER-SENT EVENTS) PROTOCOL
+───────────────────────────────────────────────────────────────────────────────────
+
+  Every incident gets a dedicted SSE channel via GET /stream/{incident_id}.
+  The channel is created on first subscription and closed when the incident
+  reaches a terminal state (resolved or failed).
+
+  Event format (text/event-stream):
+    data: {"type":"agent_log","data":{...}}\n\n
+    data: {"type":"status","data":{"status":"resolved"}}\n\n
+    data: [DONE]\n\n  ← terminal sentinel
+
+  agent_log payload:
+    {incident_id, step_name, status, detail, created_at}
+
+  status payload:
+    {status: "processing" | "awaiting_approval" | "resolved" | "failed"}
+
+  Internal flow:
+    engine/main.py → POST /internal/engine-callback
+    → callback.go stores in memory + sse.Broker.Publish()
+    → broker fans out to all listening EventSource clients for that incident
+
+  The broker has a per-channel buffer (default 100 events) to handle slow clients.
+  Channels are garbage-collected after a short TTL following terminal state.
+
+───────────────────────────────────────────────────────────────────────────────────
+  14. WEBHOOK SIMULATOR (DEMO TOOL)
+───────────────────────────────────────────────────────────────────────────────────
+
+  POST /webhooks/simulate  {"scenario": "..."}
+
+  Available scenarios (hardcoded in webhooks.go):
+    postgres_refused    — Database connection refused at startup
+    oom_kill            — Container OOM-killed (exit code 137)
+    test_failure        — JUnit test suite failure
+    secret_leak         — GitGuardian-style secret leak detection
+    image_pull_backoff  — Docker image pull failure (ImagePullBackOff)
+
+  Each scenario includes a realistic log_excerpt + git_diff + metadata.
+  The payload is fed directly to the Python engine as if it came from a real webhook.
+  This is the primary demo mode — no GitHub API calls, instant, reproducible.
+
+  POST /webhooks/trigger-github
+  Fetches the latest real failed GitHub Actions run from GITHUB_REPO and runs
+  the full pipeline on real data. Requires GITHUB_TOKEN.
+
+───────────────────────────────────────────────────────────────────────────────────
+  15. GOVERNANCE DECISION LOG — EXAMPLE
+───────────────────────────────────────────────────────────────────────────────────
+
+  From the logs (2026-04-16):
+
+    [governance] incident=f385cd09 risk=0.90 decision=block_await_human
+      factors=['llm_generated', 'no_vault_history', 'touches_secrets', 'production_branch']
+
+  Breakdown:
+    llm_generated:     +0.25  (T3_llm fix — no vault hit)
+    no_vault_history:  +0.15  (vault_candidates=0)
+    touches_secrets:   +0.30  (fix commands reference env vars)
+    production_branch: +0.20  (branch=main)
+    ─────────────────────────
+    Total risk:         0.90  → block_await_human  ✓
+
+  [publish_guard] passed — no supply-chain flags (the fix commands were clean)
+  Decision stands: block_await_human → human approval required → goroutine → PR
+
+───────────────────────────────────────────────────────────────────────────────────
+  16. KNOWN ISSUES / LIMITATIONS (current)
+───────────────────────────────────────────────────────────────────────────────────
+
+  1. In-memory store is NOT durable across backend restarts (incidents.json is
+     saved but the FixProposal is not serialized to that file yet).
+     If backend restarts between pipeline completion and human approval,
+     store.GetLatestFixProposal() returns nil → PR skipped.
+     FIX NEEDED: serialize FixProposal into incidents.json on UpsertFixProposal().
+
+  2. Groq rate limiting (429) during heavy pipeline runs delays the RLM REPL.
+     The retry logic (1s → 10s backoff) handles it but introduces latency.
+     MITIGATION: use llama-3.1-8b-instant (faster, lower TPM usage) for scans.
+
+  3. The engine container takes ~30s to restart (Python dependency import time).
+     Backend wait: depends_on engine healthy. If engine is restarting,
+     new incidents are queued until it's back.
+
+  4. The duplicate log line issue in docker-compose output:
+     Each engine log line appears twice. This is because uvicorn's root logger
+     and the named rekall.* logger both emit. Not a bug — just cosmetic noise.
+     FIX OPTION: set uvicorn access log to disabled and use rekall.* only.
+
+  5. The SimulationAgent raises NotImplementedError — this is intentional.
+     It is a stub pending the Minikube sandbox implementation (see Section 9).
+
+  6. GITHUB_TOKEN and GROQ_API_KEY are committed in .env (gitignored locally).
+     For the hackathon this is acceptable. Rotate all keys before any public demo.
+
+───────────────────────────────────────────────────────────────────────────────────
+  17. MAKEFILE TARGETS
+───────────────────────────────────────────────────────────────────────────────────
+
+  make dev         Start all services locally (no Docker)
+  make docker      docker compose up --build
+  make down        docker compose down
+  make test        Run all tests (Go + Python + Jest)
+  make test-go     Go tests only
+  make test-py     Python tests only
+  make test-js     Jest tests only
+  make seed        Seed vault with sample entries (scripts/seed-vault.py)
+  make simulate    Fire all 5 simulator scenarios
+  make health      Check all 3 services are running
+  make context     Regenerate CONTEXT.txt (scripts/generate_context.py)
+  make logs        docker compose logs --follow
+
+───────────────────────────────────────────────────────────────────────────────────
+  18. TESTING STRATEGY
+───────────────────────────────────────────────────────────────────────────────────
+
+  Go (backend/):
+    go test ./...
+    Tests cover: webhook handler, SSE broker, engine client mock, store operations
+
+  Python (rekall_engine/):
+    pytest engine/ rekall_engine/
+    Tests cover: individual agents, vault reader, orchestrator routing
+
+  TypeScript (frontend/):
+    Jest unit tests: components (agent-timeline, fix-proposal-card, incident-card,
+                     risk-gauge), hooks, api-client
+    Playwright E2E: dashboard, vault, RL metrics pages
+
+  CI (sample-ci-sad repo):
+    Target repo for demo. Intentionally has failing workflows.
+    REKALL watches it via GITHUB_REPO=abjt01/sample-ci-sad.
+
+───────────────────────────────────────────────────────────────────────────────────
+  19. INTEGRATIONS (OPTIONAL)
+───────────────────────────────────────────────────────────────────────────────────
+
+  Slack (rekall_engine/integrations/slack.py)
+    Sends a message to SLACK_WEBHOOK_URL when:
+      - Governance blocks (block_await_human): "@team PR ready for review"
+      - Incident resolved: "Fix applied: {description}"
+      - Incident failed: "Fix failed: {description}"
+    Fire-and-forget: failure logged but never raises.
+
+  Notion (rekall_engine/integrations/notion.py)
+    Logs every incident to a Notion database (NOTION_DATABASE_ID).
+    Fields: Incident ID, Source, Failure Type, Status, Risk Score, Decision,
+            Fix Tier, Confidence, Fix Description, Created At.
+    Fire-and-forget: failure logged but never raises.
+
+  Both integrations are disabled by default (INTEGRATIONS_ENABLED=false).
+  Enable with INTEGRATIONS_ENABLED=true + respective secrets.
+
+───────────────────────────────────────────────────────────────────────────────────
+  20. THINGS THAT MUST NOT CHANGE WITHOUT THOUGHT
+───────────────────────────────────────────────────────────────────────────────────
+
+  1. The failure_signature format ("source:system:type" e.g. "infra:github_actions:oom")
+     is the primary vault lookup key. Changing the format breaks all existing vault
+     entries. If you change it, you must migrate all vault JSON files.
+
+  2. The callback event types ("agent_log", "status", "fix_proposal") are a
+     protocol between Python and Go. Adding or removing fields is safe (JSON ignores
+     unknowns). Renaming event type strings breaks the callback handler switch.
+
+  3. The Groq model (llama-3.3-70b-versatile) affects RLM reasoning quality.
+     Downgrading to 8b changes fix quality noticeably. Don't change without testing.
+
+  4. The governance threshold values (0.40, 0.70) directly control how often
+     REKALL sends fixes without human review. Raising 0.70 → 0.80 means fewer
+     human reviews. Lowering 0.40 → 0.30 means fewer auto-applies. Think about
+     this carefully before changing.
+
+  5. store.UpsertFixProposal() returns ErrNotFound if the incident doesn't exist.
+     The fix_proposal callback must arrive AFTER the incident is created in store.
+     The ordering guarantee: Go creates the incident before calling RunPipeline(),
+     so the incident always exists by the time the callback arrives.
+
+  6. The SSE broker closes the incident channel on receiving status=resolved or
+     status=failed. Do NOT send these statuses until all agent_log callbacks are
+     complete, or the browser will miss the final log entries.
+
+───────────────────────────────────────────────────────────────────────────────────
+  21. ROADMAP (priority order)
+───────────────────────────────────────────────────────────────────────────────────
+
+  P0  (critical — must fix before demo)
+    [ ] Persist FixProposal in incidents.json so it survives backend restarts
+    [ ] Rotate GITHUB_TOKEN and GROQ_API_KEY before public demo
+
+  P1  (Minikube sandbox — the next big feature)
+    [ ] SandboxAgent (rekall_engine/agents/sandbox.py)
+    [ ] Minikube provisioning + cleanup logic
+    [ ] Valkey pod deployment in sandbox namespace
+    [ ] CI job translation: GitHub Actions → Kubernetes Job
+    [ ] Streaming sandbox logs to engine callback
+    [ ] PR body with test evidence
+    [ ] SANDBOX_ENABLED env var + orchestrator routing change
+    [ ] SandboxResult as new callback event type
+
+  P2  (quality of life)
+    [ ] Deduplicate uvicorn log output (uvicorn access_log=False)
+    [ ] Move governance risk weights to env/config (no code edit to tune)
+    [ ] Make PROD_BRANCH_PATTERNS configurable (env var)
+    [ ] Fix duplicate log lines in docker-compose output
+    [ ] Add fix_proposal to incidents.json serialization (durability fix)
+
+  P3  (production hardening)
+    [ ] Rate limit webhook endpoint (prevent spam)
+    [ ] Webhook signature verification (GITHUB_WEBHOOK_SECRET)
+    [ ] Org vault sync (cron or webhook-triggered)
+    [ ] Multi-repo support (per-repo vault namespacing)
+    [ ] Metrics: MTTR (mean time to recovery), fix success rate over time
+
+  P4  (demo polish)
+    [ ] RL Metrics page: reward history chart per vault entry
+    [ ] Vault confidence decay visualization
+    [ ] Sandbox step in agent timeline UI
+    [ ] Show PR URL as clickable link in agent timeline after creation
+
+═══════════════════════════════════════════════════════════════════════════════════
+  END OF CONTEXT
+═══════════════════════════════════════════════════════════════════════════════════

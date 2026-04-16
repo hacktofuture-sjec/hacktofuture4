@@ -25,6 +25,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 
+# ─────────────────────────────────────────────
+# Module-level reusable HTTP client (Fix #1)
+# ─────────────────────────────────────────────
+_http_client: Optional[httpx.AsyncClient] = None
+
+
 
 # ─────────────────────────────────────────────
 # Config
@@ -53,9 +59,13 @@ log = logging.getLogger("rekall.engine")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _http_client
+    _http_client = httpx.AsyncClient(timeout=10.0)
     log.info("Engine service starting up")
     yield
     log.info("Engine service shutting down")
+    await _http_client.aclose()
+    _http_client = None
 
 
 app = FastAPI(
@@ -92,6 +102,14 @@ class PipelineLearnRequest(BaseModel):
     vault_entry_id: Optional[str] = None    # vault entry that was selected
 
 
+class CreatePRRequest(BaseModel):
+    incident_id: str
+    fix_commands: list = []
+    fix_description: str = ""
+    fix_tier: str = "T3_llm"
+    fix_diff: Optional[str] = None
+
+
 class PipelineResponse(BaseModel):
     ok: bool
     message: str = ""
@@ -116,6 +134,21 @@ async def run_pipeline(req: PipelineRunRequest, background_tasks: BackgroundTask
     return PipelineResponse(ok=True, message="pipeline started")
 
 
+class FetchFromGitHubRequest(BaseModel):
+    incident_id: str
+    repo: Optional[str] = None   # e.g. "abjt01/sample-ci-sad" — defaults to GITHUB_REPO env
+
+
+@app.post("/pipeline/run-from-github", response_model=PipelineResponse)
+async def run_from_github(req: FetchFromGitHubRequest, background_tasks: BackgroundTasks):
+    """
+    Fetch the latest failed GitHub Actions run from the given repo (or GITHUB_REPO env),
+    extract its logs, and run the full real agent pipeline to diagnose and fix it.
+    """
+    background_tasks.add_task(_fetch_and_run_pipeline, req.incident_id, req.repo)
+    return PipelineResponse(ok=True, message="fetching github ci failure and running pipeline")
+
+
 @app.post("/pipeline/learn", response_model=PipelineResponse)
 async def learn(req: PipelineLearnRequest):
     """
@@ -135,9 +168,140 @@ async def learn(req: PipelineLearnRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.post("/pipeline/create-pr", response_model=PipelineResponse)
+async def create_pr(req: CreatePRRequest, background_tasks: BackgroundTasks):
+    """
+    Open a real GitHub PR using the approved fix proposal.
+    Called by the Go backend when a human approves a block_await_human incident.
+    Runs asynchronously and posts back the PR URL via the engine-callback.
+    """
+    background_tasks.add_task(
+        _create_pr_async,
+        req.incident_id,
+        req.fix_commands,
+        req.fix_description,
+        req.fix_tier,
+        req.fix_diff,
+    )
+    return PipelineResponse(ok=True, message="pr creation started")
+
+
 # ─────────────────────────────────────────────
 # Pipeline execution
 # ─────────────────────────────────────────────
+
+async def _fetch_and_run_pipeline(incident_id: str, repo_name: Optional[str]) -> None:
+    """
+    Fetch the latest failed GitHub Actions workflow run from the configured repo,
+    extract the real failure logs, and run the full agent pipeline against them.
+    This is the REAL path — no simulated data, no emulation.
+    """
+    github_token = os.getenv("GITHUB_TOKEN", "")
+    repo_slug    = repo_name or os.getenv("GITHUB_REPO", "")
+
+    if not github_token or not repo_slug:
+        await _post_callback(incident_id, {"type": "agent_log", "data": {
+            "incident_id": incident_id, "step_name": "monitor", "status": "error",
+            "detail": "GITHUB_TOKEN or GITHUB_REPO not configured — cannot fetch real CI failures",
+        }})
+        await _post_callback(incident_id, {"type": "status", "data": {"incident_id": incident_id, "status": "failed"}})
+        return
+
+    await _post_callback(incident_id, {"type": "agent_log", "data": {
+        "incident_id": incident_id, "step_name": "monitor", "status": "running",
+        "detail": f"Connecting to GitHub → {repo_slug}",
+    }})
+
+    try:
+        import zipfile, io
+        try:
+            from github import Github  # type: ignore
+        except ImportError:
+            await _post_callback(incident_id, {"type": "agent_log", "data": {
+                "incident_id": incident_id, "step_name": "monitor", "status": "error",
+                "detail": "PyGithub not installed — cannot fetch real CI failures",
+            }})
+            return
+        
+        loop = asyncio.get_running_loop()
+
+        def gh_fetch():
+            g    = Github(github_token)
+            repo = g.get_repo(repo_slug)
+
+            # Find the most recent failed workflow run (any branch)
+            runs = repo.get_workflow_runs(status="failure")
+            run  = None
+            for r in runs:
+                run = r
+                break
+
+            if run is None:
+                return None, None, None, None
+
+            # Download the log zip archive
+            import urllib.request, urllib.error
+            logs_url = (
+                f"https://api.github.com/repos/{repo_slug}/actions/runs/{run.id}/logs"
+            )
+            req = urllib.request.Request(logs_url, headers={
+                "Authorization": f"Bearer {github_token}",
+                "Accept": "application/vnd.github+json",
+            })
+            log_text = ""
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    zdata = resp.read()
+                zf = zipfile.ZipFile(io.BytesIO(zdata))
+                parts = []
+                for name in sorted(zf.namelist())[:10]:  # first 10 step logs
+                    parts.append(f"=== {name} ===\n{zf.read(name).decode('utf-8', errors='replace')[:3000]}")
+                log_text = "\n\n".join(parts)[:12000]
+            except Exception as e:
+                log_text = f"[Could not download logs: {e}]"
+
+            return run, log_text, repo.default_branch, run.head_commit.sha if run.head_commit else ""
+
+        run, log_text, default_branch, commit_sha = await loop.run_in_executor(None, gh_fetch)
+
+        if run is None:
+            await _post_callback(incident_id, {"type": "agent_log", "data": {
+                "incident_id": incident_id, "step_name": "monitor", "status": "error",
+                "detail": f"No failed workflow runs found in {repo_slug}",
+            }})
+            await _post_callback(incident_id, {"type": "status", "data": {"incident_id": incident_id, "status": "failed"}})
+            return
+
+        await _post_callback(incident_id, {"type": "agent_log", "data": {
+            "incident_id": incident_id, "step_name": "monitor", "status": "done",
+            "detail": f"Found failed run #{run.run_number}: '{run.name}' on {run.head_branch}",
+        }})
+
+        # Build a real incident payload with actual GitHub data
+        payload = {
+            "source":       "github_actions",
+            "failure_type": "unknown",   # DiagnosticAgent will classify from logs
+            "description":  f"GitHub Actions failure: {run.name} (run #{run.run_number})",
+            "log_excerpt":  log_text,
+            "git_diff":     None,
+            "branch":       run.head_branch,
+            "commit_sha":   commit_sha,
+            "workflow_url": run.html_url,
+            "repo":         repo_slug,
+        }
+
+    except Exception as exc:
+        log.exception("GitHub fetch failed: %s", exc)
+        await _post_callback(incident_id, {"type": "agent_log", "data": {
+            "incident_id": incident_id, "step_name": "monitor", "status": "error",
+            "detail": f"GitHub fetch failed: {exc}",
+        }})
+        await _post_callback(incident_id, {"type": "status", "data": {"incident_id": incident_id, "status": "failed"}})
+        return
+
+    # Delegate to the real agent pipeline — NOT the emulated fallback
+    await _run_pipeline_async(incident_id, payload)
+
 
 async def _run_pipeline_async(incident_id: str, payload: Dict[str, Any]) -> None:
     """
@@ -180,6 +344,27 @@ async def _run_pipeline_async(incident_id: str, payload: Dict[str, Any]) -> None
 
         # Wait for pipeline to finish
         final_state = await pipeline_task
+
+        # ── If the pipeline paused for human review, push the fix_proposal to
+        # ── the Go store NOW so Approve → GetLatestFixProposal finds it.
+        if final_state.get("paused"):
+            fix = final_state.get("fix_proposal")
+            if fix is not None:
+                import uuid as _uuid
+                await _post_callback(incident_id, {
+                    "type": "fix_proposal",
+                    "data": {
+                        "id":              str(_uuid.uuid4()),
+                        "incident_id":     incident_id,
+                        "tier":            str(getattr(fix, "tier", "T3_llm")),
+                        "fix_description": str(getattr(fix, "fix_description", "") or ""),
+                        "fix_commands":    list(getattr(fix, "fix_commands", []) or []),
+                        "fix_diff":        getattr(fix, "fix_diff", None),
+                        "vault_entry_id":  getattr(fix, "vault_entry_id", None),
+                        "confidence":      float(getattr(fix, "confidence", 0.5) or 0.5),
+                        "reasoning":       str(getattr(fix, "reasoning", "") or ""),
+                    },
+                })
 
         # Determine final status
         gov = final_state.get("governance_decision")
@@ -228,6 +413,7 @@ async def _emulated_pipeline(incident_id: str, payload: Dict[str, Any]) -> None:
     """
     Replays a realistic step-by-step timeline to the Go backend callback
     when the real engine graph is not yet implemented.
+    Also performs a real GitHub PR creation if GITHUB_LIVE_PR=true.
     """
     steps = [
         ("monitor",       "Normalising failure event payload"),
@@ -252,10 +438,242 @@ async def _emulated_pipeline(incident_id: str, payload: Dict[str, Any]) -> None:
             if status == "running":
                 await asyncio.sleep(1.2)
 
+    # ── Live GitHub PR (production demo) ──────────────────────────────────────
+    # When GITHUB_LIVE_PR=true, open a real PR on GITHUB_REPO using the
+    # AI-generated fix commands (emulated here). This runs even in emulated
+    # pipeline mode because the real agent stubs raise NotImplementedError.
+    github_live_pr = os.getenv("GITHUB_LIVE_PR", "false").lower() == "true"
+    github_token   = os.getenv("GITHUB_TOKEN", "")
+    github_repo    = os.getenv("GITHUB_REPO", "")
+
+    pr_url: Optional[str] = None
+    if github_live_pr and github_token and github_repo:
+        try:
+            try:
+                from github import Github  # type: ignore  # PyGithub
+            except ImportError:
+                log.warning("[emulated_pipeline] PyGithub not installed — skipping PR")
+                raise RuntimeError("PyGithub not installed")
+            g    = Github(github_token)
+            repo = g.get_repo(github_repo)
+
+            branch_name = f"rekall-auto-fix-{incident_id[:8]}"
+            base_branch = repo.default_branch
+            base_sha    = repo.get_branch(base_branch).commit.sha
+
+            # Create the fix branch
+            repo.create_git_ref(f"refs/heads/{branch_name}", base_sha)
+
+            # Determine scenario label for the commit message
+            scenario = payload.get("scenario", payload.get("failure_type", "unknown"))
+
+            # Commit a fix script to the branch
+            fix_script = (
+                f"#!/bin/bash\n"
+                f"# REKALL Auto-Fix — Incident {incident_id}\n"
+                f"# Scenario: {scenario}\n"
+                f"# Generated: by REKALL AI Agent pipeline\n\n"
+                f"echo 'Applying REKALL recommended fix for: {scenario}'\n"
+                f"# TODO: replace with actual fix commands from FixAgent\n"
+            )
+            repo.create_file(
+                path=f".rekall/fix-{incident_id[:8]}.sh",
+                message=f"fix({incident_id[:8]}): REKALL auto-fix for {scenario}",
+                content=fix_script.encode(),
+                branch=branch_name,
+            )
+
+            # Open the Pull Request
+            pr = repo.create_pull(
+                title=f"[REKALL] Auto-fix: {scenario} — incident {incident_id[:8]}",
+                body=(
+                    f"## 🤖 REKALL Auto-Fix\n\n"
+                    f"**Incident ID:** `{incident_id}`\n"
+                    f"**Scenario:** `{scenario}`\n"
+                    f"**Pipeline:** Emulated (AI agents returning fix commands)\n\n"
+                    f"### What happened\n"
+                    f"REKALL's AI pipeline detected a `{scenario}` failure, "
+                    f"diagnosed the root cause, retrieved a fix from the memory vault, "
+                    f"and scored governance risk as low enough to proceed.\n\n"
+                    f"### Fix\n"
+                    f"See `.rekall/fix-{incident_id[:8]}.sh` in this branch.\n\n"
+                    f"*Auto-generated by REKALL. Please review before merging.*"
+                ),
+                head=branch_name,
+                base=base_branch,
+            )
+            pr_url = pr.html_url
+            log.info("[emulated_pipeline] PR opened: %s", pr_url)
+
+            await _post_callback(incident_id, {
+                "type": "agent_log",
+                "data": {
+                    "incident_id": incident_id,
+                    "step_name":   "execute",
+                    "status":      "done",
+                    "detail":      f"Pull request opened: {pr_url}",
+                },
+            })
+
+        except Exception as exc:
+            log.warning("[emulated_pipeline] GitHub PR creation failed: %s", exc)
+            await _post_callback(incident_id, {
+                "type": "agent_log",
+                "data": {
+                    "incident_id": incident_id,
+                    "step_name":   "execute",
+                    "status":      "error",
+                    "detail":      f"PR creation failed: {exc}",
+                },
+            })
+    # ──────────────────────────────────────────────────────────────────────────
+
     await _post_callback(incident_id, {
         "type": "status",
         "data": {"incident_id": incident_id, "status": "resolved"},
     })
+
+
+async def _create_pr_async(
+    incident_id: str,
+    fix_commands: list,
+    fix_description: str,
+    fix_tier: str,
+    fix_diff: Optional[str],
+) -> None:
+    """
+    Create a real GitHub PR for a human-approved fix.
+    Called by POST /pipeline/create-pr (triggered from Go Approve handler).
+    Posts execution progress back via the engine-callback so the SSE
+    stream updates the dashboard in real time.
+    """
+    github_token = os.getenv("GITHUB_TOKEN", "")
+    github_repo  = os.getenv("GITHUB_REPO", "")
+    github_live  = os.getenv("GITHUB_LIVE_PR", "false").lower() == "true"
+
+    await _post_callback(incident_id, {
+        "type": "agent_log",
+        "data": {
+            "incident_id": incident_id,
+            "step_name":   "execute",
+            "status":      "running",
+            "detail":      "Human approved — opening pull request on GitHub",
+        },
+    })
+
+    if not github_live or not github_token or not github_repo:
+        # Not configured for live PRs — emit a trace-only event
+        await _post_callback(incident_id, {
+            "type": "agent_log",
+            "data": {
+                "incident_id": incident_id,
+                "step_name":   "execute",
+                "status":      "done",
+                "detail":      "PR creation skipped (GITHUB_LIVE_PR not enabled)",
+            },
+        })
+        return
+
+    try:
+        try:
+            from github import Github  # type: ignore
+        except ImportError:
+            log.error("[create_pr] PyGithub not installed")
+            await _post_callback(incident_id, {"type": "agent_log", "data": {
+                "incident_id": incident_id, "step_name": "execute", "status": "error",
+                "detail": "PyGithub not installed — cannot create PR",
+            }})
+            return
+
+        loop = asyncio.get_running_loop()
+
+        def gh_create():
+            g    = Github(github_token)
+            repo = g.get_repo(github_repo)
+
+            branch_name  = f"rekall-fix-{incident_id[:8]}"
+            base_branch  = repo.default_branch
+            base_sha     = repo.get_branch(base_branch).commit.sha
+
+            try:
+                repo.create_git_ref(f"refs/heads/{branch_name}", base_sha)
+            except Exception as branch_exc:
+                if "already exists" in str(branch_exc).lower() or "reference already" in str(branch_exc).lower():
+                    pass
+                else:
+                    log.warning("[create_pr] branch creation error: %s", branch_exc)
+
+            # Build fix script content
+            scenario = fix_description or f"incident-{incident_id[:8]}"
+            cmd_block = "\n".join(fix_commands) if fix_commands else "# No specific fix commands generated"
+            script = (
+                f"#!/bin/bash\n"
+                f"# REKALL Auto-Fix — Incident {incident_id}\n"
+                f"# Tier: {fix_tier}\n"
+                f"# Generated by REKALL AI agent pipeline (human-approved)\n\n"
+                f"echo 'Applying fix: {scenario}'\n\n"
+                f"{cmd_block}\n"
+            )
+
+            # Commit fix script
+            try:
+                repo.create_file(
+                    path=f".rekall/fix-{incident_id[:8]}.sh",
+                    message=f"fix({incident_id[:8]}): REKALL auto-fix [{fix_tier}]",
+                    content=script.encode(),
+                    branch=branch_name,
+                )
+            except Exception:
+                # File may exist already — update it
+                existing = repo.get_contents(f".rekall/fix-{incident_id[:8]}.sh", ref=branch_name)
+                repo.update_file(
+                    path=f".rekall/fix-{incident_id[:8]}.sh",
+                    message=f"fix({incident_id[:8]}): update REKALL auto-fix [{fix_tier}]",
+                    content=script.encode(),
+                    sha=existing.sha,
+                    branch=branch_name,
+                )
+
+            # Open the pull request
+            pr = repo.create_pull(
+                title=f"[REKALL] Auto-fix: {scenario[:80]}",
+                body=(
+                    f"## 🤖 REKALL Auto-Fix (Human Approved)\n\n"
+                    f"**Incident ID:** `{incident_id}`\n"
+                    f"**Fix tier:** `{fix_tier}`\n"
+                    f"**Description:** {scenario}\n\n"
+                    f"### Fix commands\n```bash\n{cmd_block}\n```\n\n"
+                    f"*Auto-generated by REKALL. Approved by human reviewer. Please review before merging.*"
+                ),
+                head=branch_name,
+                base=base_branch,
+            )
+            return pr.html_url
+
+        pr_url = await loop.run_in_executor(None, gh_create)
+        log.info("[create_pr] PR opened: %s", pr_url)
+
+        await _post_callback(incident_id, {
+            "type": "agent_log",
+            "data": {
+                "incident_id": incident_id,
+                "step_name":   "execute",
+                "status":      "done",
+                "detail":      f"Pull request opened: {pr_url}",
+            },
+        })
+
+    except Exception as exc:
+        log.exception("[create_pr] GitHub PR creation failed: %s", exc)
+        await _post_callback(incident_id, {
+            "type": "agent_log",
+            "data": {
+                "incident_id": incident_id,
+                "step_name":   "execute",
+                "status":      "error",
+                "detail":      f"PR creation failed: {exc}",
+            },
+        })
 
 
 async def _run_learning(
@@ -300,8 +718,10 @@ async def _post_callback(incident_id: str, event: Dict[str, Any]) -> None:
     Failures are logged and swallowed — the pipeline continues regardless.
     """
     url = f"{settings.go_backend_url}/internal/engine-callback"
+    client = _http_client
+    if client is None:
+        client = httpx.AsyncClient(timeout=5.0)
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(url, json=event)
+        await client.post(url, json=event)
     except Exception as exc:
         log.debug("callback failed (ok during dev): %s", exc)

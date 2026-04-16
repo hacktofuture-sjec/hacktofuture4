@@ -36,6 +36,18 @@ type statusData struct {
 	Status     string `json:"status"` // processing | awaiting_approval | resolved | failed
 }
 
+type fixProposalData struct {
+	ID             string   `json:"id"`
+	IncidentID     string   `json:"incident_id"`
+	Tier           string   `json:"tier"`
+	VaultEntryID   *string  `json:"vault_entry_id"`
+	FixDescription string   `json:"fix_description"`
+	FixCommands    []string `json:"fix_commands"`
+	FixDiff        *string  `json:"fix_diff"`
+	Confidence     float64  `json:"confidence"`
+	Reasoning      string   `json:"reasoning"`
+}
+
 // Handle processes a single event from the Python engine service.
 func (h *CallbackHandler) Handle(c *gin.Context) {
 	var ev callbackEvent
@@ -88,6 +100,27 @@ func (h *CallbackHandler) Handle(c *gin.Context) {
 		if status == models.StatusResolved || status == models.StatusFailed {
 			h.broker.PublishDone(d.IncidentID)
 		}
+
+	case "fix_proposal":
+		// The engine posts this when the pipeline pauses for human review
+		// so the Approve handler can retrieve fix details from the store.
+		var d fixProposalData
+		if err := json.Unmarshal(ev.Data, &d); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "bad fix_proposal payload"})
+			return
+		}
+		fix := &models.FixProposal{
+			ID:             d.ID,
+			IncidentID:     d.IncidentID,
+			Tier:           models.FixTier(d.Tier),
+			FixDescription: d.FixDescription,
+			FixCommands:    d.FixCommands,
+			Confidence:     d.Confidence,
+			Reasoning:      d.Reasoning,
+			VaultEntryID:   d.VaultEntryID,
+			FixDiff:        d.FixDiff,
+		}
+		_ = store.UpsertFixProposal(ctx, fix)
 	}
 
 	c.Status(http.StatusOK)

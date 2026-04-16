@@ -53,6 +53,14 @@ try:
         notion_token:           str = ""
         notion_database_id:     str = ""
 
+        # ── GitHub Live PR (production only) ─────────────────────────────
+        # When github_live_pr=True the orchestrator execute step uses PyGithub
+        # to branch, commit fix_commands, and call repo.create_pull().
+        # Keep False in demo mode — the pipeline emits trace events only.
+        github_token:    str  = ""     # GITHUB_TOKEN env var (fine-grained PAT)
+        github_repo:     str  = ""     # e.g. "owner/repo" (GITHUB_REPO)
+        github_live_pr:  bool = False  # set True to enable real PR creation
+
         class Config:
             env_file = ".env"
             env_file_encoding = "utf-8"
@@ -85,6 +93,9 @@ except ImportError:
         slack_webhook_url          = os.getenv("SLACK_WEBHOOK_URL", "")
         notion_token               = os.getenv("NOTION_TOKEN", "")
         notion_database_id         = os.getenv("NOTION_DATABASE_ID", "")
+        github_token               = os.getenv("GITHUB_TOKEN", "")
+        github_repo                = os.getenv("GITHUB_REPO", "")
+        github_live_pr             = os.getenv("GITHUB_LIVE_PR", "false").lower() == "true"
 
     engine_config = _FallbackConfig()
 

@@ -31,7 +31,11 @@ export const api = {
   rejectIncident: (id: string, reviewed_by = "human", notes?: string) =>
     post(`/incidents/${id}/reject`, { reviewed_by, notes }),
 
-  // Simulate
+  // Trigger real GitHub CI fetch + fix pipeline
+  fetchLive: (repo?: string) =>
+    post<{ incident_id: string }>("/webhook/fetch-live", repo ? { repo } : {}),
+
+  // Inject a pre-built scenario (for local testing only)
   simulate: (scenario: string) =>
     post<{ incident_id: string }>("/webhook/simulate", { scenario }),
 

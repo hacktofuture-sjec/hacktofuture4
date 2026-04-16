@@ -68,7 +68,7 @@ async def log_incident(
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(url, headers=headers, json=payload, timeout=10.0)
-            if resp.status_code != 200:
+            if not resp.is_success:
                 log.warning("[notion] failed to log row: %s %s", resp.status_code, resp.text)
                 return False
             return True

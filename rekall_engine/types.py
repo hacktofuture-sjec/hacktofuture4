@@ -15,7 +15,7 @@ Two sets of types live here:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -31,7 +31,7 @@ class FailureEvent:
     source: Literal["github_actions", "gitlab", "jenkins", "simulator"]
     failure_type: Literal["test", "deploy", "infra", "security", "oom", "unknown"]
     raw_payload: Dict[str, Any]
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
@@ -99,7 +99,7 @@ class AgentLogEntry:
     step_name: str
     status: Literal["running", "done", "error"]
     detail: str
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -110,7 +110,7 @@ class AgentLogEntry:
 class FailureObject(BaseModel):
     """CI/CD failure event after validation and noise-stripping."""
     failure_id: str = Field(..., description="Unique ID — matches incident_id in Go backend")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     repo: str = ""
     workflow_name: str = ""
     stage: str = ""
@@ -157,7 +157,7 @@ class VaultCandidate(BaseModel):
     fix_summary: str
     fix_steps: List[str]
     matched_on: str
-    last_applied: datetime = Field(default_factory=datetime.utcnow)
+    last_applied: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     success_rate: float = 0.5
 
 

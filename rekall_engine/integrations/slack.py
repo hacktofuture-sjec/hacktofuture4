@@ -10,11 +10,22 @@ from __future__ import annotations
 import logging
 from typing import Any, List
 
+import logging
+from typing import Any, List, Optional
+
 import httpx
 
 from ..config import engine_config
 
 log = logging.getLogger("rekall.integrations.slack")
+
+_http_client: Optional[httpx.AsyncClient] = None
+
+def _get_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.AsyncClient(timeout=5.0)
+    return _http_client
 
 
 async def notify_governance(
@@ -108,7 +119,7 @@ async def notify_outcome(
             "type": "section",
             "fields": [
                 {"type": "mrkdwn", "text": f"*Result:*\n{outcome.capitalize()}"},
-                {"type": "mrkdwn", "text": f"*TIer:*\n{fix_tier}"},
+                {"type": "mrkdwn", "text": f"*Tier:*\n{fix_tier}"},
                 {"type": "mrkdwn", "text": f"*Confidence:*\n{confidence:.0%}"},
                 {"type": "mrkdwn", "text": f"*Reviewer:*\n{reviewed_by or 'Automatic'}"},
             ],
@@ -131,10 +142,10 @@ async def notify_outcome(
 
 async def _send(payload: dict) -> bool:
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(engine_config.slack_webhook_url, json=payload, timeout=5.0)
-            resp.raise_for_status()
-            return True
+        client = _get_client()
+        resp = await client.post(engine_config.slack_webhook_url, json=payload)
+        resp.raise_for_status()
+        return True
     except Exception as exc:
         log.warning("[slack] failed to send notification: %s", exc)
         return False

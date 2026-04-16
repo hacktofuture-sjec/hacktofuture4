@@ -25,6 +25,7 @@ import logging
 import re
 import json
 import collections
+import concurrent.futures
 import traceback
 from contextlib import redirect_stdout, redirect_stderr
 from typing import Any, Callable, Dict, List, Optional
@@ -178,7 +179,16 @@ class REPLEnvironment:
 
         try:
             with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-                exec(code, self._namespace)
+                # Run execution with thread-based timeout (5.0s max)
+                def _do_exec():
+                    exec(code, self._namespace)
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(_do_exec)
+                    try:
+                        future.result(timeout=5.0)
+                    except concurrent.futures.TimeoutError:
+                        raise TimeoutError("Execution exceeded 5.0 seconds budget")
         except _FinalSignal as sig:
             self._done = True
             self._result = sig.result

@@ -3,19 +3,19 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Loader2, Play, AlertCircle, RefreshCw,
-  Activity, CheckCircle2, Database, TrendingUp,
+  Loader2, Play, AlertCircle, RefreshCw, ChevronDown, ChevronRight,
+  Activity, CheckCircle2, TrendingUp,
   Server, Cpu, TestTube, Shield, Container, Radio,
-  Zap,
+  Zap, GitBranch, Github,
 } from "lucide-react";
 import { useIncidents } from "@/lib/hooks/use-incidents";
 import { IncidentCard } from "@/components/incident-card";
 import { SkeletonCard } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
+// Local scenarios — kept for quick offline testing
 const SCENARIOS = [
   { id: "postgres_refused",   label: "Postgres Refused",   type: "infra",    icon: Server,    color: "text-amber-500" },
   { id: "oom_kill",           label: "OOM Kill",           type: "oom",      icon: Cpu,       color: "text-red-500"   },
@@ -26,19 +26,37 @@ const SCENARIOS = [
 
 export default function DashboardPage() {
   const { incidents, loading, error, refetch } = useIncidents(4000);
-  const [simulating, setSimulating] = useState<string | null>(null);
+  const [running,    setRunning]    = useState<string | null>(null); // "live" | scenario id
+  const [githubRepo, setGithubRepo] = useState("abjt01/sample-ci-sad");
+  const [runError,   setRunError]   = useState<string | null>(null);
+  const [showLocal,  setShowLocal]  = useState(false);
   const router = useRouter();
 
+  async function fetchLive() {
+    setRunning("live");
+    setRunError(null);
+    try {
+      const result = await api.fetchLive(githubRepo || undefined);
+      refetch();
+      router.push(`/incidents/${result.incident_id}`);
+    } catch (e: unknown) {
+      setRunError(e instanceof Error ? e.message : "Request failed");
+    } finally {
+      setRunning(null);
+    }
+  }
+
   async function simulate(scenario: string) {
-    setSimulating(scenario);
+    setRunning(scenario);
+    setRunError(null);
     try {
       const result = await api.simulate(scenario);
       refetch();
       router.push(`/incidents/${result.incident_id}`);
-    } catch {
-      // silently fail
+    } catch (e: unknown) {
+      setRunError(e instanceof Error ? e.message : "Request failed");
     } finally {
-      setSimulating(null);
+      setRunning(null);
     }
   }
 
@@ -57,7 +75,7 @@ export default function DashboardPage() {
             </div>
             <div>
               <h1 className="text-base font-black text-slate-900 tracking-tight uppercase">Dashboard</h1>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Real-time CI/CD Repair</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Autonomous CI/CD Repair</p>
             </div>
           </div>
           <button
@@ -104,55 +122,118 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* ── Simulator ──────────────────────────────────────── */}
+        {/* ── CI Monitor ─────────────────────────────────────── */}
         <div className="rounded-xl border border-border bg-card overflow-hidden">
           <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border bg-background-subtle/50">
-            <Radio className="w-4 h-4 text-purple-500" />
+            <Github className="w-4 h-4 text-slate-700" />
             <div>
-              <p className="text-sm font-semibold text-foreground">Failure Simulator</p>
-              <p className="text-xs text-muted-foreground">Inject a real-looking CI/CD incident to demo the pipeline</p>
+              <p className="text-sm font-semibold text-foreground">CI Monitor</p>
+              <p className="text-xs text-muted-foreground">Analyze the latest GitHub Actions failure and open an AI-generated fix PR</p>
             </div>
-            <span className="ml-auto chip bg-purple-500/10 text-purple-500 border border-purple-500/20">
-              DEMO MODE
-            </span>
           </div>
 
-          <div className="p-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2">
-              {SCENARIOS.map((s) => {
-                const busy = simulating === s.id;
-                const Icon = s.icon;
-                return (
-                  <button
-                    key={s.id}
-                    onClick={() => simulate(s.id)}
-                    disabled={!!simulating}
-                    className={cn(
-                      "group relative flex flex-col items-start gap-2.5 p-4 rounded-xl",
-                      "border border-slate-100 bg-white hover:bg-slate-50",
-                      "transition-all hover:border-orange-200 hover:shadow-lg hover:shadow-orange-500/5",
-                      "disabled:opacity-50 disabled:cursor-not-allowed",
-                      "text-left"
-                    )}
-                  >
-                    <div className={cn("flex items-center justify-center w-9 h-9 rounded-xl bg-slate-50 border border-slate-100", busy && "animate-pulse")}>
-                      {busy
-                        ? <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
-                        : <Icon className={cn("w-4 h-4", s.color)} />
-                      }
+          <div className="p-5 space-y-4">
+
+            {/* ── Repo Input + Fetch Button ── */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex items-center gap-2 flex-1 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus-within:ring-2 focus-within:ring-orange-500/20 focus-within:border-orange-300 transition-all">
+                <GitBranch className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                <input
+                  type="text"
+                  value={githubRepo}
+                  onChange={(e) => setGithubRepo(e.target.value)}
+                  placeholder="owner/repo — e.g. abjt01/sample-ci-sad"
+                  className="flex-1 text-sm font-mono bg-transparent text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                />
+              </div>
+              <button
+                id="fetch-live-btn"
+                onClick={fetchLive}
+                disabled={!!running}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all",
+                  "bg-orange-600 text-white hover:bg-orange-700 shadow-sm shadow-orange-600/20",
+                  "disabled:opacity-60 disabled:cursor-not-allowed",
+                  "min-w-max"
+                )}
+              >
+                {running === "live"
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Fetching…</>
+                  : <><Radio className="w-4 h-4" /> Fetch &amp; Fix Latest Failure</>
+                }
+              </button>
+            </div>
+
+            {/* Running/error feedback */}
+            {runError && (
+              <div className="flex items-center gap-2.5 p-3 rounded-lg bg-red-50 border border-red-100 text-xs text-red-600 font-medium">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                {runError}
+              </div>
+            )}
+            {running === "live" && (
+              <div className="flex items-center gap-2.5 p-3 rounded-lg bg-orange-50 border border-orange-100 text-xs text-orange-700 font-medium">
+                <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+                Fetching latest failed run from <span className="font-mono ml-1">{githubRepo}</span> — Groq AI is analysing the logs…
+              </div>
+            )}
+
+            {/* ── Local Scenarios (collapsible) ── */}
+            <div>
+              <button
+                onClick={() => setShowLocal(prev => !prev)}
+                className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest transition-colors"
+              >
+                {showLocal ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                Local test scenarios
+              </button>
+
+              {showLocal && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-[10px] text-slate-400">Injects a pre-built payload for offline testing when GitHub is not configured.</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2">
+                    {SCENARIOS.map((s) => {
+                      const busy = running === s.id;
+                      const Icon = s.icon;
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() => simulate(s.id)}
+                          disabled={!!running}
+                          className={cn(
+                            "group relative flex flex-col items-start gap-2.5 p-4 rounded-xl",
+                            "border border-slate-100 bg-white hover:bg-slate-50",
+                            "transition-all hover:border-orange-200 hover:shadow-md hover:shadow-orange-500/5",
+                            "disabled:opacity-50 disabled:cursor-not-allowed text-left"
+                          )}
+                        >
+                          <div className={cn("flex items-center justify-center w-9 h-9 rounded-xl bg-slate-50 border border-slate-100", busy && "animate-pulse")}>
+                            {busy
+                              ? <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
+                              : <Icon className={cn("w-4 h-4", s.color)} />
+                            }
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-slate-900 leading-snug">{s.label}</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{s.type}</p>
+                          </div>
+                          {!running && (
+                            <div className="absolute top-4 right-4 w-6 h-6 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100 opacity-0 group-hover:opacity-100 transition-all">
+                              <Play className="w-2.5 h-2.5 text-orange-500 fill-orange-500" />
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {running && running !== "live" && (
+                    <div className="flex items-center gap-2.5 p-3 rounded-lg bg-orange-50 border border-orange-100 text-xs text-orange-700 font-medium">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+                      Running pipeline for local scenario…
                     </div>
-                    <div>
-                      <p className="text-xs font-bold text-slate-900 leading-snug">{s.label}</p>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{s.type}</p>
-                    </div>
-                    {!simulating && (
-                      <div className="absolute top-4 right-4 w-6 h-6 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100 opacity-0 group-hover:opacity-100 transition-all">
-                        <Play className="w-2.5 h-2.5 text-orange-500 fill-orange-500" />
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -161,7 +242,7 @@ export default function DashboardPage() {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-foreground">
-              Recent Incidents
+              Incidents
               {incidents.length > 0 && (
                 <span className="ml-2 text-xs font-normal text-muted-foreground">
                   {incidents.length} total
@@ -191,7 +272,7 @@ export default function DashboardPage() {
               </div>
               <p className="text-sm font-medium text-foreground">No incidents yet</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Use the simulator above to inject a failure scenario
+                Enter a GitHub repo above and click <strong>Fetch &amp; Fix Latest Failure</strong>
               </p>
             </div>
           ) : (
