@@ -2,6 +2,8 @@ import numpy as np
 import joblib
 
 model = joblib.load('models/survivor_model.pkl')
+if not hasattr(model, 'multi_class'):
+    model.multi_class = 'auto'
 scaler = joblib.load('models/survivor_scaler.pkl')
 
 def predict_survivor(pir_count, time_since_event_mins, magnitude):

@@ -1,0 +1,31 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environments
+venv/
+env/
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Node
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Scratch & Logs
+dashboard/scratch/
+scratch/
+*.log
+
+# Models (optional, but often large)
+# models/*.keras (keeping if user wants them in git)
+# models/*.keras.bak
+*.bak
