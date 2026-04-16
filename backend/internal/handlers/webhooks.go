@@ -13,6 +13,40 @@ import (
 	"github.com/rekall/backend/internal/store"
 )
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DEMO vs PRODUCTION — CI Failure Fetching
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// CURRENT (Demo / Hackathon mode):
+//   Instead of waiting for a slow GitHub Actions run to fail and rate-limiting
+//   the GitHub API to fetch massive log files, REKALL uses the Webhook Simulator
+//   below. When you hit POST /webhooks/simulate with a scenario name (e.g.
+//   "postgres_refused" or "secret_leak"), this handler injects a pre-constructed
+//   payload that already contains the log_excerpt and git_diff. The LangGraph
+//   engine ingests the exact shape of a CI failure instantly — zero API calls,
+//   zero rate-limit risk, perfectly reproducible demo loops.
+//
+// PRODUCTION (how a fully deployed version would work):
+//   The MonitorAgent would catch a real GitHub webhook (event: workflow_run,
+//   action: completed, conclusion: failure). HandleGitHub() already receives
+//   and validates this payload. The missing step is log extraction:
+//
+//     runID := payload.WorkflowRun.ID
+//     url   := fmt.Sprintf(
+//         "https://api.github.com/repos/%s/actions/runs/%d/logs",
+//         payload.Repository.FullName, runID,
+//     )
+//     req, _ := http.NewRequest("GET", url, nil)
+//     req.Header.Set("Authorization", "Bearer "+os.Getenv("GITHUB_TOKEN"))
+//     req.Header.Set("Accept", "application/vnd.github+json")
+//     // Response is a zip archive — unzip and concatenate step logs.
+//     // Inject the extracted log_excerpt into the raw map before runPipeline().
+//
+//   This log bytes download is then merged into the raw payload map so the
+//   Python engine's DiagnosticAgent receives populated log_excerpt/git_diff
+//   fields, matching the shape the simulator already provides.
+// ─────────────────────────────────────────────────────────────────────────────
+
 // webhookSimulatorScenarios defines pre-built failure payloads for demo use.
 var webhookSimulatorScenarios = map[string]map[string]any{
 	"postgres_refused": {
@@ -118,7 +152,8 @@ func (h *WebhookHandler) HandleGitLab(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"accepted": true, "incident_id": incident.ID})
 }
 
-// HandleSimulate injects a pre-built failure scenario for demo purposes.
+// HandleSimulate injects a pre-built failure scenario.
+// Kept for local testing — prefer HandleFetchLive for real CI monitoring.
 func (h *WebhookHandler) HandleSimulate(c *gin.Context) {
 	var req models.SimulateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -148,6 +183,32 @@ func (h *WebhookHandler) HandleSimulate(c *gin.Context) {
 	})
 }
 
+// HandleFetchLive fetches the latest failed GitHub Actions run in the configured
+// repo and runs the real AI pipeline (Monitor → Diagnostic → Fix → PR).
+func (h *WebhookHandler) HandleFetchLive(c *gin.Context) {
+	var body struct {
+		Repo string `json:"repo"` // optional override, defaults to GITHUB_REPO env
+	}
+	_ = c.ShouldBindJSON(&body)
+
+	raw := map[string]any{
+		"source":      "github_actions",
+		"failure_type": "unknown",
+		"description": "Fetching latest CI failure from GitHub",
+		"live":        true,
+		"repo":        body.Repo,
+	}
+
+	incident, err := store.CreateIncident(c.Request.Context(), "github_actions", "unknown", raw)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "create incident: " + err.Error()})
+		return
+	}
+
+	go h.runFetchLivePipeline(incident.ID, body.Repo)
+	c.JSON(http.StatusOK, gin.H{"accepted": true, "incident_id": incident.ID})
+}
+
 // runPipeline is called in a goroutine to drive the agent pipeline.
 // Tries the Python engine first; falls back to emulation if unavailable.
 func (h *WebhookHandler) runPipeline(incidentID string, payload map[string]any) {
@@ -167,6 +228,27 @@ func (h *WebhookHandler) runPipeline(incidentID string, payload map[string]any) 
 	}
 
 	if !engineOK {
+		h.emulatedPipeline(ctx, incidentID)
+	}
+}
+
+// runFetchLivePipeline delegates to the engine's /pipeline/run-from-github
+// endpoint so it can fetch real CI failure logs from GitHub and run the full
+// AI agent pipeline. Falls back to emulation only if engine is unreachable.
+func (h *WebhookHandler) runFetchLivePipeline(incidentID string, repo string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	if !h.engine.Healthy(ctx) {
+		h.emulatedPipeline(ctx, incidentID)
+		return
+	}
+
+	_, err := h.engine.RunFromGitHub(ctx, engine.FetchFromGitHubRequest{
+		IncidentID: incidentID,
+		Repo:       repo,
+	})
+	if err != nil {
 		h.emulatedPipeline(ctx, incidentID)
 	}
 }

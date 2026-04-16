@@ -51,6 +51,7 @@ func GetIncident(c *gin.Context) {
 	bundle, _ := store.GetDiagnosticBundle(ctx, id)
 	fix, _ := store.GetLatestFixProposal(ctx, id)
 	gov, _ := store.GetLatestGovernanceDecision(ctx, id)
+	sandbox, _ := store.GetSandboxResult(ctx, id)
 	logs, _ := store.GetAgentLogs(ctx, id)
 
 	c.JSON(http.StatusOK, models.IncidentDetail{
@@ -58,6 +59,7 @@ func GetIncident(c *gin.Context) {
 		DiagnosticBundle:   bundle,
 		FixProposal:        fix,
 		GovernanceDecision: gov,
+		SandboxResult:      sandbox,
 		AgentLogs:          logs,
 	})
 }

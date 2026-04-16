@@ -36,6 +36,31 @@ type statusData struct {
 	Status     string `json:"status"` // processing | awaiting_approval | resolved | failed
 }
 
+type fixProposalData struct {
+	ID             string   `json:"id"`
+	IncidentID     string   `json:"incident_id"`
+	Tier           string   `json:"tier"`
+	VaultEntryID   *string  `json:"vault_entry_id"`
+	FixDescription string   `json:"fix_description"`
+	FixCommands    []string `json:"fix_commands"`
+	FixDiff        *string  `json:"fix_diff"`
+	Confidence     float64  `json:"confidence"`
+	Reasoning      string   `json:"reasoning"`
+}
+
+type sandboxResultData struct {
+	IncidentID      string  `json:"incident_id"`
+	Passed          bool    `json:"passed"`
+	TestCount       int     `json:"test_count"`
+	FailureCount    int     `json:"failure_count"`
+	TestLog         string  `json:"test_log"`
+	PREvidence      string  `json:"pr_evidence"`
+	Namespace       string  `json:"namespace"`
+	DurationSeconds float64 `json:"duration_seconds"`
+	ValKeyDeployed  bool    `json:"valkey_deployed"`
+	DemoMode        bool    `json:"demo_mode"`
+}
+
 // Handle processes a single event from the Python engine service.
 func (h *CallbackHandler) Handle(c *gin.Context) {
 	var ev callbackEvent
@@ -88,6 +113,52 @@ func (h *CallbackHandler) Handle(c *gin.Context) {
 		if status == models.StatusResolved || status == models.StatusFailed {
 			h.broker.PublishDone(d.IncidentID)
 		}
+
+	case "fix_proposal":
+		// The engine posts this when the pipeline pauses for human review
+		// so the Approve handler can retrieve fix details from the store.
+		var d fixProposalData
+		if err := json.Unmarshal(ev.Data, &d); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "bad fix_proposal payload"})
+			return
+		}
+		fix := &models.FixProposal{
+			ID:             d.ID,
+			IncidentID:     d.IncidentID,
+			Tier:           models.FixTier(d.Tier),
+			FixDescription: d.FixDescription,
+			FixCommands:    d.FixCommands,
+			Confidence:     d.Confidence,
+			Reasoning:      d.Reasoning,
+			VaultEntryID:   d.VaultEntryID,
+			FixDiff:        d.FixDiff,
+		}
+		_ = store.UpsertFixProposal(ctx, fix)
+
+	case "sandbox_result":
+		// Minikube sandbox validation result — store and publish to SSE.
+		var d sandboxResultData
+		if err := json.Unmarshal(ev.Data, &d); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "bad sandbox_result payload"})
+			return
+		}
+		r := &models.SandboxResult{
+			IncidentID:      d.IncidentID,
+			Passed:          d.Passed,
+			TestCount:       d.TestCount,
+			FailureCount:    d.FailureCount,
+			TestLog:         d.TestLog,
+			PREvidence:      d.PREvidence,
+			Namespace:       d.Namespace,
+			DurationSeconds: d.DurationSeconds,
+			ValKeyDeployed:  d.ValKeyDeployed,
+			DemoMode:        d.DemoMode,
+		}
+		_ = store.UpsertSandboxResult(ctx, r)
+		h.broker.Publish(d.IncidentID, sse.Event{
+			Type: "sandbox_result",
+			Data: r,
+		})
 	}
 
 	c.Status(http.StatusOK)
