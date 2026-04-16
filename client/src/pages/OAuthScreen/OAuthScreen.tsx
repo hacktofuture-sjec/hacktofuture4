@@ -102,11 +102,12 @@ export default function OAuthScreen() {
                   </div>
                   <div className="oauth-bot-step">
                     <span className="oauth-bot-step__badge">3</span>
-                    <p className="oauth-bot-step__id">AUTHORIZATION</p>
+                    <p className="oauth-bot-step__id">COMMAND_UPLINK</p>
                     <p className="oauth-bot-step__desc">
-                      Click the secure login button inside Telegram or execute:<br/>
-                      <strong>/login</strong>
+                      Execute the following command to link your account:<br/>
+                      <strong>/link &lt;github-username&gt;</strong>
                     </p>
+
                   </div>
                   <div className="oauth-bot-step">
                     <span className="oauth-bot-step__badge">4</span>

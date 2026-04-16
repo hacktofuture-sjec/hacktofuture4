@@ -15,13 +15,18 @@ export default function InitRepoScreen() {
   const [isFocused, setIsFocused] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [isSearchingServer, setIsSearchingServer] = useState(false);
+
   const filteredRepos = useMemo(() => {
     if (!repos?.length) return [];
-    if (!searchQuery) return repos.slice(0, 8);
-    return repos
-      .filter((r: UserRepo) => r.full_name.toLowerCase().includes(searchQuery.toLowerCase()))
-      .slice(0, 20);
+    if (!searchQuery) return repos.slice(0, 50); // Show more by default
+    
+    const results = repos
+      .filter((r: UserRepo) => r.full_name.toLowerCase().includes(searchQuery.toLowerCase()));
+    
+    return results.slice(0, 100); // Display up to 100 matches
   }, [repos, searchQuery]);
+
 
   const handleSelect = (repo: UserRepo) => {
     setSelectedRepo(repo);
