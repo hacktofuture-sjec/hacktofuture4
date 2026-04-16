@@ -10,6 +10,26 @@
     "trace_id": "string",
     "needs_approval": "boolean"
   },
+  "transcript": {
+    "endpoint": "GET /api/chat/transcript/{trace_id}",
+    "response": {
+      "trace_id": "string",
+      "steps": [
+        {
+          "step": "string",
+          "agent": "string",
+          "observation": "string",
+          "sources": [
+            {
+              "title": "string",
+              "path": "string"
+            }
+          ],
+          "timestamp": "string"
+        }
+      ]
+    }
+  },
   "stream": {
     "endpoint": "GET /api/chat/stream?trace_id=<id>",
     "event": "trace_step",

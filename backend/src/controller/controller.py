@@ -1,13 +1,92 @@
-from dataclasses import dataclass
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from uuid import uuid4
+
+from src.gates.permission_gate import PermissionGate
+from src.memory.three_tier_memory import ThreeTierMemory
+from src.swarms.execution_swarm import ExecutionSwarm
+from src.swarms.reasoning_swarm import ReasoningSwarm
+from src.swarms.retrieval_swarm import RetrievalSwarm
+
+
+@dataclass
+class TraceStep:
+    step: str
+    agent: str
+    observation: str
+    sources: list[dict]
+    timestamp: str
 
 
 @dataclass
 class ControllerResult:
-    plan: str
+    answer: str
     trace_id: str
+    needs_approval: bool
+    suggested_action: str
+    trace: list[dict]
 
 
 class ControllerKernel:
-    def handle_query(self, query: str) -> ControllerResult:
-        plan = f"Plan generated for query: {query}"
-        return ControllerResult(plan=plan, trace_id="trace-dev-0001")
+    def __init__(self) -> None:
+        self.memory = ThreeTierMemory()
+        self.permission_gate = PermissionGate()
+        self.retrieval_swarm = RetrievalSwarm(memory=self.memory)
+        self.reasoning_swarm = ReasoningSwarm()
+        self.execution_swarm = ExecutionSwarm(permission_gate=self.permission_gate)
+
+    def _trace_step(self, step: str, agent: str, observation: str, sources: list[dict] | None = None) -> TraceStep:
+        return TraceStep(
+            step=step,
+            agent=agent,
+            observation=observation,
+            sources=sources or [],
+            timestamp=datetime.now(UTC).isoformat(),
+        )
+
+    def handle_query(self, query: str, session_id: str) -> ControllerResult:
+        trace_id = f"trace-{uuid4().hex[:8]}"
+        trace: list[TraceStep] = []
+
+        retrieval = self.retrieval_swarm.run(query=query)
+        trace.append(
+            self._trace_step(
+                step="retrieval",
+                agent="retrieval_swarm",
+                observation=f"Retrieved {retrieval['source_count']} sources for session {session_id}.",
+                sources=[{"title": source["title"], "path": source["path"]} for source in retrieval["sources"]],
+            )
+        )
+
+        reasoning = self.reasoning_swarm.run({"query": query, "sources": retrieval["sources"]})
+        trace.append(
+            self._trace_step(
+                step="reasoning",
+                agent="reasoning_swarm",
+                observation=reasoning["reasoning"],
+                sources=[{"title": source["title"], "path": source["path"]} for source in reasoning["sources"]],
+            )
+        )
+
+        execution = self.execution_swarm.run(trace_id=trace_id, action=reasoning["suggested_action"])
+        trace.append(
+            self._trace_step(
+                step="execution",
+                agent="execution_swarm",
+                observation=f"{execution['status']}: {execution['reason']}",
+                sources=[],
+            )
+        )
+
+        trace_payload = [asdict(item) for item in trace]
+        self.memory.persist_transcript(trace_id=trace_id, steps=trace_payload)
+
+        return ControllerResult(
+            answer=reasoning["answer"],
+            trace_id=trace_id,
+            needs_approval=execution["requires_human_approval"],
+            suggested_action=reasoning["suggested_action"],
+            trace=trace_payload,
+        )
