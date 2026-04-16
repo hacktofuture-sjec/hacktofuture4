@@ -44,9 +44,14 @@ COPY --from=builder /install /usr/local
 # Copy application code
 COPY . /app/
 
+# Copy and make entrypoint executable
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser && \
-    chown -R appuser:appuser /app
+    chown -R appuser:appuser /app && \
+    chown appuser:appuser /entrypoint.sh
 
 USER appuser
 
@@ -56,5 +61,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Default command — overridden by docker-compose per service
-CMD ["gunicorn", "backend.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "4"]
+# entrypoint.sh: waits for postgres, runs migrations, then exec CMD
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["gunicorn", "backend.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "4", "--timeout", "120"]

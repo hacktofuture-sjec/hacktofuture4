@@ -1,0 +1,1 @@
+"""Linear MCP server package."""

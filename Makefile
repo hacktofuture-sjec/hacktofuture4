@@ -1,4 +1,4 @@
-.PHONY: help setup install backend agent jira hubspot frontend docker-up docker-down lint format fl test clean
+.PHONY: help setup install backend agent jira hubspot frontend docker-up docker-down lint format fl test clean migrate makemigrations shell superuser celery-worker celery-beat test-backend test-agent test-cov
 
 # ── Tooling paths ─────────────────────────────────────────────────────────────
 UV            := $(shell command -v uv 2> /dev/null || echo $(CURDIR)/.venv/bin/uv)
@@ -56,14 +56,33 @@ install:
 backend:
 	cd backend && $(BACKEND_PY) manage.py runserver 8000
 
-backend-migrate:
-	cd backend && $(BACKEND_PY) manage.py migrate
+migrate:
+	@echo "Running migrations..."
+	cd backend && $(BACKEND_PY) manage.py migrate --no-input
 
-backend-makemigrations:
+makemigrations:
+	@echo "Creating migrations..."
 	cd backend && $(BACKEND_PY) manage.py makemigrations
 
-backend-shell:
+shell:
 	cd backend && $(BACKEND_PY) manage.py shell
+
+superuser:
+	@echo "Creating Django superuser..."
+	cd backend && $(BACKEND_PY) manage.py createsuperuser
+
+celery-worker:
+	@echo "Starting Celery worker (queues: ingestion, processing, analytics)..."
+	cd backend && $(PYTHON) -m celery -A backend worker \
+		-Q ingestion,processing,analytics \
+		--concurrency=4 \
+		--loglevel=info
+
+celery-beat:
+	@echo "Starting Celery beat scheduler..."
+	cd backend && $(PYTHON) -m celery -A backend beat \
+		--scheduler django_celery_beat.schedulers:DatabaseScheduler \
+		--loglevel=info
 
 # Agent service
 agent:
