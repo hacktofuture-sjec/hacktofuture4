@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'Mytask.dart';
@@ -176,7 +177,11 @@ class _DashboardPageState extends State<DashboardPage> {
       AppState.clockInTime = DateTime.now();
       AppState.isClockedIn = true;
     }
-    
+
+    if (InteractionTracker.sessionStart == null) {
+      InteractionTracker.startSession();
+    }
+
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -189,14 +194,6 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   void _refresh() => setState(() {});
-
-  @override
-  void initState() {
-    super.initState();
-    if (InteractionTracker.sessionStart == null) {
-      InteractionTracker.startSession();
-    }
-  }
 
   Future<void> _sendInteractionData() async {
     final interactionData = InteractionTracker.getInteractionData();
