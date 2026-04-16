@@ -17,7 +17,7 @@ import json
 import os
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -83,13 +83,26 @@ DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 SYSTEM_PROMPT = """You are a senior engineer diagnosing a failed CI run after a code push.
 Respond with ONLY valid JSON, no markdown, with keys:
-root_cause (string): one or two sentences — what failed and why.
-fix (string): concrete steps the developer should take (commands, file edits, or checks).
-confidence (number 0-1), risk ("LOW" or "HIGH"),
-fixable (boolean): true only if a safe automated patch is realistic (e.g. missing dep in requirements.txt).
-file (string): primary file to change, or empty string.
 
-Be conservative: fixable true mainly for clear dependency / import / manifest issues."""
+  root_cause (string): one or two sentences — what failed and why.
+  fix (string): concrete steps the developer should take (commands, file edits, or checks).
+  confidence (number 0-1)
+  risk ("LOW" or "HIGH")
+  fixable (boolean): true if a small, surgical patch can be produced
+    automatically and safely. This includes (a) missing dependency in
+    requirements.txt / package.json, (b) clear single-line logic bugs that
+    a failing test points at (e.g. wrong operator, off-by-one, wrong
+    constant), (c) obvious typos, (d) import fixes. Set false only when
+    the failure needs broader design changes, data migrations, or info the
+    log does not contain.
+  file (string): the PRIMARY SOURCE file to patch. When a pytest/jest
+    failure exercises an application module (e.g. test_app.py imports
+    and exercises app.py), return the APPLICATION SOURCE file (app.py),
+    NOT the test file. Return "" only if you cannot name the file with
+    confidence.
+
+Be decisive but careful. Prefer fixable=true when you can name the exact
+file and the exact one-line or few-line change."""
 
 
 def _rule_based_analysis(log_text: str) -> dict[str, Any]:
@@ -266,6 +279,122 @@ def analyze_log(
                 flush=True,
             )
             return _normalize_analysis(_rule_based_analysis(log_text)), "rules"
+
+
+def generate_fix_content(
+    current_content: str,
+    file_path: str,
+    analysis: dict[str, Any],
+    repository: str,
+    log_excerpt: str | None = None,
+) -> str | None:
+    """Ask Groq to produce the full patched content for `file_path`.
+
+    Returns the new file content, or None if the call fails or the
+    response is unusable. The caller is expected to validate (e.g. fall
+    back to a rule-based patch for requirements.txt).
+    """
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not api_key:
+        return None
+
+    model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    system_prompt = (
+        "You are a senior engineer producing a minimal, surgical code fix. "
+        "You will be given (1) the current full content of a source file, "
+        "(2) a short failure analysis describing the root cause and the fix, "
+        "and (3) an excerpt of the failing CI log. "
+        "Return ONLY the ENTIRE new file content with the fix applied — no "
+        "prose, no markdown fences, no explanations. Preserve every unrelated "
+        "line, comment, import, blank line, and trailing newline exactly as in "
+        "the input. Change only what the fix requires. Never delete code you "
+        "do not understand."
+    )
+    user_payload = (
+        f"Repository: {repository}\n"
+        f"File: {file_path}\n\n"
+        "=== CURRENT FILE CONTENT ===\n"
+        f"{current_content}\n"
+        "=== END FILE CONTENT ===\n\n"
+        f"Failure root cause: {analysis.get('root_cause', '')}\n"
+        f"Suggested fix: {analysis.get('fix', '')}\n"
+        f"Likely file: {analysis.get('file', '')}\n"
+    )
+    if log_excerpt:
+        user_payload += f"\n=== CI LOG EXCERPT ===\n{log_excerpt[:1500]}\n=== END LOG ===\n"
+    user_payload += "\nReturn the ENTIRE new file content (all lines) with the fix applied."
+
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_payload},
+        ],
+        "temperature": 0.0,
+    }
+
+    lf = _get_langfuse()
+    trace_id: str | None = None
+    if lf is not None:
+        try:
+            trace_id = lf.create_trace_id()
+        except Exception:
+            lf = None
+
+    gen = None
+    if lf is not None and trace_id is not None:
+        try:
+            gen = lf.start_observation(
+                trace_context=TraceContext(trace_id=trace_id),
+                as_type="generation",
+                name="groq_fix_synthesis",
+                model=model,
+                model_parameters={"temperature": 0.0},
+                input=body["messages"],
+                metadata={
+                    "repository": repository[:200],
+                    "file": file_path[:200],
+                    "provider": "groq",
+                },
+            )
+        except Exception as e:
+            print(f"[PipelineMedic] Langfuse fix-synthesis start failed: {e}", flush=True)
+
+    try:
+        r = requests.post(GROQ_URL, headers=headers, json=body, timeout=90)
+        r.raise_for_status()
+        data = r.json()
+        content = data["choices"][0]["message"]["content"]
+        new_content = _strip_code_fences(content)
+        if gen is not None:
+            try:
+                usage_raw = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+                gen.update(
+                    output=new_content[:4000],
+                    usage_details=_groq_usage_to_usage_details(usage_raw),
+                )
+            except Exception as e:
+                print(f"[PipelineMedic] Langfuse fix-synthesis update failed: {e}", flush=True)
+        return new_content
+    except Exception as e:
+        print(f"[PipelineMedic] Groq fix synthesis failed: {e}", flush=True)
+        if gen is not None:
+            try:
+                gen.update(level="ERROR", status_message=str(e)[:500])
+            except Exception:
+                pass
+        return None
+    finally:
+        if gen is not None:
+            try:
+                gen.end()
+            except Exception as e:
+                print(f"[PipelineMedic] Langfuse fix-synthesis end failed: {e}", flush=True)
 
 
 # --- Decision -------------------------------------------------------------------
@@ -535,6 +664,25 @@ def append_incident(
 # Ephemeral: in-memory + /tmp JSON. Sufficient for hackathon demos on Vercel
 # (warm instance reuse). For production use Vercel KV / Upstash Redis.
 
+def _autofix_ttl_minutes() -> int:
+    try:
+        n = int(os.getenv("PIPELINEMEDIC_AUTOFIX_TTL_MIN", "10"))
+    except ValueError:
+        n = 10
+    return max(1, min(n, 120))
+
+
+def _is_expired(incident: dict[str, Any]) -> bool:
+    exp = incident.get("expires_at")
+    if not exp:
+        return False
+    try:
+        deadline = datetime.fromisoformat(exp)
+    except (TypeError, ValueError):
+        return False
+    return datetime.now(timezone.utc) >= deadline
+
+
 _INCIDENT_FILE_PATHS = (
     Path("data") / "incidents.json",
     Path("/tmp") / "pipelinemedic_incidents.json",
@@ -597,6 +745,103 @@ def update_incident(token: str, **kwargs: Any) -> None:
     if token in _INCIDENTS:
         _INCIDENTS[token].update(kwargs)
         _save_incidents()
+
+
+# --- Message-embedded state (survives Vercel cold starts) ---------------------
+# We base64-encode a compact snapshot of the incident and append it to the
+# Telegram message. When a callback fires, Telegram hands us the full message
+# text; we decode the state from there so we don't depend on /tmp being warm.
+
+_STATE_MARKER = "pm-state:"
+_STATE_FENCE = "\n\n⸻\n"
+
+
+def _encode_state(state: dict[str, Any]) -> str:
+    raw = json.dumps(state, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii")
+
+
+def _decode_state(message_text: str) -> dict[str, Any] | None:
+    if not message_text:
+        return None
+    idx = message_text.rfind(_STATE_MARKER)
+    if idx < 0:
+        return None
+    tail = message_text[idx + len(_STATE_MARKER) :].strip()
+    token = tail.split()[0] if tail else ""
+    if not token:
+        return None
+    try:
+        raw = base64.urlsafe_b64decode(token.encode("ascii"))
+        parsed = json.loads(raw.decode("utf-8"))
+        return parsed if isinstance(parsed, dict) else None
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+
+
+def _build_state_snapshot(
+    *,
+    token: str,
+    incident: dict[str, Any],
+    github_override: dict[str, Any] | None = None,
+    status_override: str | None = None,
+) -> dict[str, Any]:
+    a = incident.get("analysis") or {}
+    gh = github_override if github_override is not None else incident.get("github")
+    snap: dict[str, Any] = {
+        "tok": token,
+        "repo": incident.get("repository"),
+        "repo_full": incident.get("repository_full_name"),
+        "an": {
+            "root_cause": (str(a.get("root_cause") or ""))[:300],
+            "fix": (str(a.get("fix") or ""))[:300],
+            "file": a.get("file") or "",
+            "confidence": a.get("confidence"),
+            "fixable": a.get("fixable"),
+        },
+        "log": (incident.get("log_excerpt") or "")[:400],
+        "exp": incident.get("expires_at"),
+        "st": status_override if status_override is not None else incident.get("status"),
+    }
+    if gh:
+        snap["gh"] = {
+            "pr": gh.get("pull_number"),
+            "url": gh.get("html_url"),
+            "br": gh.get("branch"),
+            "base": gh.get("base"),
+            "file": gh.get("file"),
+            "patch_source": gh.get("patch_source"),
+        }
+    return snap
+
+
+def _attach_state(text: str, state: dict[str, Any]) -> str:
+    return f"{text}{_STATE_FENCE}{_STATE_MARKER}{_encode_state(state)}"
+
+
+def _incident_from_snapshot(snap: dict[str, Any]) -> dict[str, Any]:
+    gh = snap.get("gh") or {}
+    return {
+        "repository": snap.get("repo"),
+        "repository_full_name": snap.get("repo_full"),
+        "log_excerpt": snap.get("log"),
+        "analysis": snap.get("an") or {},
+        "expires_at": snap.get("exp"),
+        "status": snap.get("st"),
+        "message_targets": [],
+        "github": {
+            "pull_number": gh.get("pr"),
+            "html_url": gh.get("url"),
+            "branch": gh.get("br"),
+            "base": gh.get("base"),
+            "file": gh.get("file"),
+            "patch_source": gh.get("patch_source"),
+            "ok": True,
+            "mode": "github",
+        }
+        if gh
+        else None,
+    }
 
 
 # --- Telegram interactive helpers ---------------------------------------------
@@ -681,12 +926,21 @@ def build_initial_interactive_message(
     source: str,
     decision: str,
     token: str,
+    expires_at: datetime | None = None,
+    ttl_minutes: int | None = None,
 ) -> str:
     src = "Groq LLM" if source == "groq" else "rule-based fallback"
     conf = analysis.get("confidence")
+    deadline_line = ""
+    if expires_at is not None and ttl_minutes is not None:
+        deadline_line = (
+            f"⏱ Decide within {ttl_minutes} min "
+            f"(expires {expires_at.strftime('%H:%M UTC')})\n"
+        )
     return (
         "🚨 PipelineMedic · CI failed\n\n"
-        f"Repository: {repository}\n\n"
+        f"Repository: {repository}\n"
+        f"{deadline_line}\n"
         "— Error signal —\n"
         f"{_clip(log_excerpt, 600)}\n\n"
         "— Diagnosis —\n"
@@ -711,15 +965,22 @@ def build_pr_created_message(
     pr_url = github_info.get("html_url", "")
     branch = github_info.get("branch", "")
     pr_num = github_info.get("pull_number", "")
+    patch_source = github_info.get("patch_source") or "llm"
+    source_label = {
+        "llm": "LLM-synthesized patch",
+        "rule:append_requirement": "rule-based dependency append",
+        "rule:new_requirements": "rule-based: new requirements.txt",
+    }.get(patch_source, patch_source)
     return (
         "✅ PipelineMedic auto-fix PR created\n\n"
         f"Repository: {repo}\n"
         f"PR #{pr_num}: {pr_url}\n"
-        f"Branch: {branch}\n\n"
+        f"Branch: {branch}\n"
+        f"File: {github_info.get('file') or analysis.get('file') or '(none)'}\n"
+        f"Patch source: {source_label}\n\n"
         "— What was fixed —\n"
         f"{_clip(str(analysis.get('fix', '')), 600)}\n\n"
-        f"Likely file: {analysis.get('file') or '(none)'}\n\n"
-        "Approve merge to main?"
+        "Review the diff and approve merge to main?"
     )
 
 
@@ -820,6 +1081,57 @@ def _get_file_sha(token: str, owner: str, repo: str, path: str, ref: str) -> str
     if r.status_code != 200:
         return None
     return r.json().get("sha")
+
+
+def _fetch_file(
+    token: str, owner: str, repo: str, path: str, ref: str
+) -> tuple[str | None, str | None]:
+    """Return (content, sha) or (None, None) if the file doesn't exist."""
+    r = requests.get(
+        f"{GITHUB_API}/repos/{owner}/{repo}/contents/{path}",
+        headers=_gh_headers(token),
+        params={"ref": ref},
+        timeout=30,
+    )
+    if r.status_code != 200:
+        return None, None
+    try:
+        data = r.json()
+        content = base64.b64decode(data["content"]).decode("utf-8", errors="replace")
+        return content, data.get("sha")
+    except (KeyError, ValueError):
+        return None, None
+
+
+def _looks_like_safe_patch(old: str, new: str) -> bool:
+    """Cheap sanity check: reject patches that blow the file away.
+
+    We refuse to commit if the new content is empty, or if it removes
+    more than half of the original non-empty lines (heuristic against
+    an LLM returning only the changed snippet).
+    """
+    if not new or not new.strip():
+        return False
+    old_lines = [line for line in old.splitlines() if line.strip()]
+    new_lines = [line for line in new.splitlines() if line.strip()]
+    if not old_lines:
+        return True
+    if len(new_lines) < max(3, len(old_lines) // 2):
+        return False
+    return True
+
+
+def _strip_code_fences(text: str) -> str:
+    """Remove ```lang ... ``` wrappers if the LLM produced them."""
+    s = text.strip()
+    if s.startswith("```"):
+        lines = s.splitlines()
+        if lines and lines[0].lstrip().startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        s = "\n".join(lines)
+    return s
 
 
 def _create_branch(
@@ -936,16 +1248,6 @@ def maybe_create_autofix_pr(
 
     target_file = (analysis.get("file") or "").strip() or "requirements.txt"
     fix_text = str(analysis.get("fix", ""))
-    if target_file.endswith("requirements.txt") or target_file.endswith(".txt"):
-        pkg_line = "# pipelinemedic autofix — review before merge\n"
-        m = re.search(r"`([^`]+)`", fix_text)
-        extra = f"{m.group(1)}\n" if m else ""
-        new_content = pkg_line + extra
-    else:
-        new_content = f"# pipelinemedic autofix\n# {fix_text[:500]}\n"
-
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    branch_name = f"pipelinemedic/autofix-{ts}"
 
     def_branch = _get_default_branch(token, owner, repo)
     if not def_branch:
@@ -956,21 +1258,70 @@ def maybe_create_autofix_pr(
         }
     use_base = base_branch if base_branch else def_branch
 
+    # Fetch the real, current file from base BEFORE we make any branches so
+    # we can ask the LLM to patch the actual source.
+    cur_content, _ = _fetch_file(token, owner, repo, target_file, use_base)
+
+    patch_source: str = "none"
+    new_content: str
+    if cur_content is None:
+        # File doesn't exist on base: we only safely handle the
+        # "missing requirements.txt" case by creating it.
+        if target_file.endswith("requirements.txt"):
+            m = re.search(r"`([^`]+)`", fix_text)
+            pkg = m.group(1).strip() if m else ""
+            new_content = (pkg + "\n") if pkg else "# PipelineMedic autofix — add deps here\n"
+            patch_source = "rule:new_requirements"
+        else:
+            return {
+                "ok": False,
+                "mode": "error",
+                "error": f"target file not found on {use_base}: {target_file}",
+            }
+    else:
+        log_excerpt = str(analysis.get("_log_excerpt") or "")
+        generated = generate_fix_content(
+            cur_content,
+            target_file,
+            analysis,
+            f"{owner}/{repo}",
+            log_excerpt=log_excerpt,
+        )
+        if (
+            generated
+            and generated.strip()
+            and generated != cur_content
+            and _looks_like_safe_patch(cur_content, generated)
+        ):
+            new_content = generated
+            patch_source = "llm"
+        elif target_file.endswith("requirements.txt"):
+            m = re.search(r"`([^`]+)`", fix_text)
+            pkg = (m.group(1).strip() if m else "").strip()
+            if pkg and pkg.lower() not in cur_content.lower():
+                new_content = cur_content.rstrip() + "\n" + pkg + "\n"
+                patch_source = "rule:append_requirement"
+            else:
+                return {
+                    "ok": False,
+                    "mode": "error",
+                    "error": "no fix could be synthesized (requirements already satisfied)",
+                }
+        else:
+            return {
+                "ok": False,
+                "mode": "error",
+                "error": "LLM produced no safe patch for this file",
+            }
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    branch_name = f"pipelinemedic/autofix-{ts}"
+
     ok_b, err_b = _create_branch(token, owner, repo, use_base, branch_name)
     if not ok_b:
         return {"ok": False, "mode": "error", "error": err_b or "branch error"}
 
     file_sha = _get_file_sha(token, owner, repo, target_file, branch_name)
-    if file_sha:
-        get_c = requests.get(
-            f"{GITHUB_API}/repos/{owner}/{repo}/contents/{target_file}",
-            headers=_gh_headers(token),
-            params={"ref": branch_name},
-            timeout=30,
-        )
-        if get_c.status_code == 200:
-            cur = base64.b64decode(get_c.json()["content"]).decode("utf-8", errors="replace")
-            new_content = cur.rstrip() + "\n" + new_content
 
     ok_f, err_f = _put_file(
         token,
@@ -979,7 +1330,7 @@ def maybe_create_autofix_pr(
         target_file,
         branch_name,
         new_content,
-        f"chore: PipelineMedic autofix ({target_file})",
+        f"fix: PipelineMedic autofix ({target_file})",
         file_sha,
     )
     if not ok_f:
@@ -1007,6 +1358,8 @@ def maybe_create_autofix_pr(
         "html_url": html_url,
         "branch": branch_name,
         "base": use_base,
+        "file": target_file,
+        "patch_source": patch_source,
     }
 
 
@@ -1108,7 +1461,7 @@ def health_payload() -> dict[str, Any]:
     return {
         "status": "ok",
         "service": "pipelinemedic",
-        "version": "1.1.0",
+        "version": "1.2.1",
         "groq_configured": bool(os.getenv("GROQ_API_KEY", "").strip()),
         "telegram_configured": bool(
             os.getenv("TELEGRAM_BOT_TOKEN", "").strip() and _telegram_chat_ids()
@@ -1172,15 +1525,21 @@ async def process_webhook(request: Request) -> JSONResponse:
         decision = decide(analysis)
         log_excerpt = extract_error_line(log_str)
 
+        now = datetime.now(timezone.utc)
+        ttl_min = _autofix_ttl_minutes()
+        expires_at = now + timedelta(minutes=ttl_min)
+        analysis_with_log = {**analysis, "_log_excerpt": log_excerpt}
         token = store_incident(
             {
-                "ts": datetime.now(timezone.utc).isoformat(),
+                "ts": now.isoformat(),
+                "expires_at": expires_at.isoformat(),
+                "ttl_minutes": ttl_min,
                 "repository": repo_str,
                 "repository_full_name": (
                     str(repository_full_name).strip() if repository_full_name else None
                 ),
                 "log_excerpt": log_excerpt,
-                "analysis": analysis,
+                "analysis": analysis_with_log,
                 "source": source,
                 "decision": decision,
                 "status": "awaiting_choice",
@@ -1192,9 +1551,19 @@ async def process_webhook(request: Request) -> JSONResponse:
             repo_str, decision, analysis, source, log_excerpt, {}
         )
 
-        text = build_initial_interactive_message(
-            repo_str, log_excerpt, analysis, source, decision, token
+        base_text = build_initial_interactive_message(
+            repo_str,
+            log_excerpt,
+            analysis,
+            source,
+            decision,
+            token,
+            expires_at=expires_at,
+            ttl_minutes=ttl_min,
         )
+        incident_for_state = get_incident(token) or {}
+        state = _build_state_snapshot(token=token, incident=incident_for_state)
+        text = _attach_state(base_text, state)
         buttons = [
             [
                 {"text": "🤖 Auto fix", "callback_data": f"autofix:{token}"},
@@ -1241,17 +1610,57 @@ async def handle_telegram_callback(body: dict[str, Any]) -> JSONResponse:
     action = parts[0] if parts else ""
     tok = parts[1] if len(parts) > 1 else ""
 
+    # Pull state: first from server /tmp, then fall back to the state
+    # embedded inside the clicked Telegram message itself (so we survive
+    # cold starts and cross-instance callbacks on Vercel).
     inc = get_incident(tok) if tok else None
+    source_of_state = "server" if inc else "none"
+    clicked_msg = cq.get("message") or {}
+    clicked_chat = (clicked_msg.get("chat") or {}).get("id")
+    clicked_msg_id = clicked_msg.get("message_id")
+    clicked_text = clicked_msg.get("text") or ""
+    if not inc:
+        snap = _decode_state(clicked_text)
+        if snap and snap.get("tok") == tok:
+            inc = _incident_from_snapshot(snap)
+            if clicked_chat is not None and clicked_msg_id is not None:
+                inc["message_targets"] = [
+                    {"chat_id": clicked_chat, "message_id": clicked_msg_id}
+                ]
+            source_of_state = "message"
     if not inc:
         if callback_id:
             tg_answer_callback(callback_id, "Session expired or unknown incident")
         return JSONResponse({"ok": True})
 
+    def _refresh_buttons_edit(new_text: str, buttons: list[list[dict[str, Any]]] | None, snap_state: dict[str, Any] | None) -> None:
+        """Edit all known message targets, always re-attaching state if given."""
+        final_text = _attach_state(new_text, snap_state) if snap_state is not None else new_text
+        _broadcast_edit(inc, final_text, buttons)
+
+    # Only the initial decision (auto/manual) is gated by the TTL;
+    # merge/rollback buttons remain valid once a PR is open.
+    if action in ("autofix", "manual") and _is_expired(inc):
+        tg_answer_callback(callback_id, "Decision window expired")
+        update_incident(tok, status="expired")
+        inc = get_incident(tok) or inc
+        _broadcast_edit(
+            inc,
+            (
+                "⏰ PipelineMedic decision window expired\n\n"
+                f"Repository: {inc.get('repository', '')}\n"
+                f"Incident: {tok}\n\n"
+                "Trigger a new pipeline run to re-analyze."
+            ),
+            buttons=[],
+        )
+        return JSONResponse({"ok": True})
+
     if action == "manual":
         tg_answer_callback(callback_id, "Marked as manual fix")
         update_incident(tok, status="manual")
-        inc = get_incident(tok) or inc
-        _broadcast_edit(inc, build_manual_message(inc), buttons=[])
+        inc["status"] = "manual"
+        _refresh_buttons_edit(build_manual_message(inc), [], None)
         return JSONResponse({"ok": True})
 
     if action == "autofix":
@@ -1270,12 +1679,10 @@ async def handle_telegram_callback(body: dict[str, Any]) -> JSONResponse:
         except Exception as e:
             github_info = {"ok": False, "mode": "error", "error": str(e)}
         ok = bool(github_info.get("ok") and github_info.get("mode") == "github")
-        update_incident(
-            tok,
-            github=github_info,
-            status="pr_open" if ok else "pr_failed",
-        )
-        inc = get_incident(tok) or inc
+        new_status = "pr_open" if ok else "pr_failed"
+        update_incident(tok, github=github_info, status=new_status)
+        inc["github"] = github_info
+        inc["status"] = new_status
         if ok:
             new_buttons = [
                 [
@@ -1283,12 +1690,20 @@ async def handle_telegram_callback(body: dict[str, Any]) -> JSONResponse:
                     {"text": "↩️ Rollback", "callback_data": f"roll:{tok}"},
                 ]
             ]
-            _broadcast_edit(
-                inc, build_pr_created_message(inc, github_info), new_buttons
+            snap = _build_state_snapshot(
+                token=tok,
+                incident=inc,
+                github_override=github_info,
+                status_override="pr_open",
+            )
+            _refresh_buttons_edit(
+                build_pr_created_message(inc, github_info),
+                new_buttons,
+                snap,
             )
         else:
-            _broadcast_edit(
-                inc, build_pr_failed_message(inc, github_info), buttons=[]
+            _refresh_buttons_edit(
+                build_pr_failed_message(inc, github_info), [], None
             )
         return JSONResponse({"ok": True})
 
@@ -1298,13 +1713,10 @@ async def handle_telegram_callback(body: dict[str, Any]) -> JSONResponse:
             return JSONResponse({"ok": True})
         tg_answer_callback(callback_id, "Merging…")
         result = merge_pull_request(inc)
-        update_incident(
-            tok,
-            merge=result,
-            status="merged" if result.get("ok") else "merge_failed",
-        )
-        inc = get_incident(tok) or inc
-        _broadcast_edit(inc, build_merged_message(inc, result), buttons=[])
+        new_status = "merged" if result.get("ok") else "merge_failed"
+        update_incident(tok, merge=result, status=new_status)
+        inc["status"] = new_status
+        _refresh_buttons_edit(build_merged_message(inc, result), [], None)
         return JSONResponse({"ok": True})
 
     if action == "roll":
@@ -1313,13 +1725,10 @@ async def handle_telegram_callback(body: dict[str, Any]) -> JSONResponse:
             return JSONResponse({"ok": True})
         tg_answer_callback(callback_id, "Rolling back…")
         result = rollback_pull_request(inc)
-        update_incident(
-            tok,
-            rollback=result,
-            status="rolled_back" if result.get("ok") else "rollback_failed",
-        )
-        inc = get_incident(tok) or inc
-        _broadcast_edit(inc, build_rollback_message(inc, result), buttons=[])
+        new_status = "rolled_back" if result.get("ok") else "rollback_failed"
+        update_incident(tok, rollback=result, status=new_status)
+        inc["status"] = new_status
+        _refresh_buttons_edit(build_rollback_message(inc, result), [], None)
         return JSONResponse({"ok": True})
 
     tg_answer_callback(callback_id, "Unknown action")
