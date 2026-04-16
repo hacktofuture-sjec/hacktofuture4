@@ -103,7 +103,26 @@ pip install scikit-learn tensorflow pandas numpy langgraph
 
 # Run the AI Pipeline 
 python pipeline/langgraph_pipeline.py
+
+# ---------------------------------------------
+# FIREBASE LIVE BRIDGE (ESP32 -> Firebase -> Models -> Dashboard)
+# ---------------------------------------------
+# Use your RTDB URL if different
+export FIREBASE_DATABASE_URL="https://hack2future-79802-default-rtdb.firebaseio.com"
+
+# Run dashboard in another terminal
+cd dashboard && npm run dev
+
+# Stream live node data from /node1 into the ML pipeline
+cd ..
+python -m pipeline.firebase_live_bridge --firebase-path node1 --dashboard-url http://localhost:3000
 ```
+
+### Live Thresholds (matched to ESP32 sketch)
+
+- Acceleration trigger: `abs(acceleration - 1.0) > 0.25`
+- Gas trigger: `gas > 2000`
+- Earthquake persistence window: `10 seconds`
 
 <br/>
 <div align="center">
