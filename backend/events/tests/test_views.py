@@ -26,9 +26,11 @@ class TestEventIngestView:
         self, api_key_fixture, integration_fixture, org_fixture
     ):
         """Valid ApiKey + payload → 202 + event persisted."""
-        from rest_framework.test import APIClient
-        from events.models import RawWebhookEvent
         from unittest.mock import patch
+
+        from rest_framework.test import APIClient
+
+        from events.models import RawWebhookEvent
 
         client = APIClient()
         client.credentials(HTTP_X_API_KEY=api_key_fixture._raw_key)
@@ -54,9 +56,11 @@ class TestEventIngestView:
         self, api_key_fixture, integration_fixture, org_fixture
     ):
         """Same idempotency_key twice → 202 both times, only 1 event created."""
-        from rest_framework.test import APIClient
-        from events.models import RawWebhookEvent
         from unittest.mock import patch
+
+        from rest_framework.test import APIClient
+
+        from events.models import RawWebhookEvent
 
         client = APIClient()
         client.credentials(HTTP_X_API_KEY=api_key_fixture._raw_key)
@@ -90,8 +94,9 @@ class TestEventIngestView:
     def test_ingest_missing_event_type_returns_400(
         self, api_key_fixture, org_fixture, integration_fixture
     ):
-        from rest_framework.test import APIClient
         from unittest.mock import patch
+
+        from rest_framework.test import APIClient
 
         client = APIClient()
         client.credentials(HTTP_X_API_KEY=api_key_fixture._raw_key)
@@ -153,10 +158,11 @@ class TestRawWebhookEventListView:
 
     def test_list_excludes_other_org_events(self, auth_client, org_fixture, db):
         """Events from other orgs must not appear."""
-        from accounts.models import Organization
-        from integrations.models import Integration
-        from events.models import RawWebhookEvent
         from django.contrib.auth import get_user_model
+
+        from accounts.models import Organization
+        from events.models import RawWebhookEvent
+        from integrations.models import Integration
 
         other_org = Organization.objects.create(
             name="Other", slug="other", plan_tier="free"

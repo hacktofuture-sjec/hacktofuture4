@@ -8,6 +8,11 @@ BACKEND_PYTEST := $(UV) run pytest
 AGENT_PYTEST  := $(UV) run pytest
 BLACK         := $(UV) run black
 FLAKE8        := $(UV) run flake8
+ISORT         := $(UV) run isort
+
+# ── Paths ──────────────────────────────────────────────────────────────────
+FORMAT_PATHS  := backend agent-service mcp-servers/hubspot mcp-servers/jira mcp-servers/linear mcp-servers/slack
+LINT_PATHS    := backend agent-service mcp-servers/hubspot mcp-servers/jira mcp-servers/linear mcp-servers/slack
 
 # Default target
 help:
@@ -115,11 +120,23 @@ fl: format lint
 
 lint:
 	@echo "Running Black linter..."
-	cd backend && $(BLACK) --check .
-	cd agent-service && $(BLACK) --check .
+	@for path in $(LINT_PATHS); do \
+		echo "Checking $$path..."; \
+		cd $$path && $(BLACK) --check . || exit 1; \
+		cd $(CURDIR); \
+	done
+	@echo "Running isort linter..."
+	@for path in $(LINT_PATHS); do \
+		echo "Checking $$path..."; \
+		cd $$path && $(ISORT) --check --profile black . || exit 1; \
+		cd $(CURDIR); \
+	done
 	@echo "Running Flake8 linter..."
-	cd backend && $(FLAKE8) .
-	cd agent-service && $(FLAKE8) .
+	@for path in $(LINT_PATHS); do \
+		echo "Linting $$path..."; \
+		cd $$path && $(FLAKE8) . || exit 1; \
+		cd $(CURDIR); \
+	done
 	@echo "Linting complete!"
 
 type-check:
@@ -128,9 +145,18 @@ type-check:
 	@echo "Type check complete!"
 
 format:
+	@echo "Formatting Python code with isort..."
+	@for path in $(FORMAT_PATHS); do \
+		echo "Formatting $$path..."; \
+		cd $$path && $(ISORT) --profile black . || exit 1; \
+		cd $(CURDIR); \
+	done
 	@echo "Formatting Python code with Black..."
-	cd backend && $(BLACK) .
-	cd agent-service && $(BLACK) .
+	@for path in $(FORMAT_PATHS); do \
+		echo "Formatting $$path..."; \
+		cd $$path && $(BLACK) . || exit 1; \
+		cd $(CURDIR); \
+	done
 	@echo "Formatting complete!"
 
 # Testing

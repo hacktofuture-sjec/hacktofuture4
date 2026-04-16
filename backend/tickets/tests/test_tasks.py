@@ -2,8 +2,9 @@
 Tickets Celery task and upsert API tests.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 @pytest.mark.django_db

@@ -2,8 +2,9 @@
 Events Celery task tests — mock httpx calls to agent service.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 def _make_httpx_client_mock(status_code=200, json_body=None):

@@ -3,9 +3,10 @@ Agent service Django HTTP client tests.
 Tests aligned to the actual function signatures in src/django_client.py.
 """
 
-import pytest
-import httpx
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
+import pytest
 
 
 def make_ok_response(json_body: dict = None):
