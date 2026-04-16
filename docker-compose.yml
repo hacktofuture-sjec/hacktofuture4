@@ -1,0 +1,136 @@
+version: "3.9"
+
+networks:
+  battle-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+services:
+  # ── Vulnerable Services ──────────────────────────────────────────
+  flask-sqli:
+    build: ./services/flask-sqli
+    container_name: flask-sqli
+    ports:
+      - "5000:5000"
+    networks:
+      battle-net:
+        ipv4_address: 172.28.0.10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        labels: "service"
+    labels:
+      - "service=flask-sqli"
+      - "vuln=CWE-89"
+
+  node-pathtraversal:
+    build: ./services/node-pathtraversal
+    container_name: node-pathtraversal
+    ports:
+      - "3001:3001"
+    networks:
+      battle-net:
+        ipv4_address: 172.28.0.11
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+    labels:
+      - "service=node-pathtraversal"
+      - "vuln=CWE-22"
+
+  jwt-auth:
+    build: ./services/jwt-auth
+    container_name: jwt-auth
+    ports:
+      - "3002:3002"
+    networks:
+      battle-net:
+        ipv4_address: 172.28.0.12
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+    labels:
+      - "service=jwt-auth"
+      - "vuln=CVE-2015-9235"
+
+  postgres-weak:
+    image: postgres:14
+    container_name: postgres-weak
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: targetdb
+    ports:
+      - "5432:5432"
+    networks:
+      battle-net:
+        ipv4_address: 172.28.0.13
+    volumes:
+      - ./services/postgres-init:/docker-entrypoint-initdb.d
+    labels:
+      - "service=postgres-weak"
+      - "vuln=CWE-521"
+
+  redis-noauth:
+    image: redis:7
+    container_name: redis-noauth
+    command: redis-server --loglevel verbose
+    ports:
+      - "6379:6379"
+    networks:
+      battle-net:
+        ipv4_address: 172.28.0.14
+    labels:
+      - "service=redis-noauth"
+      - "vuln=CVE-2022-0543"
+
+  nginx-misconfig:
+    build: ./services/nginx
+    container_name: nginx-misconfig
+    ports:
+      - "8080:80"
+    networks:
+      battle-net:
+        ipv4_address: 172.28.0.15
+    labels:
+      - "service=nginx-misconfig"
+      - "vuln=CWE-284"
+
+  # ── Monitoring Backend ───────────────────────────────────────────
+  monitor:
+    build: ./monitor/backend
+    container_name: monitor
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    ports:
+      - "8000:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - battle-net
+    depends_on:
+      - flask-sqli
+      - node-pathtraversal
+      - jwt-auth
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: orchestrator/Dockerfile
+    container_name: orchestrator
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./agents/models:/app/agents/models
+    networks:
+      - battle-net
+    depends_on:
+      - flask-sqli
+      - node-pathtraversal
+      - jwt-auth
