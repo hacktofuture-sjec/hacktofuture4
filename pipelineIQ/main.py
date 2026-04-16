@@ -5,13 +5,19 @@ from uvicorn import run
 from config import settings
 from database import connect_db, disconnect_db
 from routers.auth import router as auth_router
+from routers.autofix import router as autofix_router
 from routers.github_app import router as github_app_router
 from routers.workspaces import router as workspace_router
 from services.pipeline_runtime import pipeline_runtime
+from services.state_reset import clear_backend_state, clear_runtime_state
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if settings.RESET_CI_CD_STATE_ON_STARTUP:
+        await clear_backend_state()
+        clear_runtime_state()
     await connect_db()
+    clear_runtime_state()
     await pipeline_runtime.start()
     yield
     await pipeline_runtime.stop()
@@ -33,6 +39,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(autofix_router)
 app.include_router(workspace_router)
 app.include_router(github_app_router)
 

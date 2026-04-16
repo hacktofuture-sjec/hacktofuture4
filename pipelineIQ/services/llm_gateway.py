@@ -55,6 +55,7 @@ async def call_chat_model(
     system_prompt: str,
     user_prompt: str,
     temperature: float = 0.2,
+    max_tokens: int = 1000,
 ) -> str:
     client, normalized_provider = _client_for_provider(provider)
 
@@ -65,7 +66,7 @@ async def call_chat_model(
         ],
         temperature=temperature,
         top_p=1.0,
-        max_tokens=1000,
+        max_tokens=max_tokens,
         model=model,
     )
 
@@ -86,6 +87,7 @@ async def call_with_fallback(
     system_prompt: str,
     user_prompt: str,
     temperature: float = 0.2,
+    max_tokens: int = 1000,
 ) -> tuple[str, str, str]:
     try:
         result = await call_chat_model(
@@ -94,6 +96,7 @@ async def call_with_fallback(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             temperature=temperature,
+            max_tokens=max_tokens,
         )
         return result, primary_provider, primary_model
     except Exception:
@@ -103,5 +106,6 @@ async def call_with_fallback(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             temperature=temperature,
+            max_tokens=max_tokens,
         )
         return result, fallback_provider, fallback_model

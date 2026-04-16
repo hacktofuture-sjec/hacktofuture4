@@ -24,6 +24,7 @@ class Workspace(Document):
     github_repo_html_url: Optional[str] = None
     github_account_login: Optional[str] = None
     github_account_type: Optional[str] = None
+    slack_devops_mention: Optional[str] = None
     risk_profile: RiskProfile = Field(default_factory=RiskProfile)
     connected_at: Optional[datetime] = None
     last_webhook_event_at: Optional[datetime] = None

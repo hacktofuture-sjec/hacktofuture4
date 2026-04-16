@@ -1000,12 +1000,104 @@ input, textarea {
   border-color: rgba(59, 130, 246, 0.24);
 }
 
+.diagnosis-tab {
+  display: grid;
+  gap: 16px;
+}
+
+.diagnosis-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(2, 6, 23, 0.05);
+}
+
+.diagnosis-toolbar h3 {
+  font-size: 0.98rem;
+  margin-bottom: 4px;
+}
+
+.diagnosis-toolbar p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.diagnosis-accordion-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.diagnosis-accordion-summary {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.diagnosis-accordion-summary h3 {
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+
+.diagnosis-accordion-summary p {
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+}
+
+.diagnosis-issue-preview {
+  margin: 0;
+  color: var(--text-primary);
+  line-height: 1.55;
+}
+
 .feed-card-top {
   display: flex;
   justify-content: space-between;
   gap: 12px;
   align-items: flex-start;
   margin-bottom: 12px;
+}
+
+.diagnosis-card-top-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.accordion-actions {
+  min-width: 128px;
+}
+
+.accordion-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.accordion-toggle {
+  border: 1px solid var(--border-subtle);
+  background: rgba(2, 6, 23, 0.06);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.accordion-toggle:hover {
+  color: var(--text-primary);
+  border-color: var(--border-hover);
 }
 
 .feed-card-top h3 {
@@ -1034,6 +1126,16 @@ input, textarea {
 .status-pill.completed {
   background: rgba(34, 197, 94, 0.12);
   color: #22c55e;
+}
+
+.status-pill.running {
+  background: rgba(245, 158, 11, 0.14);
+  color: #f59e0b;
+}
+
+.status-pill.failure {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
 }
 
 .status-pill.degraded,
@@ -1087,9 +1189,237 @@ input, textarea {
   overflow-x: auto;
 }
 
+.diagnosis-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 14px;
+}
+
+.diag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(59, 130, 246, 0.24);
+  background: rgba(59, 130, 246, 0.08);
+  color: #1d4ed8;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.risk-badge {
+  min-width: 108px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.risk-badge strong {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.risk-badge span {
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.risk-badge.low {
+  border-color: rgba(34, 197, 94, 0.26);
+  background: rgba(34, 197, 94, 0.10);
+  color: #15803d;
+}
+
+.risk-badge.medium {
+  border-color: rgba(245, 158, 11, 0.30);
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+
+.risk-badge.high {
+  border-color: rgba(249, 115, 22, 0.30);
+  background: rgba(249, 115, 22, 0.12);
+  color: #c2410c;
+}
+
+.risk-badge.critical {
+  border-color: rgba(239, 68, 68, 0.30);
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
+}
+
+.risk-badge.unknown {
+  border-color: rgba(148, 163, 184, 0.28);
+  background: rgba(148, 163, 184, 0.10);
+  color: var(--text-secondary);
+}
+
+.report-kv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.report-kv-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(2, 6, 23, 0.06);
+  padding: 10px;
+}
+
+.report-kv-card span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  margin-bottom: 6px;
+}
+
+.report-kv-card strong {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  text-transform: capitalize;
+}
+
+.step-timeline {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.step-node {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  text-align: center;
+  color: var(--text-secondary);
+  background: rgba(2, 6, 23, 0.04);
+  text-transform: capitalize;
+  font-size: 0.82rem;
+}
+
+.step-node.completed {
+  border-color: rgba(34, 197, 94, 0.25);
+  background: rgba(34, 197, 94, 0.12);
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.step-node.current {
+  border-color: rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.14);
+  color: #d97706;
+  font-weight: 700;
+}
+
+.step-node.pending {
+  opacity: 0.85;
+}
+
+.diagnosis-report-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.report-section {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  background: rgba(2, 6, 23, 0.06);
+}
+
+.report-section.full {
+  grid-column: 1 / -1;
+}
+
+.report-section h4 {
+  font-size: 0.88rem;
+  letter-spacing: 0.01em;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.report-section ul {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.report-section p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
 .inline-error {
   color: #ef4444;
   margin-top: 8px;
+}
+
+.inline-risk-error {
+  margin-bottom: 1rem;
+}
+
+.notice-banner.subtle {
+  margin-bottom: 0;
+}
+
+.risk-breakdown-table {
+  display: grid;
+  gap: 8px;
+}
+
+.risk-breakdown-header,
+.risk-breakdown-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.2fr) minmax(180px, 2fr) 80px;
+  gap: 12px;
+  align-items: start;
+}
+
+.risk-breakdown-header {
+  padding: 0 2px 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.risk-breakdown-row {
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: rgba(2, 6, 23, 0.04);
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.risk-breakdown-row strong {
+  justify-self: end;
+  color: var(--text-primary);
+}
+
+.risk-breakdown-row strong.positive {
+  color: #f97316;
+}
+
+.risk-breakdown-row strong.negative {
+  color: #16a34a;
 }
 
 /* Repo list */

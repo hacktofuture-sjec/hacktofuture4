@@ -19,6 +19,8 @@ export default function DashboardPage() {
   const [autoFixBelow, setAutoFixBelow] = useState(30);
   const [creating, setCreating] = useState(false);
 
+  const thresholdsValid = Number(autoFixBelow) <= Number(requireApprovalAbove);
+
   const fetchWorkspaces = async () => {
     try {
       const { data } = await api.get("/workspaces");
@@ -36,7 +38,7 @@ export default function DashboardPage() {
 
   const handleCreate = async (e) => {
     e.preventDefault();
-    if (!formName.trim()) return;
+    if (!formName.trim() || !thresholdsValid) return;
     setCreating(true);
     try {
       const { data } = await api.post("/workspaces", {
@@ -235,6 +237,11 @@ export default function DashboardPage() {
               />
             </div>
           </div>
+          {!thresholdsValid ? (
+            <div className="notice-banner warning subtle">
+              Auto-fix below must be less than or equal to require approval above.
+            </div>
+          ) : null}
           <div className="modal-actions">
             <button
               type="button"
@@ -246,7 +253,7 @@ export default function DashboardPage() {
             <button
               type="submit"
               className="btn-primary"
-              disabled={creating || !formName.trim()}
+              disabled={creating || !formName.trim() || !thresholdsValid}
             >
               {creating ? "Creating…" : "Create"}
             </button>
