@@ -9,7 +9,6 @@ class ApiService {
 
   static Future<Map<String, dynamic>> analyzeEvent({
     required String sessionId,
-    required String ip,
     required String location,
     required String device,
     required String event,
@@ -22,7 +21,6 @@ class ApiService {
       try {
         final body = <String, dynamic>{
           'session_id': sessionId,
-          'ip': ip,
           'location': location,
           'device': device,
           'event': event,

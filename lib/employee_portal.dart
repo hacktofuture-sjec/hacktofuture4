@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'auth_service.dart';
 import 'adminlogin.dart';
 import 'api_service.dart';
@@ -11,26 +13,39 @@ class EmployeePortalPage extends StatefulWidget {
 }
 
 class _EmployeePortalPageState extends State<EmployeePortalPage> {
+  StreamSubscription<User?>? _authSub;
+
   @override
   void initState() {
     super.initState();
-    _logEmployeeLogin();
+    // Listen for auth state changes and log login event when user becomes available
+    _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user != null) {
+        _logEmployeeLogin(user);
+      }
+    });
   }
 
-  Future<void> _logEmployeeLogin() async {
-    final user = AuthService.currentUser;
-    if (user != null) {
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _logEmployeeLogin([User? user]) async {
+    final u = user ?? AuthService.currentUser;
+    if (u != null) {
       try {
         await ApiService.analyzeEvent(
-          sessionId: user.email ?? 'unknown',
-          ip: '49.37.10.2', // In real app, get actual IP
+          sessionId: u.email ?? 'unknown',
+          ip: '49.37.10.2', // TODO: replace with real IP detection
           location: 'India',
           device: 'Android Chrome',
           event: 'employee_login',
           keystrokeInterval: 15,
         );
       } catch (e) {
-        // Handle error silently or show snackbar
+        // ignore logging errors for now
       }
     }
   }

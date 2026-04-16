@@ -4,6 +4,7 @@ from firebase_admin import credentials, firestore
 from config import FIREBASE_KEY_PATH
 
 _db = None
+
 try:
     if os.path.exists(FIREBASE_KEY_PATH):
         cred = credentials.Certificate(FIREBASE_KEY_PATH)
@@ -21,17 +22,6 @@ def store_event(data):
     else:
         print("Skipping Firestore event storage, Firestore is not initialized.")
 
-    
-def get_baseline(session_id):
-    if _db is None:
-        print("Skipping baseline lookup, Firestore is not initialized.")
-        return None
-
-    docs = _db.collection("baselines").where("session_id", "==", session_id).stream()
-    for doc in docs:
-        return doc.to_dict()
-    return None
-
 
 def get_events():
     if _db is None:
@@ -40,17 +30,29 @@ def get_events():
 
     docs = _db.collection("events").stream()
     events = []
+
     for doc in docs:
         event = doc.to_dict()
+
+        # ✅ SAFETY FIX (IMPORTANT)
+        event['trust_score'] = event.get('trust_score', 0)
+        event['action'] = event.get('action', 'UNKNOWN')
+
         event['id'] = doc.id
         events.append(event)
+
     return events
 
 
-def check_ip_reuse(session_id, ip):
+def is_new_ip(session_id, ip):
     if _db is None:
-        print("Skipping IP reuse check, Firestore is not initialized.")
+        print("Skipping IP check, Firestore is not initialized.")
         return False
 
-    docs = _db.collection("events").where("session_id", "==", session_id).where("ip", "==", ip).stream()
-    return len(list(docs)) > 0
+    docs = _db.collection("events") \
+        .where("session_id", "==", session_id) \
+        .stream()
+
+    previous_ips = [doc.to_dict().get("ip") for doc in docs]
+
+    return ip not in previous_ips

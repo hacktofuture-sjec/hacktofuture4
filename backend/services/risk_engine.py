@@ -1,5 +1,5 @@
-from services.firestore_service import check_ip_reuse
-from services.firestore_service import check_ip_reuse
+from services.firestore_service import is_new_ip
+from services.firestore_service import is_new_ip
 
 def calculate_risk_score(ip, location=None, device=None, event=None, session_id=None, keystroke_interval=None):
     score = 100
@@ -23,7 +23,7 @@ def calculate_risk_score(ip, location=None, device=None, event=None, session_id=
             score -= 25
 
     # Check if IP has been used before for this session
-    if check_ip_reuse(session_id, ip):
+    if is_new_ip(session_id, ip):
         score -= 40  # Flag as risky for IP reuse
 
     return max(score, 0)

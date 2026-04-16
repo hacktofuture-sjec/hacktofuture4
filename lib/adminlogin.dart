@@ -165,7 +165,6 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                                                 try {
                                                   final result = await ApiService.analyzeEvent(
                                                     sessionId: sessionId,
-                                                    ip: '49.37.10.2',
                                                     location: 'India',
                                                     device: 'Android Chrome',
                                                     event: 'admin_login',
