@@ -1,86 +1,111 @@
-# HackToFuture 4.0 — Template
+<div align="center">
+  <img src="https://raw.githubusercontent.com/tandpfun/skill-icons/main/icons/NextJS-Dark.svg" width="50" />
+  <img src="https://raw.githubusercontent.com/tandpfun/skill-icons/main/icons/Python-Dark.svg" width="50" />
+  <img src="https://raw.githubusercontent.com/tandpfun/skill-icons/main/icons/TensorFlow-Dark.svg" width="50" />
+  <h1 style="color: #34d399; font-weight: bold; margin-top: 15px;">🌐 NeuroMesh</h1>
+  <p><b>AI-Powered Disaster Response & Telemetry Validation Network</b></p>
+  
+  [![HackToFuture 4](https://img.shields.io/badge/HackToFuture-4-blueviolet?style=for-the-badge)](#)
+  [![Status](https://img.shields.io/badge/Status-Active-success?style=for-the-badge)](#)
+</div>
 
-Welcome to your official HackToFuture 4 repository.
+<br/>
 
-This repository template will be used for development, tracking progress, and final submission of your project. Ensure that all work is committed here within the allowed hackathon duration.
+## 🚨 Problem Statement / Idea
 
----
+**What is the problem?**
+During critical disasters (earthquakes, structural collapses, gas leaks), first responders are blinded by chaotic data, broken communication lines, and false alarms. Misallocating rescue teams to a "false alarm" while a real crisis unfolds costs lives.
 
-### Instructions for the teams:
+**Why is it important?**
+The "Golden Day" (first 24 hours) is crucial for survival. Emergency response systems need filtered, validated, and highly accurate situation reports (SitReps) to deploy Urban Search and Rescue (USAR) teams safely and dynamically.
 
-- Fork the Repository and name the forked repo in this convention: hacktofuture4-team_id (for eg: hacktofuture4-A01)
-
----
-
-## Rules
-
-- Work must be done ONLY in the forked repository
-- Only Four Contributors are allowed.
-- After 36 hours, Please make PR to the Main Repository. A Form will be sent to fill the required information.
-- Do not copy code from other teams
-- All commits must be from individual GitHub accounts
-- Please provide meaningful commits for tracking.
-- Do not share your repository with other teams
-- Final submission must be pushed before the deadline
-- Any violation may lead to disqualification
-
----
-
-# The Final README Template 
-
-## Problem Statement / Idea
-
-Clearly describe the problem you are solving.
-
-- What is the problem?
-- Why is it important?
-- Who are the target users?
+**Who are the target users?**
+- National Disaster Response Force (NDRF) / FEMA
+- Emergency Command Centers
+- First Responders & Hazmat (CBRN) Teams
 
 ---
 
-## Proposed Solution
+## 💡 Proposed Solution
 
-Explain your approach:
+**What are we building?**
+**NeuroMesh** is a comprehensive hardware-software simulation platform representing a deployed mesh network of environmental sensors. It feeds raw telemetry (seismic vibrations, gas PPM, PIR survivor movement) into a multi-stage AI pipeline. 
 
-- What are you building?
-- How does it solve the problem?
-- What makes your solution unique?
+**How does it solve the problem?**
+Raw data is processed by specialized ML models (CNNs for seismic, Random Forests for gas). Crucially, an **Isolation Forest** validator checks the aggregated outputs to flag hardware glitches or false alarms. If authenticated, an LLM (Mistral) generates an actionable, military-grade Situation Report (SitRep).
 
----
-
-## Features
-
-List the core features of your project:
-
-- Feature 1
-- Feature 2
-- Feature 3
+**What makes your solution unique?**
+- **False Alarm Filtration:** We don't just alert; we authenticate the crisis using anomaly detection, saving wasted rescue trips.
+- **Multi-Modal AI:** Specialized models handle specific sensor outputs before fusing data into LangGraph.
+- **Interactive UI:** A Next.js Turbopack dashboard visualizes node status with real-time Framer Motion animations.
 
 ---
 
-## Tech Stack
+## 🚀 Features
 
-Mention all technologies used:
-
-- Frontend:
-- Backend:
-- Database:
-- APIs / Services:
-- Tools / Libraries:
+- 🟢 **Live Telemetry Dashboard:** An interactive Web GIS UI plotting mesh nodes and live status.
+- 🧠 **Multi-Model Inference:** 
+  - Seismic Activity Classification (Keras/TensorFlow)
+  - Hazardous Gas Prediction (Scikit-Learn Random Forest)
+  - Survivor Count Estimation (Scikit-Learn)
+- 🛡️ **Crisis Validator (Isolation Forest):** Identifies erratic sensor behavior or false positives.
+- ⚡ **Automated LLM SitReps:** LangGraph orchestration to output clear "Recommended Actions" and "Threat Levels".
+- 📡 **Simulated LoRaWAN Network:** Fallback communication visualization for unconnected zones.
 
 ---
 
-## Project Setup Instructions
+## 🛠️ Tech Stack
+
+<details>
+<summary><b>Click to expand technical details</b></summary>
+<br/>
+
+- **Frontend:** Next.js 16 (App Router, Turbopack), React, TailwindCSS, Framer Motion, Lucide Icons
+- **Backend / AI Pipeline:** Python 3.13, LangGraph
+- **Machine Learning:** Scikit-Learn, TensorFlow/Keras, Pandas, NumPy
+- **Generative AI:** Mistral / LLM (SitRep Generation)
+- **Data:** CSV-based robust simulated environments (`gas_data.csv`, `seismic_data.csv`, `survivor_data.csv`)
+
+</details>
+
+---
+
+## ⚙️ Project Setup Instructions
 
 Provide clear steps to run your project:
 
 ```bash
-# Clone the repository
-git clone <repo-link>
+# 1. Clone the repository
+git clone https://github.com/haashid/hacktofuture4-I03.git
+cd hacktofuture4-I03
 
-# Install dependencies
-...
+# ---------------------------------------------
+# FRONTEND (Next.js Dashboard)
+# ---------------------------------------------
+cd dashboard
+npm install
 
-# Run the project
-...
+# Run the Next.js development server
+npm run dev
+
+# ---------------------------------------------
+# AI PIPELINE (Python Environment)
+# ---------------------------------------------
+# Open a new terminal and navigate to the project root
+cd ..
+
+# Create and activate a virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install AI dependencies
+pip install scikit-learn tensorflow pandas numpy langgraph
+
+# Run the AI Pipeline 
+python pipeline/langgraph_pipeline.py
 ```
+
+<br/>
+<div align="center">
+  <sub>Built with ❤️ for HackToFuture 4</sub>
+</div>
