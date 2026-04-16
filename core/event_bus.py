@@ -29,6 +29,17 @@ VALID_EVENT_TYPES = {
     "credential_attack_detected",
     "directory_traversal_attempted",
     "idor_attempted",
+    # Red → Blue report pipeline (simultaneous operation)
+    "red_finding_received",
+    "remediation_started",
+    "remediation_complete",
+    "red_report_complete",
+    # Asset-level events
+    "asset_discovered",
+    "vulnerability_found",
+    "scan_complete",
+    "environment_alert",
+    "defense_evolved",
 }
 
 

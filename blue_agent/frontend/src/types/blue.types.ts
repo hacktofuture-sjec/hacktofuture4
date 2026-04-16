@@ -152,3 +152,42 @@ export interface HardenServiceRequest {
   service: string;
   options?: Record<string, unknown>;
 }
+
+/* ── Red Report / Remediation ─────────────────────────────────── */
+
+export interface RedReportRequest {
+  target: string;
+  risk_score: number;
+  recon: Record<string, unknown>;
+  exploit: Record<string, unknown>;
+  recommendations: Record<string, unknown>[];
+}
+
+export interface AppliedFix {
+  fix_id: string;
+  category: string;
+  severity: string;
+  status: string;
+  details: string;
+  steps_applied: number;
+  endpoint?: string;
+  [key: string]: unknown;
+}
+
+export interface RemediationResult {
+  target: string;
+  risk_score: number;
+  total_findings: number;
+  fixes_applied: number;
+  total_steps: number;
+  severity_counts: Record<string, number>;
+  applied_fixes: AppliedFix[];
+  status: string;
+}
+
+export interface RemediationStatus {
+  findings_received: number;
+  fixes_dispatched: number;
+  total_steps: number;
+  applied_fixes: AppliedFix[];
+}

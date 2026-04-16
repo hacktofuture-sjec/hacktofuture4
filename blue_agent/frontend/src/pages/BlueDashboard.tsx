@@ -3,11 +3,13 @@ import { ActivityPanel } from "@/components/ActivityPanel";
 import { ChatButton } from "@/components/ChatButton";
 import { FixPlanPanel } from "@/components/FixPlanPanel";
 import { LogStream } from "@/components/LogStream";
+import { RemediationPanel } from "@/components/RemediationPanel";
+import { ReportInputPanel } from "@/components/ReportInputPanel";
 import { SSHScanPanel } from "@/components/SSHScanPanel";
 import { StatusBar } from "@/components/StatusBar";
 import { useBlueWebSocket } from "@/hooks/useBlueWebSocket";
 import { blueApi } from "@/api/blueApi";
-import type { SSHScanResult } from "@/types/blue.types";
+import type { RemediationResult, SSHScanResult } from "@/types/blue.types";
 
 const ACCENT = "#58a6ff";
 
@@ -22,6 +24,11 @@ export function BlueDashboard() {
   const [applying, setApplying] = useState(false);
   const [scanResult, setScanResult] = useState<SSHScanResult | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+
+  // Remediation state (Red report → Blue fix)
+  const [remediating, setRemediating] = useState(false);
+  const [remediationResult, setRemediationResult] = useState<RemediationResult | null>(null);
+  const [remediationError, setRemediationError] = useState<string | null>(null);
 
   const hasVulnerabilities =
     scanResult?.success === true && scanResult.total_cves > 0;
@@ -63,6 +70,35 @@ export function BlueDashboard() {
     }
   };
 
+  const handleReportSubmit = async (raw: string) => {
+    setRemediating(true);
+    setRemediationError(null);
+    setRemediationResult(null);
+    try {
+      const report = JSON.parse(raw);
+      const res = await blueApi.ingestReport(report);
+      setRemediationResult(res);
+    } catch (err: any) {
+      setRemediationError(err?.response?.data?.detail || err?.message || "Remediation failed");
+    } finally {
+      setRemediating(false);
+    }
+  };
+
+  const handleRunSample = async () => {
+    setRemediating(true);
+    setRemediationError(null);
+    setRemediationResult(null);
+    try {
+      const res = await blueApi.runSampleRemediation();
+      setRemediationResult(res);
+    } catch (err: any) {
+      setRemediationError(err?.response?.data?.detail || err?.message || "Remediation failed");
+    } finally {
+      setRemediating(false);
+    }
+  };
+
   return (
     <div
       style={{
@@ -81,7 +117,7 @@ export function BlueDashboard() {
               BLUE TEAM // AUTONOMOUS DEFENDER
             </h1>
             <p style={{ color: "#8b949e", margin: "4px 0 0", fontSize: 11 }}>
-              Step 1: Scan server &rarr; Step 2: Review fix plan &rarr; Step 3: Apply fixes
+              Paste Red Team report &rarr; Auto-remediate &nbsp;|&nbsp; SSH scan &rarr; Fix plan &rarr; Apply
               &nbsp;&middot;&nbsp;ws:{" "}
               <span style={{ color: connected ? "#3fb950" : "#f85149" }}>
                 {connected ? "connected" : "disconnected"}
@@ -126,34 +162,57 @@ export function BlueDashboard() {
       {/* Status bar */}
       <StatusBar status={agentStatus} accent={ACCENT} />
 
-      {/* Main grid — adapts based on scan state */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: hasVulnerabilities ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr",
-          gap: 12,
-          marginTop: 12,
-          height: "calc(100vh - 230px)",
-        }}
-      >
-        {/* Col 1: Scan results */}
-        <SSHScanPanel result={scanResult} accent={ACCENT} />
+      {/* Main grid — two-row layout */}
+      <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 12, height: "calc(100vh - 230px)" }}>
 
-        {/* Col 2: Fix plan — only when vulnerabilities found */}
-        {hasVulnerabilities && (
-          <FixPlanPanel
-            result={scanResult!}
-            applying={applying}
-            onApply={handleApplyFixes}
+        {/* Row 1: Red Report Input + Remediation Results */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: remediationResult ? "1fr 1fr" : "1fr",
+            gap: 12,
+            minHeight: remediationResult ? 340 : 300,
+          }}
+        >
+          <ReportInputPanel
             accent={ACCENT}
+            onSubmit={handleReportSubmit}
+            onRunSample={handleRunSample}
+            submitting={remediating}
           />
+          {remediationResult && (
+            <RemediationPanel result={remediationResult} accent={ACCENT} />
+          )}
+        </div>
+
+        {remediationError && (
+          <span style={{ color: "#f85149", fontSize: 12, padding: "0 4px" }}>{remediationError}</span>
         )}
 
-        {/* Activity */}
-        <ActivityPanel toolCalls={toolCalls} accent={ACCENT} limit={30} />
+        {/* Row 2: SSH scan + Fix plan + Activity + Logs */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: hasVulnerabilities ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr",
+            gap: 12,
+            flex: 1,
+            minHeight: 0,
+          }}
+        >
+          <SSHScanPanel result={scanResult} accent={ACCENT} />
 
-        {/* Logs */}
-        <LogStream logs={logs} accent={ACCENT} />
+          {hasVulnerabilities && (
+            <FixPlanPanel
+              result={scanResult!}
+              applying={applying}
+              onApply={handleApplyFixes}
+              accent={ACCENT}
+            />
+          )}
+
+          <ActivityPanel toolCalls={toolCalls} accent={ACCENT} limit={30} />
+          <LogStream logs={logs} accent={ACCENT} />
+        </div>
       </div>
 
       <ChatButton accent={ACCENT} />

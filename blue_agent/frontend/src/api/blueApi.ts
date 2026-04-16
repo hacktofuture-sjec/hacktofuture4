@@ -6,6 +6,9 @@ import type {
   EnvironmentStats,
   EvolutionMetrics,
   HardenServiceRequest,
+  RedReportRequest,
+  RemediationResult,
+  RemediationStatus,
   ScanStats,
   SSHCredentials,
   SSHScanResult,
@@ -84,4 +87,12 @@ export const blueApi = {
     client.get("/scan/ssh/results").then((r) => r.data),
   sshScanStats: () =>
     client.get("/scan/ssh/stats").then((r) => r.data),
+
+  // Remediation — Red report ingestion
+  ingestReport: (report: RedReportRequest) =>
+    client.post<RemediationResult>("/remediate/ingest-report", report).then((r) => r.data),
+  runSampleRemediation: () =>
+    client.post<RemediationResult>("/remediate/run-sample").then((r) => r.data),
+  remediationStatus: () =>
+    client.get<RemediationStatus>("/remediate/status").then((r) => r.data),
 };

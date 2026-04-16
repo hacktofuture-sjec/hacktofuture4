@@ -208,3 +208,36 @@ class BlueAgentStatus(BaseModel):
     environment_alerts: int = 0
     evolution_rounds: int = 0
     defense_plans: int = 0
+    remediation_findings: int = 0
+    remediation_fixes: int = 0
+
+
+# ── Red Report Ingestion ────────────────────────────────────────────
+
+class RedReportRequest(BaseModel):
+    """Structured Red team penetration test report."""
+    target: str = Field(..., description="Target URL, e.g. http://172.25.8.172:5000")
+    risk_score: float = Field(0.0, description="Overall risk score 0-10")
+    recon: Dict[str, Any] = Field(default_factory=dict, description="Phase 1: Recon findings")
+    exploit: Dict[str, Any] = Field(default_factory=dict, description="Phase 2: Exploit findings")
+    recommendations: List[Dict[str, Any]] = Field(default_factory=list, description="Remediation recommendations")
+
+
+class RemediationResult(BaseModel):
+    """Result of the Blue Agent remediation pipeline."""
+    target: str
+    risk_score: float
+    total_findings: int = 0
+    fixes_applied: int = 0
+    total_steps: int = 0
+    severity_counts: Dict[str, int] = Field(default_factory=dict)
+    applied_fixes: List[Dict[str, Any]] = Field(default_factory=list)
+    status: str = "complete"
+
+
+class RemediationStatus(BaseModel):
+    """Current status of the remediation engine."""
+    findings_received: int = 0
+    fixes_dispatched: int = 0
+    total_steps: int = 0
+    applied_fixes: List[Dict[str, Any]] = Field(default_factory=list)

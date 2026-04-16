@@ -21,6 +21,7 @@ from blue_agent.backend.routers import (
     defense_routes,
     environment_routes,
     patch_routes,
+    remediation_routes,
     scan_routes,
     strategy_routes,
 )
@@ -56,6 +57,7 @@ app.include_router(patch_routes.router, prefix="/patch", tags=["patch"])
 app.include_router(strategy_routes.router, prefix="/strategy", tags=["strategy"])
 app.include_router(scan_routes.router, prefix="/scan", tags=["scan"])
 app.include_router(environment_routes.router, prefix="/environment", tags=["environment"])
+app.include_router(remediation_routes.router, prefix="/remediate", tags=["remediation"])
 app.include_router(blue_ws.router, tags=["websocket"])
 
 

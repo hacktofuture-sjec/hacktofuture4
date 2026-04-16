@@ -22,6 +22,9 @@ from blue_agent.backend.schemas.blue_schemas import (
     LogEntry,
     PatchRequest,
     PatchResult,
+    RedReportRequest,
+    RemediationResult,
+    RemediationStatus,
     StrategyRequest,
     ToolCall,
     ToolStatus,
@@ -34,6 +37,7 @@ from blue_agent.scanner.ssh_scanner import SSHScanner
 from blue_agent.environment.environment_manager import EnvironmentManager
 from blue_agent.strategy.defense_evolver import DefenseEvolver
 from blue_agent.strategy.defense_planner import DefensePlanner
+from blue_agent.remediation.remediation_engine import RemediationEngine
 
 _TOOL_HISTORY: Deque[ToolCall] = deque(maxlen=200)
 _LOG_HISTORY: Deque[LogEntry] = deque(maxlen=500)
@@ -43,6 +47,7 @@ _ssh_scanner = SSHScanner()
 _environment_manager = EnvironmentManager()
 _defense_planner = DefensePlanner()
 _defense_evolver = DefenseEvolver()
+_remediation_engine = RemediationEngine()
 
 # ---------------------------------------------------------------------------
 # Real-time broadcast bridge — WebSocket registers its callback here
@@ -301,3 +306,59 @@ async def recent_tool_calls(category: str | None = None, limit: int = 20) -> lis
 
 async def recent_logs(limit: int = 100) -> list:
     return list(_LOG_HISTORY)[-limit:]
+
+
+# ── Remediation endpoints (Red report → Blue fix pipeline) ──────────
+
+async def ingest_red_report(report: RedReportRequest) -> RemediationResult:
+    """Process a Red team report and apply all fixes simultaneously."""
+    from core.event_bus import event_bus
+
+    # Ensure event bus is running for the remediation pipeline
+    await event_bus.start()
+    _remediation_engine.register()
+
+    call = _new_tool_call("ingest_red_report", "remediation", {
+        "target": report.target,
+        "risk_score": report.risk_score,
+    })
+
+    add_log(f"Ingesting Red team report for {report.target} (risk: {report.risk_score}/10)", level="INFO")
+
+    # Run the full pipeline: parse → publish findings → remediate simultaneously
+    result = await _remediation_engine.remediate_full_report(report.model_dump())
+
+    report_summary = result.get("report_summary", {})
+    remediation = result.get("remediation", {})
+
+    _finish(call, {
+        "findings": report_summary.get("total_findings", 0),
+        "fixes": remediation.get("fixes_applied", 0),
+        "status": "complete",
+    })
+
+    return RemediationResult(
+        target=report.target,
+        risk_score=report.risk_score,
+        total_findings=report_summary.get("total_findings", 0),
+        fixes_applied=remediation.get("fixes_applied", 0),
+        total_steps=remediation.get("total_steps", 0),
+        severity_counts=report_summary.get("severity_counts", {}),
+        applied_fixes=remediation.get("applied_fixes", []),
+        status="complete",
+    )
+
+
+async def run_sample_remediation() -> RemediationResult:
+    """Run remediation using the sample Red team report."""
+    from red_agent.report_ingester import build_report_from_sample
+
+    sample = build_report_from_sample()
+    report = RedReportRequest(**sample)
+    return await ingest_red_report(report)
+
+
+async def get_remediation_status() -> RemediationStatus:
+    """Get current status of the remediation engine."""
+    status = _remediation_engine.get_status()
+    return RemediationStatus(**status)

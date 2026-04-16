@@ -43,6 +43,7 @@ from blue_agent.scanner.asset_scanner import AssetScanner
 from blue_agent.environment.environment_manager import EnvironmentManager
 from blue_agent.strategy.defense_planner import DefensePlanner
 from blue_agent.strategy.defense_evolver import DefenseEvolver
+from blue_agent.remediation.remediation_engine import RemediationEngine
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,9 @@ class BlueController:
         self.defense_planner = DefensePlanner()
         self.defense_evolver = DefenseEvolver()
 
+        # ── Remediation layer (Red report → simultaneous fixes) ───────
+        self.remediation_engine = RemediationEngine()
+
         self._running: bool = False
 
     # ------------------------------------------------------------------
@@ -107,6 +111,7 @@ class BlueController:
         self.auto_patcher.register()
         self.defense_planner.register()
         self.defense_evolver.register()
+        self.remediation_engine.register()
 
     # ------------------------------------------------------------------
     # Status
@@ -137,6 +142,9 @@ class BlueController:
             # Evolution
             "evolution_rounds": self.defense_evolver.evolution_count,
             "defense_plans": self.defense_planner.plans_generated,
+            # Remediation (Red report → Blue fix pipeline)
+            "remediation_findings": self.remediation_engine.findings_received,
+            "remediation_fixes": self.remediation_engine.fixes_dispatched,
         }
 
     # ------------------------------------------------------------------
@@ -192,6 +200,7 @@ class BlueController:
                 "environment_manager",
                 "defense_planner",
                 "defense_evolver",
+                "remediation_engine",
             ],
             "environments": ["cloud", "onprem", "hybrid"],
             "primary_target": {
