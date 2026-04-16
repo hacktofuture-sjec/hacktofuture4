@@ -164,6 +164,18 @@ function BiometricModal({ onApprove, onDeny }) {
 function AuthenticationScreen({ onComplete }) {
   const [phase, setPhase] = useState(0) // 0=idle, 1=oidc, 2=spiffe, 3=success
 
+  // Auto-reset on login screen mount to clear any lingering attack state
+  useEffect(() => {
+    const resetState = async () => {
+      try {
+        await fetch('/aegis-sync/reset', { method: 'POST' })
+      } catch (e) {
+        console.warn('Reset endpoint unavailable')
+      }
+    }
+    resetState()
+  }, [])
+
   const handleLogin = () => {
     if (phase !== 0) return
     setPhase(1)

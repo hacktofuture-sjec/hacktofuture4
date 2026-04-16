@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Terminal, ShieldAlert, Cpu, Activity, Server, Radio } from 'lucide-react'
+import { Terminal, ShieldAlert, Cpu, Activity, Server, Radio, Lock, Eye, MousePointer2, Keyboard, User, Fingerprint, Key } from 'lucide-react'
 
 export default function HackerTerminal() {
   const [logs, setLogs] = useState([
@@ -9,7 +9,25 @@ export default function HackerTerminal() {
   ])
   const [input, setInput] = useState('')
   const [terminalState, setTerminalState] = useState('idle') // idle, scanning, dumping, exploiting, crashed
+  const [showInterceptedIdentity, setShowInterceptedIdentity] = useState(false)
   const endRef = useRef(null)
+
+  // Simulated intercepted identity data (mirroring dashboard)
+  const interceptedIdentity = {
+    subject: 'Sarah_Admin',
+    trustScore: 99.8,
+    humanTrust: 99.8,
+    compositeTrust: 97.0,
+    keystrokes: 342,
+    mouseDistance: 18420,
+    sessions: 1,
+    oidcIssuer: 'aegis.did/idp',
+    oidcToken: 'VALID',
+    authMethod: 'Platform Authenticator',
+    spiffeId: 'spiffe://aegis.did/sentinel/agent/01',
+    serialNumber: '7A:3F:B2:91:C4:D8:E6:02',
+    keyType: 'EC P-256'
+  }
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -86,11 +104,14 @@ export default function HackerTerminal() {
 
     if (cmd === 'dump-memory') {
       setTerminalState('dumping')
+      setShowInterceptedIdentity(false)
       await typeWriter('BYPASSING FIDO2 MFA BOUNDARIES...')
       await typeWriter('EXTRACTING HEAP DUMP...')
       setLogs(p => [...p, '0x0000: 45 79 4a 68 62 47 63 69 4f 69 4a 53 55 7a 49 31 EyJhbGciOiJSUzI1'])
       setLogs(p => [...p, '0x0010: 4e 69 4a 39 2e 65 79 4a 70 64 48 4d 69 4f 69 4a NiJ9.eyJpdHMiOiJ'])
       setLogs(p => [...p, 'SESSION TOKEN EXTRACTED: Sarah_Admin (Composite_Principal)'])
+      setLogs(p => [...p, '>>> INTERCEPTED IDENTITY STREAM DECRYPTED <<<'])
+      setTimeout(() => setShowInterceptedIdentity(true), 1200)
       return
     }
 
@@ -168,6 +189,107 @@ export default function HackerTerminal() {
 
         {/* Right Panel: Telemetry & Visualization */}
         <div className="space-y-6">
+          
+          {/* Intercepted Identity Stream Panel */}
+          {showInterceptedIdentity && (
+            <div className="border-2 border-rose-500/60 bg-rose-950/20 backdrop-blur-md rounded-xl p-4 animate-pulse">
+              <h3 className="text-[10px] font-bold tracking-widest text-rose-400 mb-4 flex items-center gap-2">
+                <Eye className="w-3 h-3 animate-bounce" /> INTERCEPTED IDENTITY STREAM
+              </h3>
+              
+              {/* Decrypted Token Viewer */}
+              <div className="space-y-3">
+                {/* Subject Card */}
+                <div className="bg-black/60 rounded-lg p-3 border border-rose-900/50">
+                  <p className="text-[8px] font-black tracking-widest text-rose-400 mb-2">HIJACKED SUBJECT</p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-6 h-6 rounded-full bg-rose-500/30 flex items-center justify-center">
+                      <User className="w-3 h-3 text-rose-400" />
+                    </div>
+                    <p className="text-sm font-bold text-rose-300">{interceptedIdentity.subject}</p>
+                  </div>
+                  <div className="text-[9px] space-y-1 font-mono text-slate-300">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Auth Method:</span>
+                      <span className="text-rose-400">{interceptedIdentity.authMethod}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">OIDC Issuer:</span>
+                      <span className="text-sky-400">{interceptedIdentity.oidcIssuer}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Token Status:</span>
+                      <span className="text-emerald-400">{interceptedIdentity.oidcToken}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Trust Scores Card */}
+                <div className="bg-black/60 rounded-lg p-3 border border-rose-900/50">
+                  <p className="text-[8px] font-black tracking-widest text-rose-400 mb-2">COMPROMISED TRUST METRICS</p>
+                  <div className="grid grid-cols-2 gap-2 text-[9px] font-mono">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Human Trust:</span>
+                      <span className="text-violet-400 font-bold">{interceptedIdentity.humanTrust}%</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Agent Trust:</span>
+                      <span className="text-amber-400 font-bold">94.2%</span>
+                    </div>
+                    <div className="flex justify-between col-span-2">
+                      <span className="text-slate-500">Composite Trust:</span>
+                      <span className="text-emerald-400 font-bold">{interceptedIdentity.compositeTrust}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Behavioral Telemetry Card */}
+                <div className="bg-black/60 rounded-lg p-3 border border-rose-900/50">
+                  <p className="text-[8px] font-black tracking-widest text-rose-400 mb-2">BEHAVIORAL TELEMETRY</p>
+                  <div className="space-y-1 text-[9px] font-mono text-slate-300">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1">
+                        <Keyboard className="w-2.5 h-2.5 text-rose-400" /> Keystrokes:
+                      </span>
+                      <span className="text-emerald-400">{interceptedIdentity.keystrokes}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1">
+                        <MousePointer2 className="w-2.5 h-2.5 text-rose-400" /> Mouse Travel:
+                      </span>
+                      <span className="text-emerald-400">{(interceptedIdentity.mouseDistance / 1000).toFixed(1)}k px</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Active Sessions:</span>
+                      <span className="text-emerald-400">{interceptedIdentity.sessions}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SPIFFE Binding Card */}
+                <div className="bg-black/60 rounded-lg p-3 border border-rose-900/50">
+                  <p className="text-[8px] font-black tracking-widest text-rose-400 mb-2">SPIFFE/SVID BINDING</p>
+                  <div className="space-y-1 text-[9px] font-mono text-slate-300">
+                    <p className="text-amber-400 break-words">{interceptedIdentity.spiffeId}</p>
+                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-700/50">
+                      <span className="text-slate-500 flex items-center gap-1">
+                        <Key className="w-2.5 h-2.5" /> Serial:
+                      </span>
+                      <span className="text-sky-400">{interceptedIdentity.serialNumber}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Key Type:</span>
+                      <span className="text-sky-400">{interceptedIdentity.keyType}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-[8px] text-rose-500/70 text-center pt-2 italic">
+                  → Hacker has physically hijacked the dashboard's internal identity logic
+                </div>
+              </div>
+            </div>
+          )}
           
           <div className="border border-emerald-900/50 bg-black/50 backdrop-blur-md rounded-xl p-4">
             <h3 className="text-[10px] font-bold tracking-widest text-emerald-600/80 mb-4 flex items-center gap-2">
