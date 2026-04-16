@@ -54,10 +54,22 @@ helm upgrade --install grafana grafana/grafana \
   -f k8s/monitoring/grafana-values.yaml \
   --wait --timeout 3m
 
-kubectl apply -f k8s/sample-app.yaml
+kubectl apply -f k8s/demo-app-config.yaml
+kubectl apply -f k8s/payment-api.yaml
+kubectl apply -f k8s/auth-service.yaml
+kubectl apply -f k8s/api-service.yaml
+
+wait_for_rollout() {
+  local deployment_name="$1"
+  echo "=== Waiting for ${deployment_name} rollout ==="
+  kubectl rollout status deployment/${deployment_name} -n prod --timeout=5m
+}
+
+wait_for_rollout auth-service
+wait_for_rollout payment-api
+wait_for_rollout api-service
 
 kubectl wait --for=condition=ready pod --all -n monitoring --timeout=180s
-kubectl wait --for=condition=ready pod --all -n prod --timeout=120s
 
 bash "$ROOT_DIR/scripts/port_forward.sh"
 

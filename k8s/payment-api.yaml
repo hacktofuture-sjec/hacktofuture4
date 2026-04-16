@@ -1,0 +1,101 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-api
+  namespace: prod
+  labels:
+    app: payment-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment-api
+  template:
+    metadata:
+      labels:
+        app: payment-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      volumes:
+        - name: app-script
+          configMap:
+            name: sample-app-script
+        - name: otel-deps
+          emptyDir: {}
+      initContainers:
+        - name: install-otel
+          image: python:3.11-slim
+          command:
+            - sh
+            - -c
+            - pip install --no-cache-dir --target /otel-deps opentelemetry-sdk opentelemetry-exporter-otlp-proto-http
+          volumeMounts:
+            - name: otel-deps
+              mountPath: /otel-deps
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+      containers:
+        - name: payment-api
+          image: python:3.11-slim
+          command:
+            - sh
+            - -c
+            - python /app/app.py
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: app-script
+              mountPath: /app
+            - name: otel-deps
+              mountPath: /otel-deps
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          env:
+            - name: SERVICE_NAME
+              value: payment-api
+            - name: PORT
+              value: "8080"
+            - name: PYTHONPATH
+              value: /otel-deps
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://tempo.monitoring.svc.cluster.local:4318/v1/traces
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-api
+  namespace: prod
+spec:
+  selector:
+    app: payment-api
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
