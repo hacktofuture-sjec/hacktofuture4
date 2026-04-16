@@ -412,6 +412,167 @@ def generate_fix_content(
                 print(f"[PipelineMedic] Langfuse fix-synthesis end failed: {e}", flush=True)
 
 
+def generate_regression_test(
+    old_content: str,
+    new_content: str,
+    analysis: dict[str, Any],
+    repository: str,
+    source_file: str,
+    existing_test_content: str | None = None,
+) -> str | None:
+    """Ask Groq to write a pytest regression test for the applied fix.
+
+    The test must FAIL against ``old_content`` and PASS against
+    ``new_content``. Returns only the test code (imports + function),
+    ready to append into an existing test module, or None on failure.
+    """
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not api_key:
+        return None
+
+    model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    system_prompt = (
+        "You are a senior engineer writing a minimal, self-contained "
+        "pytest regression test. You will be shown (1) the BUGGY version "
+        "of a source file, (2) the FIXED version, and (3) a short "
+        "failure analysis. Produce ONE pytest function that would FAIL "
+        "against the BUGGY version and PASS against the FIXED version. "
+        "Requirements: "
+        "(a) Name the function test_<snake_case>_regression. "
+        "(b) Put any needed imports at the very top. Assume the file "
+        "already imports pytest; do NOT re-import it. "
+        "(c) If the source is a FastAPI app exposing `app`, use "
+        "`from fastapi.testclient import TestClient` + `from app import app`. "
+        "(d) Keep the test under 20 lines. No setup fixtures beyond "
+        "those Python stdlib + FastAPI already provide. "
+        "(e) Return ONLY Python code — no markdown fences, no prose, no "
+        "explanatory comments beyond a single docstring line."
+    )
+
+    existing_hint = (
+        "=== EXISTING TEST FILE (for context; do not repeat its imports) ===\n"
+        f"{existing_test_content or '(none)'}\n"
+        "=== END EXISTING TEST FILE ===\n\n"
+    )
+
+    user_payload = (
+        f"Repository: {repository}\n"
+        f"Source file: {source_file}\n\n"
+        "=== BUGGY VERSION ===\n"
+        f"{old_content}\n"
+        "=== END BUGGY VERSION ===\n\n"
+        "=== FIXED VERSION ===\n"
+        f"{new_content}\n"
+        "=== END FIXED VERSION ===\n\n"
+        + existing_hint
+        + f"Failure root cause: {analysis.get('root_cause', '')}\n"
+        f"Fix summary: {analysis.get('fix', '')}\n\n"
+        "Return ONLY the Python code for the new regression test."
+    )
+
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_payload},
+        ],
+        "temperature": 0.0,
+    }
+
+    lf = _get_langfuse()
+    trace_id: str | None = None
+    gen = None
+    if lf is not None:
+        try:
+            trace_id = lf.create_trace_id()
+            gen = lf.start_observation(
+                trace_context=TraceContext(trace_id=trace_id),
+                as_type="generation",
+                name="groq_test_synthesis",
+                model=model,
+                model_parameters={"temperature": 0.0},
+                input=body["messages"],
+                metadata={
+                    "repository": repository[:200],
+                    "source_file": source_file[:200],
+                    "provider": "groq",
+                },
+            )
+        except Exception as e:
+            print(f"[PipelineMedic] Langfuse test-synthesis start failed: {e}", flush=True)
+            gen = None
+
+    try:
+        r = requests.post(GROQ_URL, headers=headers, json=body, timeout=90)
+        r.raise_for_status()
+        data = r.json()
+        raw = data["choices"][0]["message"]["content"]
+        code = _strip_code_fences(raw).strip()
+        if gen is not None:
+            try:
+                usage_raw = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+                gen.update(
+                    output=code[:4000],
+                    usage_details=_groq_usage_to_usage_details(usage_raw),
+                )
+            except Exception as e:
+                print(f"[PipelineMedic] Langfuse test-synthesis update failed: {e}", flush=True)
+        if not code or "def test_" not in code:
+            return None
+        return code
+    except Exception as e:
+        print(f"[PipelineMedic] Groq test synthesis failed: {e}", flush=True)
+        if gen is not None:
+            try:
+                gen.update(level="ERROR", status_message=str(e)[:500])
+            except Exception:
+                pass
+        return None
+    finally:
+        if gen is not None:
+            try:
+                gen.end()
+            except Exception as e:
+                print(f"[PipelineMedic] Langfuse test-synthesis end failed: {e}", flush=True)
+
+
+_TEST_FN_RE = re.compile(r"^\s*def\s+(test_\w+)\s*\(", re.MULTILINE)
+
+
+def _parse_test_name(test_code: str) -> str | None:
+    m = _TEST_FN_RE.search(test_code or "")
+    return m.group(1) if m else None
+
+
+def _derive_test_path(source_path: str) -> str:
+    """app.py -> tests/test_app.py ; src/foo/bar.py -> tests/test_bar.py."""
+    base = source_path.rstrip("/").split("/")[-1]
+    if not base.endswith(".py"):
+        base = base + ".py"
+    if not base.startswith("test_"):
+        base = "test_" + base
+    return f"tests/{base}"
+
+
+def _merge_test_into_file(existing: str | None, new_test_code: str) -> str:
+    """Append the generated test to an existing test module, or create one."""
+    header = "# --- PipelineMedic regression tests (auto-generated) ---\n"
+    snippet = new_test_code.strip() + "\n"
+    if not existing or not existing.strip():
+        return (
+            "import pytest  # noqa: F401\n\n"
+            f"{header}\n"
+            f"{snippet}"
+        )
+    merged = existing.rstrip() + "\n\n\n" + header + "\n" + snippet
+    return merged
+
+
 # --- Decision -------------------------------------------------------------------
 
 DecisionPath = Literal["auto_fix", "notify_only"]
@@ -1092,6 +1253,12 @@ def build_pr_created_message(
         lines.append(f"<b>Branch</b> · <code>{_h(branch)}</code>")
     lines.append(f"<b>File</b> · <code>{_h(file)}</code>")
     lines.append(f"<b>Patch source</b> · {_h(label)}")
+    reg = github_info.get("regression_test") or {}
+    reg_qual = reg.get("qualified") if isinstance(reg, dict) else None
+    if reg_qual:
+        lines.append(
+            f"🧪 <b>Regression test</b> · <code>{_h(reg_qual)}</code>"
+        )
     if fix:
         lines.append("")
         lines.append("<b>What changed</b>")
@@ -1548,12 +1715,82 @@ def maybe_create_autofix_pr(
     if not ok_f:
         return {"ok": False, "mode": "error", "error": err_f or "file update error"}
 
+    # --- Regression test synthesis (best-effort, never blocks the PR) -------
+    # We only attempt this on a real LLM-produced patch to a Python source
+    # file. The demo audit-stamp case has no real bug to regression-test, so
+    # we skip it.
+    test_info: dict[str, str] | None = None
+    if (
+        patch_source == "llm"
+        and target_file.endswith(".py")
+        and cur_content is not None
+    ):
+        try:
+            test_path = _derive_test_path(target_file)
+            existing_test, existing_test_sha = _fetch_file(
+                token, owner, repo, test_path, branch_name
+            )
+            generated_test = generate_regression_test(
+                cur_content,
+                new_content,
+                analysis,
+                f"{owner}/{repo}",
+                target_file,
+                existing_test_content=existing_test,
+            )
+            if generated_test:
+                test_name = _parse_test_name(generated_test) or "test_regression"
+                merged_test_file = _merge_test_into_file(existing_test, generated_test)
+                ok_t, err_t = _put_file(
+                    token,
+                    owner,
+                    repo,
+                    test_path,
+                    branch_name,
+                    merged_test_file,
+                    f"test: PipelineMedic regression test ({test_name})",
+                    existing_test_sha,
+                )
+                if ok_t:
+                    test_info = {
+                        "file": test_path,
+                        "name": test_name,
+                        "qualified": f"{test_path}::{test_name}",
+                    }
+                else:
+                    print(
+                        f"[PipelineMedic] regression test commit failed: {err_t}",
+                        flush=True,
+                    )
+        except Exception as e:
+            print(f"[PipelineMedic] regression test step failed: {e}", flush=True)
+
     title = f"PipelineMedic autofix: {analysis.get('root_cause', 'CI fix')[:80]}"
-    pr_body = (
-        f"Automated suggestion (review required).\n\n"
-        f"**Root cause:** {analysis.get('root_cause')}\n\n"
-        f"**Fix:** {analysis.get('fix')}\n"
-    )
+    pr_body_parts = [
+        "Automated suggestion (review required).",
+        "",
+        f"**Root cause:** {analysis.get('root_cause')}",
+        "",
+        f"**Fix:** {analysis.get('fix')}",
+        "",
+        f"**Patched file:** `{target_file}`",
+    ]
+    if test_info is not None:
+        pr_body_parts.extend(
+            [
+                "",
+                "### 🧪 Regression test (auto-generated)",
+                "",
+                "PipelineMedic also generated a regression test that would have "
+                "caught this bug before the fix. Merging this PR both resolves "
+                "this incident and immunises the repo against future regressions.",
+                "",
+                f"- File: `{test_info['file']}`",
+                f"- Test: `{test_info['name']}`",
+            ]
+        )
+    pr_body = "\n".join(pr_body_parts)
+
     pr_num, err_p = _open_pr(token, owner, repo, title, pr_body, branch_name, use_base)
     if pr_num is None:
         return {"ok": False, "mode": "error", "error": err_p or "PR error"}
@@ -1572,6 +1809,7 @@ def maybe_create_autofix_pr(
         "base": use_base,
         "file": target_file,
         "patch_source": patch_source,
+        "regression_test": test_info,
     }
 
 
