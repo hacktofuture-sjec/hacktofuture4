@@ -1,52 +1,88 @@
-# Day-1 Parallel Start Checklist
+# Current Implementation Status & Remaining Workstreams
 
-## Team-wide First 90 Minutes
+## ✅ Completed (Merged to Main)
 
-1. Create all four feature branches from main.
-2. Finalize and freeze initial schemas and enums.
-3. Finalize API contract draft for critical routes:
-   - GET /healthz
-   - GET /scenarios
-   - POST /inject-fault
-   - GET /incidents
-   - GET /incidents/{id}
-   - POST /incidents/{id}/approve
-4. Confirm local environment variables and DB path strategy.
+### Backend Core (Aravind)
 
-## Aravind Start Pack
+- ✅ FastAPI app scaffolding with config and DB initialization
+- ✅ SQLite models: incidents, actions, verification_records
+- ✅ Incident state machine: open → diagnosing → planned → pending_approval → approved → executing → verifying → resolved|failed
+- ✅ Routers: /incidents endpoints (plan, simulate, approve, execute, verify)
+- ✅ Websocket event broadcaster (infrastructure ready)
+- ✅ 60 backend tests passing
 
-1. Scaffold backend app, config, DB init, and router placeholders.
-2. Add initial schemas and enums with strict validation.
-3. Add health and incidents router skeletons.
-4. Commit baseline contract and open PR early.
+### Observation & Monitor (Kushal)
 
-## Rajatha Start Pack
+- ✅ Collector stubs: Prometheus, Loki, Tempo, K8s events
+- ✅ Monitor agent: snapshot collection and incident opening
+- ✅ Incident snapshot assembly (top-5 logs, 10-min events, metrics)
+- ⚠️ Loki real queries (stubbed, needs implementation)
 
-1. Implement diagnosis rule engine scaffold.
-2. Implement planner policy ranker scaffold.
-3. Add token governor interface and stubs.
-4. Add JSON output parser contracts for AI fallback.
+### Diagnosis & Planning (Rajatha)
 
-## Kushal Start Pack
+- ✅ Rule engine: 5+ fingerprints with confidence scoring
+- ✅ LLM fallback framework with graceful degradation
+- ✅ Planner agent: policy ranking, risk levels, action selection
+- ✅ Plan simulator: blast radius, dependency impact, rollback checks
+- ✅ Token governor framework (ready for OPENAI_API_KEY integration)
 
-1. Implement collector stubs for Prometheus, Loki, Tempo, and K8s events.
-2. Implement monitor agent skeleton and incident snapshot builder.
-3. Add baseline scenarios.json with 4 deterministic scenarios.
-4. Add k8s manifests and monitoring values placeholders.
+### Execution & Verification (Aravind + Rajatha)
 
-## Vivek Start Pack
+- ✅ Executor agent: command allowlist, vCluster sandbox flow
+- ✅ Verifier agent: 5-metric recovery thresholds, automatic closure
+- ✅ Deterministic demo mode for hackathon reliability
+- ⚠️ Real vCluster integration (next hardening phase)
 
-1. Scaffold Next.js app structure and dashboard shell.
-2. Create frontend types mirrored from frozen backend schema.
-3. Implement basic incident feed and drawer placeholders.
-4. Add websocket hook with reconnect strategy.
+---
 
-## End-of-Day Sync
+## 🔄 In Progress / Next Priority
 
-1. Run one integration pass:
-   - inject scenario
-   - incident opens
-   - diagnose returns payload
-   - planner returns ranked actions
-2. Confirm no contract drift between backend models and frontend types.
-3. Decide next freeze point for day 2.
+### 1. Frontend Integration (Vivek) — BLOCKING DEMO
+
+**Deliverables**:
+
+- [ ] WebSocket connection to backend with auto-reconnect
+- [ ] Live incident feed from WebSocket stream
+- [ ] Agent trace visualization (Monitor → Diagnose → Planner → Executor → Verifier)
+- [ ] Approval modal with action details and risk level
+- [ ] Inject Fault control for demo scenario triggering
+- [ ] Recovery timeline and close report
+- [ ] Token/cost display per incident
+
+**Priority**: HIGH — Blocks demo flow
+
+### 2. Signal Intelligence Hardening (Kushal) — DEMO QUALITY
+
+**Deliverables**:
+
+- [ ] Real Loki LogQL queries (test against staging/prod logs)
+- [ ] Prometheus remote query expansion (all 5+ metrics)
+- [ ] K8s event polling with actual cluster events
+- [ ] Tempo trace summary extraction from real spans
+- [ ] Top-5 signature filtering tested with realistic logs
+
+**Priority**: HIGH — Ensures realistic telemetry in demo
+
+### 3. Executor/Verifier Production Hardening (Aravind) — POLISH
+
+**Deliverables**:
+
+- [ ] Real vCluster sandbox integration (not deterministic stubs)
+- [ ] Rollout observer integration for live metrics
+- [ ] Rollback hook validation before execution
+- [ ] Operator metadata in approval (operator_id, operator_note)
+- [ ] Full incident timeline persistence in SQLite
+
+**Priority**: MEDIUM — Improves reliability post-demo
+
+---
+
+## Quick Start for New Contributors
+
+1. **Pull latest main**: `git pull origin main`
+2. **Run tests**: `pytest backend/tests/ -q` (expect 60 passing)
+3. **Start backend**: `uvicorn --app-dir backend main:app --reload`
+4. **Check health**: `curl http://localhost:8000/incidents`
+
+See [00-overview.md](./agents/00-overview.md) for full architecture.
+See [08-running-the-system.md](./agents/08-running-the-system.md) for platform-specific setup.

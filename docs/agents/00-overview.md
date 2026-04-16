@@ -1,192 +1,105 @@
-# Agents Implementation — Phase 1 & 2 Complete ✅
+# Agents Implementation Overview (Current State)
 
-## What Has Been Built
+## Scope Summary
 
-This document captures the complete Phase 1 & 2 implementation of the T3PS2 self-healing Kubernetes incident-response agent pipeline:
+This project implements a complete, multi-agent incident-response loop with monitoring, diagnosis, planning, execution, and verification.
 
-- **Phase 1**: Rule-based diagnosis (fingerprint catalog with 5 patterns) + policy-based planner (5 remediation policies)
-- **Phase 2**: LLM fallback diagnosis layer with token budget governance + comprehensive test coverage
+**All 4 phases now implemented and integrated:**
 
----
+- Phase 1: Rule-first diagnosis with fingerprint matching
+- Phase 2: LLM fallback diagnosis with token/cost governance
+- Phase 3: Monitor -> diagnose -> plan orchestration endpoints
+- Phase 4: ✅ Complete — Incident execution in sandbox, threshold-based recovery verification, full lifecycle closure
 
-## Architecture Overview
+## What Is Implemented
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  MONITOR AGENT → IncidentSnapshot (metrics, events, logs)      │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│                      DIAGNOSE AGENT                             │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │ Stage 1: Rule-Based Fingerprint Matching (5 patterns)   │  │
-│  │  - FP-001: Memory exhaustion (OOMKilled)                │  │
-│  │  - FP-002: Crash loop (CrashLoopBackOff)               │  │
-│  │  - FP-003: Image pull failure (ImagePullBackOff)       │  │
-│  │  - FP-004: Infra saturation (FailedScheduling)         │  │
-│  │  - FP-005: DB pool saturation (latency + timeout logs) │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │ Stage 2: Feature Extraction (13 features)               │  │
-│  │  - Metrics: CPU%, Memory%, Restarts, Latency           │  │
-│  │  - Signals: Z-scores, burst detection, event counts    │  │
-│  │  - Logs: Top error signatures, event frequency         │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │ Stage 3: LLM Fallback (if rule confidence < 75%)        │  │
-│  │  - Robust JSON extraction with 3-tier fallback         │  │
-│  │  - Token budget gates ($0.15/incident max)             │  │
-│  │  - Graceful degradation on timeout/parse/connection    │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                 ↓                                                │
-│         DiagnosisPayload (root_cause, confidence, evidence)    │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│                      PLANNER AGENT                              │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │ Policy Ranking (5 policies ranked by risk)              │  │
-│  │  - Policy 1: Restart pod (low risk)                     │  │
-│  │  - Policy 2: Scale resources (low risk)                 │  │
-│  │  - Policy 3: Rollback deployment (medium risk)          │  │
-│  │  - Policy 4: Patch configuration (medium risk)          │  │
-│  │  - Policy 5: Failover service (high risk)               │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │ Action Generation & Ranking                             │  │
-│  │  - Template-based action commands                       │  │
-│  │  - Context-aware parameter substitution                 │  │
-│  │  - Risk-based ordering for human approval               │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                 ↓                                                │
-│         PlannerOutput (ranked actions with confidence/risk)    │
-└─────────────────────────────────────────────────────────────────┘
-```
+### Monitor Agent
 
----
+- Collects metrics (Prometheus), logs (Loki), K8s events, and traces (Tempo)
+- Filters and correlates four telemetry pillars into compact incident snapshots
+- Top-5 log signatures, 10-min event window, metric summaries
 
-## Core Components & Files
+### Diagnose Agent
 
-| Component             | File                                     | Lines | Purpose                                                  |
-| --------------------- | ---------------------------------------- | ----- | -------------------------------------------------------- |
-| **Rule Engine**       | `backend/diagnosis/rule_engine.py`       | 180   | 5-pattern fingerprint catalog + matching logic           |
-| **Feature Extractor** | `backend/diagnosis/feature_extractor.py` | 210   | 13-feature extraction (metrics, signals, logs)           |
-| **LLM Fallback**      | `backend/diagnosis/llm_fallback.py`      | 280   | AI diagnosis with robust JSON parsing + error handling   |
-| **Token Governor**    | `backend/governance/token_governor.py`   | 130   | Budget enforcement: max 2 calls/incident, $0.15/incident |
-| **Policy Ranker**     | `backend/planner/policy_ranker.py`       | 150   | 5 policies ranked by risk + action templating            |
-| **Data Contracts**    | `backend/models/schemas.py`              | 200+  | Pydantic models for all pipeline stages                  |
-| **Enums**             | `backend/models/enums.py`                | 80+   | 9 enum classes (IncidentStatus, FailureClass, etc.)      |
+- Rule catalog for known failures (5+ fingerprints with confidence scoring)
+- Feature extraction and confidence-aware decision flow
+- Conditional LLM fallback with graceful degradation and JSON parsing guardrails
+- Outputs root-cause diagnosis with evidence trace
 
----
+### Planner Agent
 
-## Key Design Decisions
+- Policy-based action ranking with risk levels (low/medium/high)
+- Plan simulator: blast radius, dependency impact, rollback feasibility
+- Deterministic action selection based on incident fingerprint
 
-### 1. Rule-First, AI-Fallback Strategy
+### Executor Agent
 
-- **Rule engine is primary path**: Fast, deterministic, fully explainable
-- **LLM fallback is conditional**: Only triggered when rule confidence < 75%
-- **Graceful degradation**: Timeouts, parse errors, and connection failures don't crash—fall back to rule-only results
+- Command allowlist validation (safe kubectl operations only)
+- Sandbox-first executor flow: create vCluster → validate → promote
+- Deterministic demo implementation for hackathon reliability
 
-### 2. Token Budget Enforcement
+### Verifier Agent
 
-- **Hard limits**: Max 2 AI calls per incident, max $0.15 estimated cost per incident
-- **Precision tracking**: Estimated cost (for gating) separate from actual cost (for audit)
-- **Cost-aware rounding**: `estimate_cost()` returns unrounded value; rounding only on display/logging
+- Threshold-based recovery validation against 5 metrics (memory%, CPU%, restarts, error rate, latency p95)
+- Automatic incident closure when thresholds pass
+- Escalation to failed when recovery does not stabilize
 
-### 3. Feature Extraction for Diagnosis
+### Full Incident Lifecycle Endpoints
 
-- **Z-score normalization**: Baseline-relative anomaly detection (CPU, memory, latency)
-- **Burst detection**: Sudden spikes in restart count or error frequency
-- **Top signatures**: Most common error messages + event reasons (e.g., "OOMKilled", "timeout")
+| Route                         | Phase           | What It Does                        |
+| ----------------------------- | --------------- | ----------------------------------- |
+| POST /incidents/{id}/plan     | Diagnose → Plan | Generate ranked actions             |
+| POST /incidents/{id}/simulate | Plan            | Recompute blast radius for action   |
+| POST /incidents/{id}/approve  | Approval        | Operator gate for high-risk actions |
+| POST /incidents/{id}/execute  | Executor        | Run action in sandbox → promote     |
+| POST /incidents/{id}/verify   | Verifier        | Check recovery → close or fail      |
 
-### 4. Policy Ranking for Planner
+Status transitions:
 
-- **Risk-based ordering**: Low-risk actions (restart) ranked first, high-risk actions (failover) last
-- **Template-based actions**: Parameterized command templates with incident context substitution
-- **Human approval gate**: All ranked actions sent to human for approval before execution
+`open → diagnosing → planned → pending_approval → approved → executing → verifying → resolved|failed`
 
----
+## Test Status
 
-## Test Coverage
+- ✅ **60 backend tests passing** (all phases integrated)
+- Route-level coverage:
+  - Monitor/diagnose/plan orchestration (happy path + error handling)
+  - Plan/simulate/approve flow with state validation
+  - Execute/verify transitions with command allowlist blocking
+  - Threshold boundary preservation (verifier floors percents, not rounds)
+  - Edge cases: non-finite percentages, missing metric keys, non-positive windows
+  - State isolation per test via fixture (no cross-test contamination)
 
-| Test Suite       | File                       | Count        | Coverage                                                 |
-| ---------------- | -------------------------- | ------------ | -------------------------------------------------------- |
-| Diagnosis Agents | `test_diagnosis_agents.py` | 9 tests      | All 5 fingerprints + matching logic                      |
-| LLM Fallback     | `test_llm_fallback.py`     | 12 tests     | JSON parsing, error handling, graceful degradation       |
-| Planner Agents   | `test_planner_agents.py`   | 11 tests     | Policy ranking, action generation, template substitution |
-| Model Contracts  | `test_models_contract.py`  | 4 tests      | Pydantic schema validation                               |
-| **Total**        | —                          | **37 tests** | **100% passing** ✅                                      |
+## Known Limitations
 
----
+- **Executor and verifier** use deterministic simulation mode for hackathon safety (not real rollout observers yet).
+- **Monitor collectors** are partially stubbed:
+  - Loki queries return empty (real LogQL queries not yet integrated)
+  - Prometheus direct queries available but mocked data in demo
+  - K8s events and Tempo working but with synthetic data
+- **Incident storage** is in-memory only (no durable SQLite persistence yet).
+- **LLM integration** is framework-ready but requires OPENAI_API_KEY environment variable.
 
-## How to Read This Documentation
+## Next Continuation Priorities
 
-Build understanding in this order:
+### Phase 5: Signal Intelligence & Real Collectors (Kushal)
 
-1. **[00-overview.md](00-overview.md)** ← You are here
-2. **[01-phase1-diagnosis.md](01-phase1-diagnosis.md)** — Rule engine + 5 fingerprints
-3. **[02-phase2-llm-fallback.md](02-phase2-llm-fallback.md)** — LLM fallback + graceful degradation
-4. **[03-phase2-planner.md](03-phase2-planner.md)** — Policy ranking + action templating
-5. **[04-token-governance.md](04-token-governance.md)** — Budget gating + cost tracking
-6. **[05-data-contracts.md](05-data-contracts.md)** — All Pydantic models + field reference
-7. **[06-testing-guide.md](06-testing-guide.md)** — How to run tests + interpret results
-8. **[07-api-endpoints.md](07-api-endpoints.md)** — FastAPI endpoints + request/response contracts
-9. **[08-running-the-system.md](08-running-the-system.md)** — Quick start + 5-minute demo
+1. Integrate real Loki queries for log filtering
+2. Implement Prometheus remote query with real metrics
+3. Add K8s event polling with actual cluster events
+4. Tempo trace summary extraction from real spans
 
----
+### Phase 6: Frontend Dashboard Integration (Vivek)
 
-## Status & Next Steps
+1. WebSocket streaming of incident events
+2. Agent trace visualization (Monitor → Diagnose → Planner → Executor)
+3. Live action approval modal with risk display
+4. Recovery timeline and closure report
+5. Inject Fault control for deterministic demo scenarios
 
-### ✅ Completed (Phase 1 & 2)
+### Phase 7: Production Hardening (Aravind + Rajatha)
 
-- Rule-based diagnosis with 5 fingerprints (FP-001 through FP-005)
-- 13-feature extraction with Z-score + burst detection
-- LLM fallback diagnosis with robust JSON parsing
-- Token budget governance ($0.15/incident cap)
-- 5-policy planner with risk-based ranking
-- Comprehensive test suite (37/37 passing)
-- Full Pydantic data contracts
-
-### 🚧 Next: Phase 3 (Not yet started)
-
-- Monitor Agent: Signal collection + 4-signal correlation
-- Diagnose Agent Orchestration: Rule → AI fallback pipeline
-- Planner Agent Orchestration: Policy selection + action recommendation
-- Executor Agent: Apply approved remediation
-- Monitor/Diagnose/Planner API endpoints
-
----
-
-## File Structure
-
-```
-backend/
-├── diagnosis/
-│   ├── rule_engine.py          # 5-fingerprint catalog + matching
-│   ├── feature_extractor.py    # 13 features (metrics, signals, logs)
-│   └── llm_fallback.py         # AI diagnosis + JSON parsing + error handling
-├── planner/
-│   └── policy_ranker.py        # 5 policies + action generation + ranking
-├── governance/
-│   └── token_governor.py       # Token + cost budget enforcement
-├── models/
-│   ├── enums.py                # 9 enum classes
-│   └── schemas.py              # 20+ Pydantic models
-└── tests/
-    ├── test_diagnosis_agents.py    # 9 fingerprint matching tests
-    ├── test_llm_fallback.py        # 12 LLM + error handling tests
-    ├── test_planner_agents.py      # 11 policy ranking tests
-    └── test_models_contract.py     # 4 contract validation tests
-
-docs/
-└── agents/                      # THIS DOCUMENTATION
-    ├── 00-overview.md
-    ├── 01-phase1-diagnosis.md
-    ├── 02-phase2-llm-fallback.md
-    ├── 03-phase2-planner.md
-    ├── 04-token-governance.md
-    ├── 05-data-contracts.md
-    ├── 06-testing-guide.md
-    ├── 07-api-endpoints.md
-    └── 08-running-the-system.md
-```
+1. Durable incident timeline in SQLite
+2. Real vCluster sandbox integration with live rollout observers
+3. Rollback hook validation before execution
+4. Operator metadata in approval flow (operator_id, operator_note)
+5. Full audit trail per incident lifecycle

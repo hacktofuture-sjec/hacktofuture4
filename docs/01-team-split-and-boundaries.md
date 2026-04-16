@@ -70,19 +70,19 @@
 - Any change to a frozen file needs all affected owners to approve.
 - Avoid editing another owner's directory directly; raise an issue or pair for a short session.
 
-## Branch Plan
+## Merge Status (Current Sprint)
 
-- feature/backend-core-aravind
-- feature/agents-rajatha
-- feature/observation-kushal
+✅ **Completed phases (merged to main)**:
+
+1. Backend core + contracts (Aravind)
+2. Monitor + collectors (Kushal)
+3. Diagnose + planner + governance (Rajatha)
+4. Executor + verification (Aravind + Rajatha, PR #5)
+
+🔄 **In Progress**: 5. Frontend integration (Vivek) — WebSocket streaming, live dashboard 6. Signal Intelligence hardening (Kushal) — Real Loki/Tempo queries 7. Tests and demo stabilization (all)
+
+**Active branches**:
+
 - feature/frontend-vivek
-- integration/e2e-stabilization
-
-Merge order:
-
-1. backend core + contracts
-2. observation + monitor
-3. diagnose + planner + governance
-4. executor + verification + memory
-5. frontend integration
-6. tests and dry-run hardening
+- feature/observation-kushal (Loki/Tempo real integration)
+- feature/phase5-dashboard (if applicable)
