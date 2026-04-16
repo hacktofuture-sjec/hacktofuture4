@@ -1,6 +1,6 @@
 import json
 import os
-from mistralai.client import MistralClient
+from mistralai.client import Mistral
 
 # Import all prediction functions
 import sys
@@ -11,7 +11,7 @@ from predict.predict_survivor import predict_survivor
 from predict.predict_validator import predict_validator
 
 # Setup Mistral
-client = MistralClient(api_key="H2z0gd6ieaMgUAAByONNnDtnmwLtonuW")
+client = Mistral(api_key="H2z0gd6ieaMgUAAByONNnDtnmwLtonuW")
 
 def run_all_models(raw_sensor_data):
     """
@@ -93,7 +93,7 @@ No fluff. Every word must be actionable.
 """
     
     try:
-        response = client.chat(
+        response = client.chat.complete(
             model="mistral-small-latest",
             messages=[{"role": "user", "content": prompt}]
         )
@@ -162,43 +162,82 @@ def process_node_alert(raw_sensor_data, location_data, external_data=None):
 # TEST THE WHOLE PIPELINE
 if __name__ == "__main__":
     import numpy as np
-    
-    # Simulate a building collapse event
-    seismic_xyz = np.zeros((50, 3))
-    seismic_xyz[:10] = np.random.normal(0, 0.05, (10, 3))
-    seismic_xyz[10] = [5.2, 4.1, 2.8]  # collapse spike
-    seismic_xyz[11:] = np.random.normal(0, 0.9, (39, 3))  # sustained tremor
-    
-    gas_ppm = np.linspace(60, 650, 30)  # rising LPG
-    
-    raw_sensor_data = {
-        "seismic_xyz": seismic_xyz.tolist(),
-        "gas_ppm_30": gas_ppm.tolist(),
-        "pir_count": 9,
-        "time_since_event_mins": 4,
-        "event_duration_ms": 1400,
-        "seismic_triggered": True
-    }
-    
-    location_data = {
-        "node_id": "NM-01",
-        "lat": 12.9141,
-        "lng": 74.8560,
-        "address": "Hampankatta, Mangaluru"
-    }
-    
-    result = process_node_alert(raw_sensor_data, location_data)
+    import sys
 
-    print("\n--- SCENARIO: POSSIBLE FALSE ALARM ---")
-    false_alarm_data = {
-        "seismic_xyz": (np.random.normal(0, 3, (50, 3))).tolist(),  # shaky
-        "gas_ppm_30": np.random.normal(55, 5, 30).tolist(),         # normal gas
-        "pir_count": 0,                                              # no survivors
-        "time_since_event_mins": 1,
-        "event_duration_ms": 200,                                    # very short
-        "seismic_triggered": True
-    }
+    scenario = os.environ.get('SCENARIO_OVERRIDE', 'collapse_gas')
+    output_json = os.environ.get('OUTPUT_FORMAT') == 'json'
 
-    location_data_2 = {"node_id": "NM-02", "lat": 12.91, "lng": 74.85, "address": "Unknown"}
-    
-    result2 = process_node_alert(false_alarm_data, location_data_2)
+    if scenario == 'collapse_gas':
+        # Simulate a building collapse event
+        seismic_xyz = np.zeros((50, 3))
+        seismic_xyz[:10] = np.random.normal(0, 0.05, (10, 3))
+        seismic_xyz[10] = [5.2, 4.1, 2.8]  # collapse spike
+        seismic_xyz[11:] = np.random.normal(0, 0.9, (39, 3))  # sustained tremor
+        
+        gas_ppm = np.linspace(60, 650, 30)  # rising LPG
+        
+        raw_sensor_data = {
+            "seismic_xyz": seismic_xyz.tolist(),
+            "gas_ppm_30": gas_ppm.tolist(),
+            "pir_count": 9,
+            "time_since_event_mins": 4,
+            "event_duration_ms": 1400,
+            "seismic_triggered": True
+        }
+        
+        location_data = {
+            "node_id": "NM-01",
+            "lat": 12.9141,
+            "lng": 74.8560,
+            "address": "Hampankatta, Mangaluru"
+        }
+    elif scenario == 'false_alarm':
+        raw_sensor_data = {
+            "seismic_xyz": (np.random.normal(0, 3, (50, 3))).tolist(),  # shaky
+            "gas_ppm_30": np.random.normal(55, 5, 30).tolist(),         # normal gas
+            "pir_count": 0,                                              # no survivors
+            "time_since_event_mins": 1,
+            "event_duration_ms": 200,                                    # very short
+            "seismic_triggered": True
+        }
+        location_data = {"node_id": "NM-02", "lat": 12.91, "lng": 74.85, "address": "Market Area"}
+    elif scenario == 'fire_hazard':
+        raw_sensor_data = {
+            "seismic_xyz": (np.random.normal(0, 0.1, (50, 3))).tolist(),
+            "gas_ppm_30": np.linspace(50, 820, 30).tolist(), # rapidly rising smoke
+            "pir_count": 2,
+            "time_since_event_mins": 10,
+            "event_duration_ms": 5000,
+            "seismic_triggered": False
+        }
+        location_data = {"node_id": "NM-06", "lat": 12.89, "lng": 74.85, "address": "Bendoorwell"}
+    else:
+        # Default or earthquake
+        raw_sensor_data = {
+            "seismic_xyz": (np.random.normal(0, 4, (50, 3))).tolist(),
+            "gas_ppm_30": np.random.normal(45, 2, 30).tolist(),
+            "pir_count": 5,
+            "time_since_event_mins": 5,
+            "event_duration_ms": 10000,
+            "seismic_triggered": True
+        }
+        location_data = {"node_id": "NM-04", "lat": 12.86, "lng": 74.83, "address": "State Bank Region"}
+
+    if output_json:
+        # Run silently and output only JSON at the end
+        import contextlib
+        import io
+        import os
+        
+        # Suppress warnings from tensorflow/keras if possible
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+        
+        f = io.StringIO()
+        with contextlib.redirect_stdout(f):
+            result = process_node_alert(raw_sensor_data, location_data)
+        
+        # Filter for the final result dict
+        print(json.dumps(result))
+    else:
+        # Traditional full output
+        result = process_node_alert(raw_sensor_data, location_data)
