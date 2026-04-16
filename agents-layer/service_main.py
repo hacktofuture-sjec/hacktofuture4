@@ -28,7 +28,9 @@ import logging
 import sys
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
 from lerna_shared.detection import AgentTriggerResponse, DetectionIncident
 
@@ -199,7 +201,11 @@ async def chat_with_orchestrator(payload: dict):
         elif incident_id:
             workflow = await workflow_store.get_workflow_for_incident(incident_id)
 
-        response = orchestrator_chat(payload.get("message", ""), workflow=workflow)
+        response = orchestrator_chat(
+            payload.get("message", ""),
+            workflow=workflow,
+            history=history if isinstance(history, list) else None,
+        )
         return response
     except Exception as exc:  # pylint: disable=broad-except
         raise HTTPException(status_code=502, detail=f"Orchestrator chat failed: {exc}") from exc

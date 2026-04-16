@@ -22,6 +22,7 @@ class Settings:
         self.k8s_namespace_scope = os.getenv("K8S_NAMESPACE_SCOPE", "").strip()
         self.poll_interval_seconds = int(os.getenv("POLL_INTERVAL_SECONDS", "15"))
         self.poll_timeout_seconds = int(os.getenv("POLL_TIMEOUT_SECONDS", "20"))
+        self.health_timeout_seconds = int(os.getenv("OBS_HEALTH_TIMEOUT_SECONDS", "6"))
 
 
 settings = Settings()
