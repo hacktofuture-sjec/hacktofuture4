@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { HealthPanel } from "./components/health-panel";
 import { WebhookPlayground } from "./components/webhook-playground";
@@ -71,6 +72,22 @@ export default function Home() {
 
         <section id="how" className="scroll-mt-20 space-y-6">
           <h2 className="font-serif text-2xl text-zinc-950 dark:text-zinc-50">Architecture</h2>
+          <p className="max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
+            End-to-end flow: push → CI → failure webhook → PipelineMedic reads logs → root cause and fix → risk gate → auto-apply or notify for review → re-run to confirm.
+          </p>
+          <figure className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <Image
+              src="/pipelinemedic-architecture.png"
+              alt="Architecture diagram: Developer git push, GitHub Actions CI, pipeline failure webhook to PipelineMedic, AI reads logs and finds root cause and suggests fix, risk check splits into low risk auto-apply or high risk ask human, then re-run pipeline to confirm."
+              width={808}
+              height={1024}
+              className="h-auto w-full object-contain"
+              sizes="(max-width: 1024px) 100vw, 896px"
+            />
+            <figcaption className="border-t border-zinc-200 px-4 py-3 text-center text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-500">
+              Full pipeline: from push through AI triage, risk branching, and verification.
+            </figcaption>
+          </figure>
           <ol className="grid gap-4 sm:grid-cols-2">
             {[
               {
