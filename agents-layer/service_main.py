@@ -180,13 +180,18 @@ async def chat_with_orchestrator(payload: dict):
     try:
         workflow_id = payload.get("workflow_id")
         incident_id = payload.get("incident_id")
+        history = payload.get("messages")
         workflow = None
         if workflow_id:
             workflow = await workflow_store.get_workflow(workflow_id)
         elif incident_id:
             workflow = await workflow_store.get_workflow_for_incident(incident_id)
+        else:
+            # Default to the latest workflow so the orchestrator has context
+            # even if the frontend doesn't provide a workflow_id.
+            workflow = await workflow_store.get_last_workflow()
 
-        response = orchestrator_chat(payload.get("message", ""), workflow=workflow)
+        response = orchestrator_chat(payload.get("message", ""), workflow=workflow, history=history)
         return response
     except Exception as exc:  # pylint: disable=broad-except
         raise HTTPException(status_code=502, detail=f"Orchestrator chat failed: {exc}") from exc

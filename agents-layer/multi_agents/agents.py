@@ -36,9 +36,11 @@ DEFAULT_MAX_TOOL_ROUNDS = int(os.getenv("LERNA_AGENT_MAX_TOOL_ROUNDS", "12"))
 def _build_chat_model(model_name: str | None = None) -> ChatOpenAI:
     if not DEFAULT_API_KEY:
         raise ValueError("OPENROUTER_API_KEY is not set (pass api_key= or set the env var).")
+    max_tokens = int(os.getenv("LERNA_AGENT_MAX_TOKENS", "2048"))
     return ChatOpenAI(
         model=model_name or DEFAULT_MODEL_NAME,
         temperature=0.0,
+        max_tokens=max_tokens,
         api_key=DEFAULT_API_KEY,
         base_url=DEFAULT_BASE_URL,
     )
@@ -136,34 +138,34 @@ def _compile_agent(name: str, system_prompt: str, tool_names: list[str]) -> Any:
 
 
 @lru_cache(maxsize=None)
-def get_filter_agent() -> Any:
-    return _compile_agent("FilterAgent", FILTER_AGENT_PROMPT, FILTER_AGENT_TOOLS)
+def get_filter_agent(system_prompt: str | None = None) -> Any:
+    return _compile_agent("FilterAgent", system_prompt or FILTER_AGENT_PROMPT, FILTER_AGENT_TOOLS)
 
 
 @lru_cache(maxsize=None)
-def get_incident_matcher_agent() -> Any:
+def get_incident_matcher_agent(system_prompt: str | None = None) -> Any:
     return _compile_agent(
         "IncidentMatcherAgent",
-        MATCHER_AGENT_PROMPT,
+        system_prompt or MATCHER_AGENT_PROMPT,
         MATCHER_AGENT_TOOLS,
     )
 
 
 @lru_cache(maxsize=None)
-def get_diagnosis_agent() -> Any:
-    return _compile_agent("DiagnosisAgent", DIAGNOSIS_AGENT_PROMPT, DIAGNOSIS_AGENT_TOOLS)
+def get_diagnosis_agent(system_prompt: str | None = None) -> Any:
+    return _compile_agent("DiagnosisAgent", system_prompt or DIAGNOSIS_AGENT_PROMPT, DIAGNOSIS_AGENT_TOOLS)
 
 
 @lru_cache(maxsize=None)
-def get_planning_agent() -> Any:
-    return _compile_agent("PlanningAgent", PLANNING_AGENT_PROMPT, PLANNING_AGENT_TOOLS)
+def get_planning_agent(system_prompt: str | None = None) -> Any:
+    return _compile_agent("PlanningAgent", system_prompt or PLANNING_AGENT_PROMPT, PLANNING_AGENT_TOOLS)
 
 
 @lru_cache(maxsize=None)
-def get_executor_agent() -> Any:
-    return _compile_agent("ExecutorAgent", EXECUTOR_AGENT_PROMPT, EXECUTOR_AGENT_TOOLS)
+def get_executor_agent(system_prompt: str | None = None) -> Any:
+    return _compile_agent("ExecutorAgent", system_prompt or EXECUTOR_AGENT_PROMPT, EXECUTOR_AGENT_TOOLS)
 
 
 @lru_cache(maxsize=None)
-def get_validation_agent() -> Any:
-    return _compile_agent("ValidationAgent", VALIDATION_AGENT_PROMPT, VALIDATION_AGENT_TOOLS)
+def get_validation_agent(system_prompt: str | None = None) -> Any:
+    return _compile_agent("ValidationAgent", system_prompt or VALIDATION_AGENT_PROMPT, VALIDATION_AGENT_TOOLS)

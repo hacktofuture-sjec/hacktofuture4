@@ -5,7 +5,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${API_BASE_URL}${path}`
   const response = await fetch(url, { cache: 'no-store', ...init })
   if (!response.ok) {
-    const error = new Error(`Request failed (${response.status}): ${url}`) as Error & {
+    let detail: string | undefined
+    try {
+      const body = await response.json()
+      if (body && typeof body === 'object') {
+        // FastAPI-style errors typically use `detail`
+        detail = (body as any).detail || (body as any).message
+      }
+    } catch {
+      // Non-JSON error responses
+    }
+
+    const error = new Error(
+      `Request failed (${response.status}): ${url}${detail ? ` - ${detail}` : ''}`,
+    ) as Error & {
       status?: number
     }
     error.status = response.status
@@ -94,8 +107,10 @@ export interface AgentPromptResetResponse {
 export interface AgentWorkflowResponse {
   workflow_id: string
   incident_id: string
+  cost?: number | null
   status: string
   accepted_at: string
+  current_stage?: string | null
   started_at?: string | null
   finished_at?: string | null
   // Runtime stores may set this to a stringified exception message.
@@ -109,6 +124,11 @@ export interface AgentWorkflowListResponse {
 export interface AgentChatResponse {
   message: string
   workflow_id?: string
+}
+
+export interface AgentChatMessage {
+  role: 'user' | 'assistant'
+  content: string
 }
 
 export interface AgentCostSettingsResponse {
@@ -161,11 +181,16 @@ export async function fetchAgentWorkflow(workflowId: string) {
   return request<AgentWorkflowResponse>(`/agents/workflows/${encodeURIComponent(workflowId)}`)
 }
 
-export async function chatWithOrchestrator(message: string, workflowId?: string, incidentId?: string) {
+export async function chatWithOrchestrator(
+  message: string,
+  workflowId?: string,
+  incidentId?: string,
+  messages?: AgentChatMessage[],
+) {
   return request<AgentChatResponse>(`/agents/orchestrator/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, workflow_id: workflowId, incident_id: incidentId }),
+    body: JSON.stringify({ message, workflow_id: workflowId, incident_id: incidentId, messages }),
   })
 }
 

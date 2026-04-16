@@ -10,7 +10,7 @@ from openai import OpenAI
 
 from .tool_registry import dispatch_tool, openai_tools, tool_result_to_json_content
 
-DEFAULT_MODEL = os.getenv("LERNA_AGENT_MODEL", "gpt-4o-mini")
+DEFAULT_MODEL = os.getenv("LERNA_AGENT_MODEL", "minimax/minimax-m2.5:free")
 DEFAULT_MAX_TOOL_ROUNDS = int(os.getenv("LERNA_AGENT_MAX_TOOL_ROUNDS", "24"))
 
 SYSTEM_PROMPT = """You are Lerna, an SRE assistant for Kubernetes and observability.

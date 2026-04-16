@@ -12,7 +12,6 @@ import {
   X,
 } from "lucide-react";
 import { Badge, Button, PageHeader } from "@/components/ui";
-import { agents, type Agent } from "@/lib/mock-data";
 import {
   fetchAgentPrompts,
   fetchAgentWorkflow,
@@ -24,8 +23,31 @@ import {
 } from "@/lib/observation-api";
 import clsx from "clsx";
 
+type AgentCardStatus = "running" | "processing" | "idle" | "monitoring";
+
+type WorkflowStageOutput = {
+  text?: string;
+  started_at?: string;
+  finished_at?: string;
+};
+
+type WorkflowAgentCard = {
+  id: string;
+  name: string;
+  role: string;
+  status: AgentCardStatus;
+  currentTask: string;
+  lastAction: string;
+  metric: string;
+  metricLabel: string;
+  progress: number;
+  emoji: string;
+  accentColor: string;
+  bgColor: string;
+};
+
 const statusConfig: Record<
-  Agent["status"],
+  AgentCardStatus,
   { label: string; dotClass: string; textColor: string }
 > = {
   running: {
@@ -50,55 +72,88 @@ const statusConfig: Record<
   },
 };
 
-const progressGradient: Record<string, string> = {
+const progressGradientDefaults: Record<string, string> = {
   filter: "from-lerna-green to-emerald-400",
+  matcher: "from-[#F97316] to-[#FB923C]",
   diagnosis: "from-lerna-amber to-orange-400",
   planning: "from-lerna-purple to-lerna-purple2",
   executor: "from-lerna-blue to-lerna-cyan",
   validation: "from-lerna-cyan to-lerna-green",
 };
 
-const pipelineSteps = [
+const stageStyleDefaults: Record<
+  string,
   {
-    id: "filter",
-    label: "Filter",
-    color: "rgba(16,185,129,0.15)",
-    text: "text-lerna-green",
-    border: "rgba(16,185,129,0.2)",
+    emoji: string;
+    accentColor: string;
+    bgColor: string;
+    gradient: string;
+    pipelineColor: string;
+    pipelineText: string;
+    pipelineBorder: string;
+  }
+> = {
+  filter: {
+    emoji: "🔍",
+    accentColor: "#10B981",
+    bgColor: "rgba(16,185,129,0.1)",
+    gradient: "from-lerna-green to-emerald-400",
+    pipelineColor: "rgba(16,185,129,0.15)",
+    pipelineText: "text-lerna-green",
+    pipelineBorder: "rgba(16,185,129,0.2)",
   },
-  {
-    id: "diagnosis",
-    label: "Diagnose",
-    color: "rgba(245,158,11,0.15)",
-    text: "text-lerna-amber",
-    border: "rgba(245,158,11,0.2)",
+  matcher: {
+    emoji: "🧩",
+    accentColor: "#F97316",
+    bgColor: "rgba(249,115,22,0.1)",
+    gradient: "from-[#F97316] to-[#FB923C]",
+    pipelineColor: "rgba(249,115,22,0.15)",
+    pipelineText: "text-[#FB923C]",
+    pipelineBorder: "rgba(249,115,22,0.2)",
   },
-  {
-    id: "planning",
-    label: "Plan",
-    color: "rgba(168,85,247,0.15)",
-    text: "text-lerna-purple2",
-    border: "rgba(168,85,247,0.2)",
+  diagnosis: {
+    emoji: "🧠",
+    accentColor: "#F59E0B",
+    bgColor: "rgba(245,158,11,0.1)",
+    gradient: "from-lerna-amber to-orange-400",
+    pipelineColor: "rgba(245,158,11,0.15)",
+    pipelineText: "text-lerna-amber",
+    pipelineBorder: "rgba(245,158,11,0.2)",
   },
-  {
-    id: "executor",
-    label: "Execute",
-    color: "rgba(59,130,246,0.15)",
-    text: "text-lerna-blue2",
-    border: "rgba(59,130,246,0.2)",
+  planning: {
+    emoji: "📋",
+    accentColor: "#A855F7",
+    bgColor: "rgba(168,85,247,0.1)",
+    gradient: "from-lerna-purple to-lerna-purple2",
+    pipelineColor: "rgba(168,85,247,0.15)",
+    pipelineText: "text-lerna-purple2",
+    pipelineBorder: "rgba(168,85,247,0.2)",
   },
-  {
-    id: "validation",
-    label: "Validate",
-    color: "rgba(6,182,212,0.15)",
-    text: "text-lerna-cyan",
-    border: "rgba(6,182,212,0.2)",
+  executor: {
+    emoji: "⚡",
+    accentColor: "#3B82F6",
+    bgColor: "rgba(59,130,246,0.1)",
+    gradient: "from-lerna-blue to-lerna-cyan",
+    pipelineColor: "rgba(59,130,246,0.15)",
+    pipelineText: "text-lerna-blue2",
+    pipelineBorder: "rgba(59,130,246,0.2)",
   },
-];
+  validation: {
+    emoji: "✅",
+    accentColor: "#06B6D4",
+    bgColor: "rgba(6,182,212,0.1)",
+    gradient: "from-lerna-cyan to-lerna-green",
+    pipelineColor: "rgba(6,182,212,0.15)",
+    pipelineText: "text-lerna-cyan",
+    pipelineBorder: "rgba(6,182,212,0.2)",
+  },
+};
 
 const defaultSystemPrompts: Record<string, string> = {
   filter:
     "You are the Filter Agent. Validate whether incoming signals represent real service-impacting incidents.",
+  matcher:
+    "You are the Incident Matcher Agent. Find similar past incidents and summarize the most relevant evidence and remediations.",
   diagnosis:
     "You are the Diagnosis Agent. Analyze telemetry and cluster state to identify likely root cause.",
   planning:
@@ -108,6 +163,49 @@ const defaultSystemPrompts: Record<string, string> = {
   validation:
     "You are the Validation Agent. Verify remediation outcomes and close or reopen incidents based on evidence.",
 };
+
+function formatWorkflowCost(cost?: number | null) {
+  if (typeof cost !== "number" || Number.isNaN(cost)) {
+    return "Cost unavailable";
+  }
+  return `$${cost.toFixed(2)}`;
+}
+
+function getWorkflowResult(workflow: AgentWorkflowResponse | null): Record<string, unknown> | null {
+  if (!workflow?.result || typeof workflow.result !== "object") {
+    return null;
+  }
+  return workflow.result as Record<string, unknown>;
+}
+
+function formatStageLabel(stageKey: string) {
+  return stageKey
+    .split(/[_-]+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getWorkflowStageKeys(workflow: AgentWorkflowResponse | null) {
+  const result = getWorkflowResult(workflow);
+  if (!result) return [];
+  return Object.keys(result).filter((key) => {
+    const value = result[key];
+    return value && typeof value === "object";
+  });
+}
+
+function getStageOutput(
+  workflow: AgentWorkflowResponse | null,
+  stageKey: string,
+): WorkflowStageOutput | null {
+  const result = getWorkflowResult(workflow);
+  if (!result) return null;
+  const value = result[stageKey];
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  return value as WorkflowStageOutput;
+}
 
 export default function AgentsPage() {
   const [promptByAgent, setPromptByAgent] = useState<Record<string, string>>(
@@ -128,10 +226,11 @@ export default function AgentsPage() {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const agentIds = useMemo(() => agents.map((agent) => agent.id), []);
+  const workflowStageKeys = useMemo(() => getWorkflowStageKeys(workflow), [workflow]);
+  const agentIds = useMemo(() => workflowStageKeys, [workflowStageKeys]);
   const agentNameById = useMemo(
-    () => Object.fromEntries(agents.map((agent) => [agent.id, agent.name])),
-    [],
+    () => Object.fromEntries(agentIds.map((agentId) => [agentId, formatStageLabel(agentId)])),
+    [agentIds],
   );
 
   useEffect(() => {
@@ -306,64 +405,80 @@ export default function AgentsPage() {
     editingAgentId && isDirty && normalizedDraft.length > 0 && !isBusy,
   );
 
-  const agentWorkflowOverrides = useMemo(() => {
-    if (!workflow) {
-      return {};
+  const dynamicStageCards = useMemo(() => {
+    if (!workflow || workflowStageKeys.length === 0) {
+      return [];
     }
 
-    const stageOrder = [
-      "filter",
-      "matcher",
-      "diagnosis",
-      "planning",
-      "executor",
-      "validation",
-    ];
-    const result = typeof workflow.result === 'object' && workflow.result !== null
-      ? (workflow.result as Record<string, any>)
-      : undefined;
-    const hasOutput = (stage: string) => Boolean(result?.[stage]?.text);
-    const completedStages = stageOrder.filter((stage) => hasOutput(stage));
-    const nextStage = stageOrder.find((stage) => !hasOutput(stage));
+    return workflowStageKeys.map((stageKey, index) => {
+      const stageOutput = getStageOutput(workflow, stageKey);
+      const hasOutput = Boolean(stageOutput?.text || stageOutput?.finished_at);
+      const isActive =
+        workflow.status !== "completed" &&
+        workflow.status !== "failed" &&
+        workflow.current_stage === stageKey;
+      const status: AgentCardStatus = isActive
+        ? "processing"
+        : hasOutput
+          ? workflow.status === "completed"
+            ? "monitoring"
+            : "running"
+          : "idle";
+      const progress = Math.min(
+        100,
+        Math.round(((index + (hasOutput ? 1 : 0)) / workflowStageKeys.length) * 100),
+      );
+      const style = stageStyleDefaults[stageKey] ?? {
+        emoji: "🤖",
+        accentColor: "#8A9BBB",
+        bgColor: "rgba(138,155,187,0.1)",
+        gradient: "from-slate-500 to-slate-400",
+        pipelineColor: "rgba(138,155,187,0.15)",
+        pipelineText: "text-[#8A9BBB]",
+        pipelineBorder: "rgba(138,155,187,0.2)",
+      };
 
-    return Object.fromEntries(
-      ["filter", "diagnosis", "planning", "executor", "validation"].map(
-        (stage, index) => {
-          const stageOutput = result?.[stage]?.text ?? "";
-          const isActive =
-            workflow.status !== "completed" && nextStage === stage;
-          const status = isActive
-            ? "processing"
-            : hasOutput(stage)
-              ? workflow.status === "completed"
-                ? "monitoring"
-                : "running"
-              : "idle";
-          const progress = Math.min(100, Math.round(((index + 1) / 5) * 100));
-          const currentTask = stageOutput
-            ? stageOutput.split(/\n/)[0]
-            : isActive
-              ? `Running ${stage} stage...`
-              : `Waiting for ${stage === "diagnosis" ? "diagnosis" : stage} output`;
-          const lastAction = hasOutput(stage)
-            ? `Last response received from ${stage} agent.`
-            : isActive
-              ? `Currently executing ${stage} logic.`
-              : `Queued behind ${nextStage === stage ? stage : "previous stages"}`;
+      return {
+        id: stageKey,
+        name: formatStageLabel(stageKey),
+        role: `Workflow stage ${index + 1}`,
+        status,
+        currentTask: stageOutput?.text?.split(/\n/)[0] || (isActive
+          ? `Running ${formatStageLabel(stageKey)}`
+          : `Waiting for ${formatStageLabel(stageKey)}`),
+        lastAction: stageOutput?.finished_at
+          ? `Completed at ${stageOutput.finished_at}`
+          : stageOutput?.started_at
+            ? `Started at ${stageOutput.started_at}`
+            : "No activity recorded yet",
+        metric: `${progress}%`,
+        metricLabel: "Progress",
+        progress,
+        emoji: style.emoji,
+        accentColor: style.accentColor,
+        bgColor: style.bgColor,
+      } satisfies WorkflowAgentCard;
+    });
+  }, [workflow, workflowStageKeys]);
 
-          return [stage, { status, currentTask, lastAction, progress }];
-        },
-      ),
-    ) as Record<
-      string,
-      {
-        status: Agent["status"];
-        currentTask: string;
-        lastAction: string;
-        progress: number;
-      }
-    >;
-  }, [workflow]);
+  const pipelineSteps = useMemo(
+    () =>
+      workflowStageKeys.map((stageKey) => {
+        const style = stageStyleDefaults[stageKey] ?? {
+          pipelineColor: "rgba(138,155,187,0.15)",
+          pipelineText: "text-[#8A9BBB]",
+          pipelineBorder: "rgba(138,155,187,0.2)",
+        };
+        return {
+          id: stageKey,
+          label: formatStageLabel(stageKey),
+          color: style.pipelineColor,
+          text: style.pipelineText,
+          border: style.pipelineBorder,
+        };
+      }),
+    [workflowStageKeys],
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -465,7 +580,8 @@ export default function AgentsPage() {
               Workflow{" "}
               <strong className="text-white">{workflow.workflow_id}</strong> ·
               Incident{" "}
-              <strong className="text-white">{workflow.incident_id}</strong>
+              <strong className="text-white">{workflow.incident_id}</strong> ·
+              Cost <strong className="text-white">{formatWorkflowCost(workflow.cost)}</strong>
             </>
           ) : (
             <>
@@ -480,6 +596,7 @@ export default function AgentsPage() {
           <div className="font-semibold mb-1">Live workflow attached</div>
           <div className="text-[#8A9BBB]">
             Status: <span className="text-white">{workflow.status}</span>
+            {` · cost ${formatWorkflowCost(workflow.cost)}`}
             {workflow.started_at ? ` · started ${workflow.started_at}` : ""}
             {workflow.finished_at ? ` · finished ${workflow.finished_at}` : ""}
           </div>
@@ -522,6 +639,9 @@ export default function AgentsPage() {
                   <div className="text-[11px] text-[#4A5B7A] font-mono mt-2">
                     {item.status.toUpperCase()} · {item.accepted_at}
                   </div>
+                  <div className="text-[11px] text-[#8A9BBB] font-mono mt-1">
+                    Cost: {formatWorkflowCost(item.cost)}
+                  </div>
                 </button>
               );
             })}
@@ -531,14 +651,13 @@ export default function AgentsPage() {
 
       {/* Agent Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {agents.map((agent, i) => {
-          const override = agentWorkflowOverrides[agent.id];
-          const displayStatus = override?.status ?? agent.status;
+        {dynamicStageCards.map((agent, i) => {
+          const displayStatus = agent.status;
           const status = statusConfig[displayStatus];
           const isActive = displayStatus === "processing";
-          const currentTask = override?.currentTask ?? agent.currentTask;
-          const lastAction = override?.lastAction ?? agent.lastAction;
-          const progress = override?.progress ?? agent.progress;
+          const currentTask = agent.currentTask;
+          const lastAction = agent.lastAction;
+          const progress = agent.progress;
 
           return (
             <motion.div
@@ -614,7 +733,7 @@ export default function AgentsPage() {
                   }}
                   className={clsx(
                     "h-full rounded-full bg-gradient-to-r",
-                    progressGradient[agent.id],
+                    progressGradientDefaults[agent.id] ?? "from-slate-500 to-slate-400",
                   )}
                 />
               </div>

@@ -204,7 +204,16 @@ async def orchestrator_chat(payload: OrchestratorChatRequest):
         return await agents_service.orchestrator_chat(payload.dict(exclude_none=True))
     except httpx.HTTPStatusError as exc:
         logger.exception("Orchestrator chat failed")
-        raise HTTPException(status_code=502, detail="Orchestrator chat failed") from exc
+        detail = "Orchestrator chat failed"
+        try:
+            body = exc.response.json()
+            detail = body.get("detail") or body.get("message") or detail
+        except Exception:  # pylint: disable=broad-exception-caught
+            try:
+                detail = exc.response.text or detail
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass
+        raise HTTPException(status_code=502, detail=detail) from exc
     except Exception as exc:  # pylint: disable=broad-except
         logger.exception("Orchestrator chat failed")
         raise HTTPException(status_code=502, detail=f"Orchestrator chat failed: {exc}") from exc

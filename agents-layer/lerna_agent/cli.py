@@ -18,7 +18,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "-m",
         "--model",
         default=None,
-        help="Override model (default: env LERNA_AGENT_MODEL or gpt-4o-mini)",
+        help="Override model (default: env LERNA_AGENT_MODEL or minimax/minimax-m2.5:free)",
     )
     args = parser.parse_args(argv)
     text = args.message

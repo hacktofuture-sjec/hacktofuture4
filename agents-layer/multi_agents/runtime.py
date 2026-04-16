@@ -15,6 +15,7 @@ def _workflow_payload(workflow_id: str, incident: DetectionIncident) -> dict[str
     return {
         "workflow_id": workflow_id,
         "incident_id": incident.incident_id,
+        "cost": incident.cost,
         "status": "running",
         "accepted_at": now,
         "started_at": now,
@@ -35,6 +36,9 @@ async def execute_incident_workflow(
     await store.save_workflow(workflow_id, workflow)
     try:
         loop = asyncio.get_running_loop()
+        prompt_overrides = await store.get_agent_prompts(
+            ["filter", "matcher", "diagnosis", "planning", "executor", "validation"]
+        )
 
         async def _save_stage(stage_name: str, stage_output: dict[str, object | None]) -> None:
             current_result = workflow.get("result")
@@ -49,7 +53,12 @@ async def execute_incident_workflow(
             future = asyncio.run_coroutine_threadsafe(_save_stage(stage_name, stage_output), loop)
             future.result(timeout=15)
 
-        result = await asyncio.to_thread(run_langgraph_workflow, incident, _on_stage_complete)
+        result = await asyncio.to_thread(
+            run_langgraph_workflow,
+            incident,
+            _on_stage_complete,
+            prompt_overrides,
+        )
         workflow["status"] = "completed"
         workflow["result"] = result
         workflow["current_stage"] = "completed"
@@ -80,6 +89,7 @@ async def accept_incident(
     initial = {
         "workflow_id": workflow_id,
         "incident_id": incident.incident_id,
+        "cost": incident.cost,
         "status": "accepted",
         "accepted_at": datetime.now(tz=timezone.utc).isoformat(),
         "started_at": None,

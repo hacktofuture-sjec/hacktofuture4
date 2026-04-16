@@ -11,14 +11,6 @@ import {
   type AgentWorkflowResponse,
 } from "@/lib/observation-api";
 
-type StageKey =
-  | "filter"
-  | "matcher"
-  | "diagnosis"
-  | "planning"
-  | "executor"
-  | "validation";
-
 type ToolCall = {
   id?: string;
   name?: string;
@@ -33,23 +25,45 @@ type StageOutput = {
   finished_at?: string;
 };
 
-const STAGE_ORDER: Array<{ key: StageKey; label: string }> = [
-  { key: "filter", label: "Filter" },
-  { key: "matcher", label: "Incident Matcher" },
-  { key: "diagnosis", label: "Diagnosis" },
-  { key: "planning", label: "Planning" },
-  { key: "executor", label: "Executor" },
-  { key: "validation", label: "Validation" },
-];
+function getWorkflowResult(workflow: AgentWorkflowResponse | null): Record<string, unknown> | null {
+  if (!workflow?.result || typeof workflow.result !== "object") {
+    return null;
+  }
+  return workflow.result as Record<string, unknown>;
+}
+
+function formatWorkflowCost(cost?: number | null) {
+  if (typeof cost !== "number" || Number.isNaN(cost)) {
+    return "Cost unavailable";
+  }
+  return `$${cost.toFixed(2)}`;
+}
 
 function getStageOutput(
   workflow: AgentWorkflowResponse | null,
-  key: StageKey,
+  key: string,
 ): StageOutput | null {
-  if (!workflow?.result || typeof workflow.result !== "object") return null;
-  const value = workflow.result[key];
+  const result = getWorkflowResult(workflow);
+  if (!result) return null;
+  const value = result[key];
   if (!value || typeof value !== "object") return null;
   return value as StageOutput;
+}
+
+function formatStageLabel(stageKey: string) {
+  return stageKey
+    .split(/[_-]+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getWorkflowStages(workflow: AgentWorkflowResponse | null) {
+  const result = getWorkflowResult(workflow);
+  if (!result) return [];
+  return Object.keys(result).filter((key) => {
+    const value = result[key];
+    return value && typeof value === "object";
+  });
 }
 
 export default function AgentWorkflowDetailPage() {
@@ -129,25 +143,30 @@ export default function AgentWorkflowDetailPage() {
   }, []);
 
   const stageCompletion = useMemo(() => {
-    const completed = new Set<StageKey>();
-    for (const stage of STAGE_ORDER) {
-      const output = getStageOutput(workflow, stage.key);
+    const completed = new Set<string>();
+    for (const stage of getWorkflowStages(workflow)) {
+      const output = getStageOutput(workflow, stage);
       if (output?.finished_at || output?.text) {
-        completed.add(stage.key);
+        completed.add(stage);
       }
     }
     return completed;
   }, [workflow]);
 
+  const workflowStages = useMemo(() => getWorkflowStages(workflow), [workflow]);
+
   const activeStage = useMemo(() => {
     if (!workflow || workflow.status === "completed" || workflow.status === "failed") {
       return null;
     }
-    for (const stage of STAGE_ORDER) {
-      if (!stageCompletion.has(stage.key)) return stage.key;
+    if (workflow.current_stage) {
+      return workflow.current_stage;
+    }
+    for (const stage of workflowStages) {
+      if (!stageCompletion.has(stage)) return stage;
     }
     return null;
-  }, [workflow, stageCompletion]);
+  }, [workflow, stageCompletion, workflowStages]);
 
   return (
     <div className="p-7 flex flex-col gap-6">
@@ -225,6 +244,9 @@ export default function AgentWorkflowDetailPage() {
                   <div className="text-[11px] text-[#4A5B7A] font-mono mt-2">
                     {item.status.toUpperCase()} · {item.accepted_at}
                   </div>
+                  <div className="text-[11px] text-[#8A9BBB] font-mono mt-1">
+                    Cost: {formatWorkflowCost(item.cost)}
+                  </div>
                 </button>
               );
             })}
@@ -243,6 +265,8 @@ export default function AgentWorkflowDetailPage() {
               workflow <strong>{workflow.workflow_id}</strong>.
             </div>
             <div className="text-[12px] text-[#8A9BBB] mt-2">
+              Cost: {formatWorkflowCost(workflow.cost)}
+              {" · "}
               Accepted: {workflow.accepted_at}
               {workflow.started_at ? ` · Started: ${workflow.started_at}` : ""}
               {workflow.finished_at ? ` · Finished: ${workflow.finished_at}` : ""}
@@ -251,10 +275,10 @@ export default function AgentWorkflowDetailPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-4">
-            {STAGE_ORDER.map((stage) => {
-              const output = getStageOutput(workflow, stage.key);
-              const isCompleted = stageCompletion.has(stage.key);
-              const isActive = activeStage === stage.key;
+            {workflowStages.map((stageKey) => {
+              const output = getStageOutput(workflow, stageKey);
+              const isCompleted = stageCompletion.has(stageKey);
+              const isActive = activeStage === stageKey;
               const statusLabel = isCompleted
                 ? "Completed"
                 : isActive
@@ -263,7 +287,7 @@ export default function AgentWorkflowDetailPage() {
 
               return (
                 <div
-                  key={stage.key}
+                  key={stageKey}
                   className="rounded-2xl border border-border bg-bg-2 p-5"
                 >
                   <div className="flex items-center justify-between gap-2 mb-3">
@@ -271,7 +295,7 @@ export default function AgentWorkflowDetailPage() {
                       <div className="text-[11px] text-[#5c6d8c] font-mono tracking-wider">
                         STEP
                       </div>
-                      <div className="text-lg font-semibold">{stage.label}</div>
+                      <div className="text-lg font-semibold">{formatStageLabel(stageKey)}</div>
                     </div>
                     <Badge
                       variant={

@@ -7,7 +7,6 @@ import { Badge, PageHeader } from "@/components/ui";
 import { chatWithOrchestrator } from "@/lib/observation-api";
 import {
   initialChatMessages,
-  cannedResponses,
   type ChatMessage,
 } from "@/lib/mock-data";
 import clsx from "clsx";
@@ -56,7 +55,6 @@ export default function ChatPage() {
   const [isTyping, setIsTyping] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const cannedIdx = useRef(0);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -69,6 +67,7 @@ export default function ChatPage() {
 
   async function send(text: string) {
     if (!text.trim()) return;
+    const trimmed = text.trim();
     setInput("");
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -77,14 +76,28 @@ export default function ChatPage() {
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       role: "user",
-      content: text.trim(),
+      content: trimmed,
       timestamp: now(),
     };
+    const conversationHistory = messages
+      .filter((msg) => msg.role === "user" || msg.role === "assistant")
+      .map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+      }));
+    const workflowId =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem("lerna:lastWorkflowId") ?? undefined
+        : undefined;
+
     setMessages((prev) => [...prev, userMsg]);
     setIsTyping(true);
 
     try {
-      const response = await chatWithOrchestrator(text.trim());
+      const response = await chatWithOrchestrator(trimmed, workflowId, undefined, [
+        ...conversationHistory,
+        { role: "user", content: trimmed },
+      ]);
       if (response.workflow_id) {
         window.localStorage.setItem(
           "lerna:lastWorkflowId",
@@ -99,13 +112,13 @@ export default function ChatPage() {
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (error) {
-      const fallback =
-        cannedResponses[cannedIdx.current % cannedResponses.length];
-      cannedIdx.current += 1;
       const assistantMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: fallback,
+        content:
+          error instanceof Error
+            ? error.message
+            : "I couldn't reach the orchestrator just now. Please try again.",
         timestamp: now(),
       };
       setMessages((prev) => [...prev, assistantMsg]);
@@ -135,7 +148,7 @@ export default function ChatPage() {
           title="Lerna AI Chat"
           subtitle="Natural language interface to the SRE pipeline"
         >
-          <Badge variant="purple">● GPT-4 Turbo</Badge>
+          <Badge variant="purple">● Orchestrator Chat</Badge>
         </PageHeader>
       </div>
 

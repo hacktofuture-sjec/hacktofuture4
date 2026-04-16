@@ -45,6 +45,7 @@ async def execute_incident_workflow(
     workflow = {
         "workflow_id": workflow_id,
         "incident_id": incident.incident_id,
+        "cost": incident.cost,
         "status": "running",
         "accepted_at": started_at,
         "started_at": started_at,
@@ -103,6 +104,7 @@ async def accept_incident(
     initial = {
         "workflow_id": workflow_id,
         "incident_id": incident.incident_id,
+        "cost": incident.cost,
         "status": "accepted",
         "accepted_at": datetime.now(tz=timezone.utc).isoformat(),
         "started_at": None,

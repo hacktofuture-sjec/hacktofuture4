@@ -61,8 +61,10 @@ class AgentPromptResetResponse(BaseModel):
 class AgentWorkflowResponse(BaseModel):
     workflow_id: str
     incident_id: str
+    cost: Optional[float] = None
     status: str
     accepted_at: str
+    current_stage: Optional[str] = None
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
     # Agent runtimes may store `result` as either a structured dict (success)
@@ -88,6 +90,7 @@ class OrchestratorChatRequest(BaseModel):
     message: str
     workflow_id: Optional[str] = None
     incident_id: Optional[str] = None
+    messages: List[Dict[str, Any]] = []
 
 
 class OrchestratorChatResponse(BaseModel):

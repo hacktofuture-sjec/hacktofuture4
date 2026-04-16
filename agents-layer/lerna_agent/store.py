@@ -13,6 +13,7 @@ INCIDENT_WORKFLOW_KEY_PREFIX = "lerna:agents:incident:"
 LAST_WORKFLOW_KEY = "lerna:agents:workflow:last"
 COST_SETTINGS_KEY = "lerna:agents:cost:settings"
 DAILY_COST_KEY_PREFIX = "lerna:agents:cost:daily:"
+PROMPT_HASH_KEY = "lerna:agent_prompts"
 
 
 class WorkflowStore:
@@ -111,3 +112,19 @@ class WorkflowStore:
         total = current + amount
         await self._redis.set(key, total)
         return total
+
+    async def get_agent_prompt(self, agent_id: str) -> Optional[str]:
+        prompt = await self._redis.hget(PROMPT_HASH_KEY, agent_id)
+        if prompt is None:
+            return None
+        return str(prompt)
+
+    async def get_agent_prompts(self, agent_ids: list[str]) -> Dict[str, str]:
+        if not agent_ids:
+            return {}
+        values = await self._redis.hmget(PROMPT_HASH_KEY, agent_ids)
+        return {
+            agent_id: str(value)
+            for agent_id, value in zip(agent_ids, values)
+            if value is not None
+        }

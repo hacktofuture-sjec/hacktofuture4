@@ -78,6 +78,27 @@ kubectl apply -f k8s/detection-demo-errors.yaml
 
 These pods are intentionally unhealthy and are meant to exercise detection.
 
+## 6b. Route TestApp telemetry to the observation collector
+
+If TestApp services are running in `default`, patch them so traces/metrics/logs export to the observation-layer OpenTelemetry Collector:
+
+```powershell
+.\scripts\patch-testapp-observability.ps1
+```
+
+Linux/macOS:
+
+```bash
+chmod +x scripts/patch-testapp-observability.sh
+./scripts/patch-testapp-observability.sh
+```
+
+Optional overrides:
+
+- `TESTAPP_NAMESPACE` (default: `default`)
+- `OTEL_COLLECTOR_ENDPOINT` (default: `http://otel-collector.observability.svc.cluster.local:4318`)
+- `OTEL_COLLECTOR_PROTOCOL` (default: `http/protobuf`)
+
 ## 7. Check rollout status
 
 ```powershell

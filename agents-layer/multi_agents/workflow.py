@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
@@ -115,12 +116,14 @@ def _utc_now_iso() -> str:
 def run_langgraph_workflow(
     incident: DetectionIncident,
     on_stage_complete: Any | None = None,
+    prompt_overrides: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     outputs: dict[str, Any] = {}
+    prompt_overrides = prompt_overrides or {}
 
     filter_prompt = build_agent_input(incident, stage_name="Filter", previous_outputs=None)
     filter_started = _utc_now_iso()
-    filter_output = _run_agent(get_filter_agent(), filter_prompt)
+    filter_output = _run_agent(get_filter_agent(prompt_overrides.get("filter")), filter_prompt)
     outputs["filter"] = {
         **filter_output,
         "stage": "filter",
@@ -130,40 +133,54 @@ def run_langgraph_workflow(
     if on_stage_complete:
         on_stage_complete("filter", outputs["filter"])
 
+    # Graph-style branching:
+    # - After Filter, Orchestrator runs Incident Matcher and Diagnosis in parallel.
+    # - Planning then consumes both outputs.
+    filter_text = outputs["filter"]["text"]
+
     matcher_prompt = build_agent_input(
         incident,
         stage_name="Incident Matching",
-        previous_outputs={"filter": outputs["filter"]["text"]},
+        previous_outputs={"filter": filter_text},
     )
-    matcher_started = _utc_now_iso()
-    matcher_output = _run_agent(get_incident_matcher_agent(), matcher_prompt)
-    outputs["matcher"] = {
-        **matcher_output,
-        "stage": "matcher",
-        "started_at": matcher_started,
-        "finished_at": _utc_now_iso(),
-    }
-    if on_stage_complete:
-        on_stage_complete("matcher", outputs["matcher"])
-
     diagnosis_prompt = build_agent_input(
         incident,
         stage_name="Diagnosis",
-        previous_outputs={
-            "filter": outputs["filter"]["text"],
-            "matcher": outputs["matcher"]["text"],
-        },
+        previous_outputs={"filter": filter_text},
     )
+
+    matcher_started = _utc_now_iso()
     diagnosis_started = _utc_now_iso()
-    diagnosis_output = _run_agent(get_diagnosis_agent(), diagnosis_prompt)
-    outputs["diagnosis"] = {
-        **diagnosis_output,
-        "stage": "diagnosis",
-        "started_at": diagnosis_started,
-        "finished_at": _utc_now_iso(),
-    }
-    if on_stage_complete:
-        on_stage_complete("diagnosis", outputs["diagnosis"])
+
+    def _run_matcher() -> dict[str, Any]:
+        return _run_agent(get_incident_matcher_agent(prompt_overrides.get("matcher")), matcher_prompt)
+
+    def _run_diagnosis() -> dict[str, Any]:
+        return _run_agent(get_diagnosis_agent(prompt_overrides.get("diagnosis")), diagnosis_prompt)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        matcher_future = executor.submit(_run_matcher)
+        diagnosis_future = executor.submit(_run_diagnosis)
+
+        matcher_output = matcher_future.result()
+        outputs["matcher"] = {
+            **matcher_output,
+            "stage": "matcher",
+            "started_at": matcher_started,
+            "finished_at": _utc_now_iso(),
+        }
+        if on_stage_complete:
+            on_stage_complete("matcher", outputs["matcher"])
+
+        diagnosis_output = diagnosis_future.result()
+        outputs["diagnosis"] = {
+            **diagnosis_output,
+            "stage": "diagnosis",
+            "started_at": diagnosis_started,
+            "finished_at": _utc_now_iso(),
+        }
+        if on_stage_complete:
+            on_stage_complete("diagnosis", outputs["diagnosis"])
 
     planning_prompt = build_agent_input(
         incident,
@@ -175,7 +192,7 @@ def run_langgraph_workflow(
         },
     )
     planning_started = _utc_now_iso()
-    planning_output = _run_agent(get_planning_agent(), planning_prompt)
+    planning_output = _run_agent(get_planning_agent(prompt_overrides.get("planning")), planning_prompt)
     outputs["planning"] = {
         **planning_output,
         "stage": "planning",
@@ -193,7 +210,7 @@ def run_langgraph_workflow(
         },
     )
     executor_started = _utc_now_iso()
-    executor_output = _run_agent(get_executor_agent(), executor_prompt)
+    executor_output = _run_agent(get_executor_agent(prompt_overrides.get("executor")), executor_prompt)
     outputs["executor"] = {
         **executor_output,
         "stage": "executor",
@@ -211,7 +228,7 @@ def run_langgraph_workflow(
         },
     )
     validation_started = _utc_now_iso()
-    validation_output = _run_agent(get_validation_agent(), validation_prompt)
+    validation_output = _run_agent(get_validation_agent(prompt_overrides.get("validation")), validation_prompt)
     outputs["validation"] = {
         **validation_output,
         "stage": "validation",

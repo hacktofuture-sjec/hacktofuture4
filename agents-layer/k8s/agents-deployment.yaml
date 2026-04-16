@@ -30,6 +30,12 @@ spec:
           env:
             - name: LERNA_WORKFLOW_ENGINE
               value: langgraph
+            - name: TESTAPP_NAMESPACE
+              value: default
+            - name: OTEL_COLLECTOR_ENDPOINT
+              value: http://otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_COLLECTOR_PROTOCOL
+              value: http/protobuf
             - name: PROMETHEUS_URL
               value: http://prometheus.observability.svc.cluster.local:9090
             - name: LOKI_URL
