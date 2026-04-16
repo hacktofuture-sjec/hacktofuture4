@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Radio, AlertTriangle, ShieldCheck, Flame, Users, CheckCircle2, Activity, MapPin, Orbit, Zap, Wind, Database } from 'lucide-react';
+import dynamic from 'next/dynamic';
+
+const MapComponent = dynamic(() => import('./MapComponent'), { ssr: false });
 
 interface ScenarioResult {
   sitrep: string;
@@ -14,14 +17,14 @@ interface ScenarioResult {
   location: { node_id: string; address: string; lat: number; lng: number };
 }
 
-// Simulated Mesh Network Nodes
+// Simulated Mesh Network Nodes with real coordinates
 const NODES = [
-  { id: 'NM-01', x: 20, y: 30, name: 'Hampankatta Zone A' },
-  { id: 'NM-02', x: 45, y: 25, name: 'Kankanady Market' },
-  { id: 'NM-03', x: 70, y: 40, name: 'Kadri Park Area' },
-  { id: 'NM-04', x: 35, y: 65, name: 'State Bank Region' },
-  { id: 'NM-05', x: 60, y: 75, name: 'Pandeshwar Hub' },
-  { id: 'NM-06', x: 80, y: 60, name: 'Bendoorwell' },
+  { id: 'NM-01', x: 20, y: 30, name: 'Hampankatta Zone A', lat: 12.871, lng: 74.842 },
+  { id: 'NM-02', x: 45, y: 25, name: 'Kankanady Market', lat: 12.875, lng: 74.855 },
+  { id: 'NM-03', x: 70, y: 40, name: 'Kadri Park Area', lat: 12.882, lng: 74.863 },
+  { id: 'NM-04', x: 35, y: 65, name: 'State Bank Region', lat: 12.862, lng: 74.831 },
+  { id: 'NM-05', x: 60, y: 75, name: 'Pandeshwar Hub', lat: 12.865, lng: 74.845 },
+  { id: 'NM-06', x: 80, y: 60, name: 'Bendoorwell', lat: 12.891, lng: 74.852 },
 ];
 
 const SCENARIOS: Record<string, { id: string, name: string, description: string, node: string, output: ScenarioResult }> = {
@@ -137,19 +140,74 @@ export default function SimulationDashboard() {
   const [pipelineState, setPipelineState] = useState<'idle' | 'transmitting' | 'models' | 'validating' | 'llm' | 'complete'>('idle');
   const [result, setResult] = useState<ScenarioResult | null>(null);
   
-  const runScenario = (key: keyof typeof SCENARIOS) => {
+  const runScenario = async (key: keyof typeof SCENARIOS) => {
     setActiveScenario(key);
     setPipelineState('transmitting');
     setResult(null);
 
-    // Staggered visual pipeline execution
-    setTimeout(() => setPipelineState('models'), 1500);
-    setTimeout(() => setPipelineState('validating'), 3000);
-    setTimeout(() => setPipelineState('llm'), 4500);
-    setTimeout(() => {
-      setResult(SCENARIOS[key].output);
-      setPipelineState('complete');
-    }, 6000);
+    try {
+      // Start the staggered visual pipeline, but wait for actual result
+      const visualSteps = [
+        { state: 'models', delay: 1000 },
+        { state: 'validating', delay: 2500 },
+        { state: 'llm', delay: 4000 },
+      ];
+
+      visualSteps.forEach(step => {
+        setTimeout(() => setPipelineState(step.state as any), step.delay);
+      });
+
+      const response = await fetch('/api/run-pipeline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenario: key })
+      });
+
+      const data = await response.json();
+      
+      if (data.error) throw new Error(data.error);
+      
+      // Parse the raw output from Python (which we now force to be JSON)
+      const parsed = JSON.parse(data.raw);
+      
+      // Map Python output to frontend ScenarioResult format
+      const formattedResult: ScenarioResult = {
+        sitrep: parsed.sitrep,
+        severity: parsed.severity,
+        validation: { 
+          is_genuine_event: parsed.model_outputs.validation.is_genuine_event, 
+          anomaly_score: parsed.model_outputs.validation.anomaly_score 
+        },
+        seismic: { 
+          event_type: parsed.model_outputs.seismic?.prediction || "Unknown", 
+          magnitude: parsed.model_outputs.seismic?.is_crisis ? 'high' : 'low' 
+        },
+        gas: { 
+          hazard_type: parsed.model_outputs.gas?.prediction || "Scanning", 
+          severity: parsed.model_outputs.gas?.severity || "Normal", 
+          current_ppm: parsed.model_outputs.gas?.ppm || 0 
+        },
+        survivor: { 
+          estimated_count: parsed.model_outputs.survivor?.estimated_count || "Unknown", 
+          urgency: parsed.model_outputs.survivor?.urgency || "Unknown" 
+        },
+        location: parsed.location
+      };
+
+      // Ensure at least 5 seconds of animation for dramatic effect
+      setTimeout(() => {
+        setResult(formattedResult);
+        setPipelineState('complete');
+      }, 5000);
+
+    } catch (err) {
+      console.error("Pipeline failed:", err);
+      // Fallback to mock data if backend fails
+      setTimeout(() => {
+        setResult(SCENARIOS[key].output);
+        setPipelineState('complete');
+      }, 5000);
+    }
   };
 
   const activeNodeId = activeScenario ? SCENARIOS[activeScenario].node : null;
@@ -205,86 +263,29 @@ export default function SimulationDashboard() {
       {/* MAIN VIEW: Map & Pipeline */}
       <div className="flex-1 flex flex-col relative h-full">
         
-        {/* TOP HALF: Interactive Map */}
+        {/* TOP HALF: Interactive Map with Stadia Maps */}
         <div className="h-[45%] w-full relative border-b border-slate-800/50 bg-[#02050a] overflow-hidden">
-          {/* Grid Background */}
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:40px_40px]" />
-          
-          {/* Map Overlay Graphic (Simulated Coastal Map curve) */}
-          <svg className="absolute inset-0 w-full h-full opacity-20 pointer-events-none" preserveAspectRatio="none">
-             <path d="M 0,100 C 300,300 600,100 1200,400 L 1200,1000 L 0,1000 Z" fill="#101827" />
-             <path d="M 0,150 C 300,350 600,150 1200,450" stroke="#1e293b" strokeWidth="2" fill="none" />
-          </svg>
-
-          {/* Connective Mesh Lines */}
-          <svg className="absolute inset-0 w-full h-full opacity-30 pointer-events-none">
-            {NODES.map((node, i) => (
-              NODES.slice(i + 1).map((target, j) => {
-                // Only draw lines for close nodes to look like a mesh
-                const dist = Math.hypot(target.x - node.x, target.y - node.y);
-                if (dist < 40) {
-                  return (
-                    <line 
-                      key={`${node.id}-${target.id}`} 
-                      x1={`${node.x}%`} y1={`${node.y}%`} 
-                      x2={`${target.x}%`} y2={`${target.y}%`} 
-                      stroke="#334155" strokeWidth="1" strokeDasharray="4 4"
-                    />
-                  );
-                }
-                return null;
-              })
-            ))}
-          </svg>
-
-          {/* Nodes */}
-          {NODES.map((node) => {
-            const isActive = activeNodeId === node.id;
-            const isTransmitting = isActive && pipelineState !== 'idle' && pipelineState !== 'complete';
-            
-            return (
-              <div 
-                key={node.id}
-                className="absolute flex flex-col items-center justify-center -translate-x-1/2 -translate-y-1/2 z-10"
-                style={{ left: `${node.x}%`, top: `${node.y}%` }}
-              >
-                {/* Ping Animation */}
-                {isTransmitting && (
-                  <motion.div 
-                    initial={{ scale: 1, opacity: 0.8 }}
-                    animate={{ scale: [1, 4], opacity: [0.8, 0] }}
-                    transition={{ duration: 1.5, repeat: Infinity, ease: "easeOut" }}
-                    className={`absolute w-8 h-8 rounded-full ${result?.severity === 'none' ? 'bg-amber-500' : 'bg-rose-500'}`}
-                  />
-                )}
-                
-                {/* Node Point */}
-                <div className={`relative w-4 h-4 rounded-full border-2 z-10 flex items-center justify-center shadow-lg
-                  ${isActive ? 'bg-emerald-400 border-white shadow-[0_0_15px_rgba(52,211,153,0.8)]' : 'bg-slate-800 border-slate-600'}
-                `}>
-                  {isActive && <div className="w-1.5 h-1.5 bg-slate-900 rounded-full" />}
-                </div>
-                
-                {/* Node Label */}
-                <div className="absolute top-6 whitespace-nowrap bg-slate-950/80 backdrop-blur border border-slate-800 px-2 py-1 rounded text-[10px] font-mono tracking-wider text-slate-300">
-                  {node.id} <span className="text-slate-500 opacity-60 ml-1">{node.name}</span>
-                </div>
-              </div>
-            );
-          })}
+          <MapComponent 
+            nodes={NODES} 
+            activeNodeId={activeNodeId} 
+            onNodeClick={(id) => {
+              const scenario = Object.keys(SCENARIOS).find(k => SCENARIOS[k].node === id);
+              if (scenario) runScenario(scenario as any);
+            }} 
+          />
 
           {/* Top Right Live Status */}
-          <div className="absolute top-6 right-6 flex flex-col items-end gap-2">
-            <div className="bg-slate-950/80 backdrop-blur border border-slate-800/50 px-4 py-2 rounded-lg flex items-center gap-3">
+          <div className="absolute top-6 right-6 flex flex-col items-end gap-2 z-[500]">
+            <div className="bg-slate-950/90 backdrop-blur border border-slate-800/80 px-4 py-2 rounded-lg flex items-center gap-3 shadow-2xl">
                <Radio className={`w-4 h-4 ${pipelineState === 'transmitting' ? 'text-emerald-400 animate-pulse' : 'text-slate-600'}`} />
-               <span className="text-xs font-mono text-slate-300 tracking-widest">LoRaWAN NETWORK</span>
+               <span className="text-xs font-mono text-slate-300 tracking-widest">LoRaWAN NETWORK (LIVE)</span>
                <span className={`w-2 h-2 rounded-full ${pipelineState === 'transmitting' ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 'bg-slate-700'}`} />
             </div>
             {pipelineState !== 'idle' && (
               <motion.div 
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="bg-rose-500/10 border border-rose-500/30 text-rose-400 px-3 py-1.5 text-xs font-mono rounded backdrop-blur"
+                className="bg-rose-500/20 border border-rose-500/50 text-rose-400 px-3 py-1.5 text-xs font-mono rounded backdrop-blur shadow-xl"
               >
                 EVENT DETECTED
               </motion.div>
@@ -336,16 +337,16 @@ export default function SimulationDashboard() {
                     className="grid grid-cols-3 gap-4"
                   >
                     <DataCard 
-                      title="Seismic CNN" val={result?.seismic.event_type || SCENARIOS[activeScenario].output.seismic.event_type} 
-                      sub={`${result?.seismic.magnitude || SCENARIOS[activeScenario].output.seismic.magnitude} mag`} icon={<Activity />} 
+                      title="Seismic CNN" val={result?.seismic.event_type || "Analyzing..."} 
+                      sub={`${result?.seismic.magnitude || "???"} mag`} icon={<Activity />} 
                     />
                     <DataCard 
-                      title="Gas Random Forest" val={result?.gas.hazard_type || SCENARIOS[activeScenario].output.gas.hazard_type} 
-                      sub={`${result?.gas.current_ppm || SCENARIOS[activeScenario].output.gas.current_ppm} PPM`} icon={<Flame />} 
+                      title="Gas Random Forest" val={result?.gas.hazard_type || "Analyzing..."} 
+                      sub={`${result?.gas.current_ppm || "0"} PPM`} icon={<Flame />} 
                     />
                     <DataCard 
-                      title="Survivor Estimator" val={`${result?.survivor.estimated_count || SCENARIOS[activeScenario].output.survivor.estimated_count} detected`} 
-                      sub={`${result?.survivor.urgency || SCENARIOS[activeScenario].output.survivor.urgency} urgency`} icon={<Users />} 
+                      title="Survivor Estimator" val={`${result?.survivor.estimated_count || "0"} detected`} 
+                      sub={`${result?.survivor.urgency || "low"} urgency`} icon={<Users />} 
                     />
                   </motion.div>
                 )}
