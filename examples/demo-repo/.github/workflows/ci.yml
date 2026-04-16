@@ -20,10 +20,13 @@ jobs:
       - name: Install deps
         run: pip install -r requirements.txt
 
+      # pipefail: without it, `python | tee` exits 0 (tee's code) so CI looks green even when app crashes
       - name: Run app (expected to fail until requests is added)
         id: runapp
         continue-on-error: true
-        run: python app.py 2>&1 | tee run.log
+        run: |
+          set -o pipefail
+          python app.py 2>&1 | tee run.log
 
       - name: Notify PipelineMedic on failure
         if: steps.runapp.outcome == 'failure'

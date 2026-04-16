@@ -120,32 +120,42 @@ def _parse_json_content(content: str) -> dict[str, Any]:
 def analyze_log(log_text: str) -> tuple[dict[str, Any], str]:
     key = os.getenv("GROQ_API_KEY", "").strip()
     if not key:
+        print("[PipelineMedic] GROQ_API_KEY is empty — using rule-based analysis", flush=True)
         return _normalize_analysis(_rule_based_analysis(log_text)), "rules"
 
     model = os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL).strip()
-    payload = {
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    base_body: dict[str, Any] = {
         "model": model,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": f"Analyze this CI log excerpt:\n\n{log_text[:12000]}"},
         ],
         "temperature": 0.2,
-        "response_format": {"type": "json_object"},
     }
-    try:
-        r = requests.post(
-            GROQ_URL,
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json=payload,
-            timeout=60,
-        )
+
+    def _call_groq(with_json_object: bool) -> tuple[dict[str, Any], str]:
+        body = {**base_body}
+        if with_json_object:
+            body["response_format"] = {"type": "json_object"}
+        r = requests.post(GROQ_URL, headers=headers, json=body, timeout=60)
         r.raise_for_status()
         data = r.json()
         msg = data["choices"][0]["message"]["content"]
         parsed = _parse_json_content(msg)
         return _normalize_analysis(parsed), "groq"
-    except Exception:
-        return _normalize_analysis(_rule_based_analysis(log_text)), "rules"
+
+    try:
+        return _call_groq(True)
+    except Exception as e1:
+        try:
+            return _call_groq(False)
+        except Exception as e2:
+            print(
+                f"[PipelineMedic] Groq failed (json_object: {e1!r}; retry: {e2!r}) — using rules",
+                flush=True,
+            )
+            return _normalize_analysis(_rule_based_analysis(log_text)), "rules"
 
 
 # --- Decision -------------------------------------------------------------------
@@ -192,11 +202,27 @@ def decide(analysis: dict[str, Any]) -> DecisionPath:
 
 # --- Notifications --------------------------------------------------------------
 
+def _parse_telegram_chat_id(raw: str) -> int | str:
+    """Telegram accepts int chat ids; groups are often negative (-100...)."""
+    s = raw.strip()
+    if s.lstrip("-").isdigit():
+        return int(s)
+    return s
+
+
+def _telegram_chat_ids() -> list[int | str]:
+    """Comma-separated TELEGRAM_CHAT_ID: DM + group, etc."""
+    raw = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    if not raw:
+        return []
+    return [_parse_telegram_chat_id(x) for x in raw.split(",") if x.strip()]
+
+
 def _telegram_configured() -> bool:
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    chat = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    chats = _telegram_chat_ids()
     enabled = os.getenv("TELEGRAM_ENABLED", "true").strip().lower() == "true"
-    return bool(token and chat and enabled)
+    return bool(token and chats and enabled)
 
 
 def _clip(text: str, max_len: int) -> str:
@@ -243,8 +269,9 @@ def build_notification_message(
     source: str,
     log_excerpt: str,
     github_info: dict[str, Any] | None = None,
+    for_telegram: bool = False,
 ) -> str:
-    """Structured alert: error → diagnosis → fix → PR outcome → meta."""
+    """Telegram: full story + short Meta (decision + confidence only). Console: + risk + analysis source."""
     src = "Groq LLM" if source == "groq" else "rule-based fallback (no GROQ_API_KEY or API error)"
     route = (
         "auto_fix — patch proposed; PR opened when GitHub is configured."
@@ -253,8 +280,9 @@ def build_notification_message(
     )
     target = (analysis.get("file") or "").strip()
     target_line = f"Likely file: {target}\n\n" if target else ""
+    conf = analysis.get("confidence")
 
-    return (
+    body = (
         "PipelineMedic · CI failed after a push\n\n"
         f"Repository: {repository}\n\n"
         "— Error signal (from CI log) —\n"
@@ -266,10 +294,20 @@ def build_notification_message(
         f"{_github_notify_block(github_info, decision)}"
         f"{target_line}"
         "— Routing —\n"
-        f"{route}\n\n"
-        "— Meta —\n"
+        f"{route}\n"
+    )
+    if for_telegram:
+        return (
+            body
+            + "\n\n— Meta —\n"
+            f"Decision: {decision}\n"
+            f"Confidence: {conf}\n"
+        )
+    return (
+        body
+        + "\n\n— Meta —\n"
         f"Decision: {decision}\n"
-        f"Confidence: {analysis.get('confidence')} · Risk: {analysis.get('risk')}\n"
+        f"Confidence: {conf} · Risk: {analysis.get('risk')}\n"
         f"Analysis source: {src}"
     )
 
@@ -285,7 +323,13 @@ def notify_console_mock_slack(
     print("\n--- Mock Slack block ---")
     print(
         build_notification_message(
-            repository, decision, analysis, source, log_excerpt, github_info
+            repository,
+            decision,
+            analysis,
+            source,
+            log_excerpt,
+            github_info,
+            for_telegram=False,
         )
     )
     print("--- End mock Slack ---\n")
@@ -302,26 +346,33 @@ def notify_telegram(
     if not _telegram_configured():
         return
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    chat_ids = _telegram_chat_ids()
     text = build_notification_message(
-        repository, decision, analysis, source, log_excerpt, github_info
+        repository,
+        decision,
+        analysis,
+        source,
+        log_excerpt,
+        github_info,
+        for_telegram=True,
     )
     # Telegram hard limit 4096 characters for a single message
     text = _clip(text, 4000)
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    try:
-        r = requests.post(
-            url,
-            json={
-                "chat_id": chat_id,
-                "text": text,
-                "disable_web_page_preview": True,
-            },
-            timeout=15,
-        )
-        r.raise_for_status()
-    except Exception as e:
-        print(f"[PipelineMedic] Telegram send failed: {e}")
+    for chat_id in chat_ids:
+        try:
+            r = requests.post(
+                url,
+                json={
+                    "chat_id": chat_id,
+                    "text": text,
+                    "disable_web_page_preview": True,
+                },
+                timeout=15,
+            )
+            r.raise_for_status()
+        except Exception as e:
+            print(f"[PipelineMedic] Telegram send failed (chat_id={chat_id}): {e}")
 
 
 def mock_pipeline_rerun(decision: str) -> None:
@@ -621,7 +672,17 @@ app.add_middleware(
 
 
 def health_payload() -> dict[str, Any]:
-    return {"status": "ok", "service": "pipelinemedic", "version": "1.0.0"}
+    # GET / does not call Groq — these flags only show whether env vars are present (for Vercel debugging).
+    return {
+        "status": "ok",
+        "service": "pipelinemedic",
+        "version": "1.0.0",
+        "groq_configured": bool(os.getenv("GROQ_API_KEY", "").strip()),
+        "telegram_configured": bool(
+            os.getenv("TELEGRAM_BOT_TOKEN", "").strip() and _telegram_chat_ids()
+        ),
+        "github_token_configured": bool(os.getenv("GITHUB_TOKEN", "").strip()),
+    }
 
 
 @app.get("/")
