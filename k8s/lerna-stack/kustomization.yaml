@@ -19,3 +19,6 @@ resources:
   - ../../agents-layer/k8s/agents-deployment.yaml
   - ../../detection-service/k8s/detection-deployment.yaml
   - ../lerna-ingress.yaml
+
+
+
