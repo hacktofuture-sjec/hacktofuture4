@@ -1,0 +1,404 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─────────────────────────────────────────────────────────────
+   REKALL Design System
+   Command-room dark aesthetic — deep navy, tight borders, glow accents
+───────────────────────────────────────────────────────────── */
+
+@layer base {
+  :root {
+    /* ── Light mode ──────────────────────────────────── */
+    --background:        220 16% 97%;
+    --background-subtle: 220 16% 93%;
+    --foreground:        222 24% 8%;
+
+    --card:              0 0% 100%;
+    --card-hover:        220 16% 98%;
+    --card-foreground:   222 24% 8%;
+
+    --border:            220 14% 86%;
+    --border-strong:     220 14% 74%;
+    --input:             220 14% 92%;
+    --ring:              221 83% 53%;
+
+    --primary:           221 83% 53%;
+    --primary-hover:     221 83% 46%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary:         220 14% 92%;
+    --secondary-foreground: 222 20% 30%;
+
+    --muted:             220 14% 92%;
+    --muted-foreground:  220 10% 46%;
+
+    --accent:            221 83% 53%;
+    --accent-subtle:     221 83% 96%;
+
+    --popover:           0 0% 100%;
+    --popover-foreground: 222 24% 8%;
+
+    --destructive:       0 72% 51%;
+    --success:           142 72% 29%;
+    --warning:           38 92% 50%;
+    --info:              199 89% 48%;
+
+    --status-processing: 38 92% 50%;
+    --status-awaiting:   262 83% 58%;
+    --status-resolved:   142 72% 29%;
+    --status-failed:     0 72% 51%;
+
+    --sidebar-width:     240px;
+    --sidebar-bg:        0 0% 100%;
+    --sidebar-border:    220 14% 88%;
+
+    --radius: 0.55rem;
+  }
+
+  .dark {
+    /* ── Dark mode: command-room navy ───────────────── */
+    --background:        224 22% 6%;
+    --background-subtle: 224 20% 9%;
+    --foreground:        215 22% 90%;
+
+    --card:              224 20% 9%;
+    --card-hover:        224 20% 11%;
+    --card-foreground:   215 22% 90%;
+
+    --border:            224 18% 14%;
+    --border-strong:     224 18% 22%;
+    --input:             224 20% 11%;
+    --ring:              217 91% 60%;
+
+    --primary:           217 91% 60%;
+    --primary-hover:     217 91% 67%;
+    --primary-foreground: 224 22% 6%;
+
+    --secondary:         224 20% 13%;
+    --secondary-foreground: 215 16% 62%;
+
+    --muted:             224 20% 12%;
+    --muted-foreground:  215 12% 42%;
+
+    --accent:            217 91% 60%;
+    --accent-subtle:     217 60% 10%;
+
+    --popover:           224 22% 8%;
+    --popover-foreground: 215 22% 90%;
+
+    --destructive:       0 72% 51%;
+    --success:           142 69% 42%;
+    --warning:           38 92% 50%;
+    --info:              199 89% 54%;
+
+    --status-processing: 38 92% 50%;
+    --status-awaiting:   262 83% 65%;
+    --status-resolved:   142 69% 42%;
+    --status-failed:     0 72% 51%;
+
+    --sidebar-bg:        224 24% 5%;
+    --sidebar-border:    224 18% 12%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Inter", "SF Pro Display", system-ui, -apple-system, sans-serif;
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+
+  code, pre, kbd {
+    font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", monospace;
+  }
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border-strong));
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* ── Animations ────────────────────────────────────────────── */
+@keyframes step-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes progress-fill {
+  from { width: 0%; }
+  to   { width: var(--target-width, 100%); }
+}
+
+.step-running     { animation: step-pulse 1.4s ease-in-out infinite; }
+.fade-up          { animation: fade-up 0.35s ease-out both; }
+.fade-in          { animation: fade-in 0.25s ease-out both; }
+.slide-in-left    { animation: slide-in-left 0.3s ease-out both; }
+.scale-in         { animation: scale-in 0.25s ease-out both; }
+
+/* ── Skeleton shimmer ──────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted)) 25%,
+    hsl(var(--muted-foreground) / 0.08) 50%,
+    hsl(var(--muted)) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s infinite;
+  border-radius: var(--radius);
+}
+
+/* ── Sidebar nav active indicator ─────────────────────────── */
+.nav-active {
+  position: relative;
+}
+.nav-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 60%;
+  width: 3px;
+  background: hsl(var(--primary));
+  border-radius: 0 99px 99px 0;
+}
+
+/* ── Gradient text ─────────────────────────────────────────── */
+.gradient-text {
+  background: linear-gradient(135deg, hsl(217 91% 65%), hsl(270 80% 70%));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.gradient-text-warm {
+  background: linear-gradient(135deg, hsl(38 92% 55%), hsl(16 90% 60%));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Card hover lift ───────────────────────────────────────── */
+.card-lift {
+  transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+.card-lift:hover {
+  transform: translateY(-2px);
+  border-color: hsl(var(--border-strong));
+  box-shadow: 0 8px 32px -8px hsl(var(--background) / 0.8), 0 2px 8px -2px hsl(0 0% 0% / 0.12);
+}
+
+/* ── Glass panel ───────────────────────────────────────────── */
+.glass {
+  backdrop-filter: blur(12px) saturate(180%);
+  background: hsl(var(--card) / 0.7);
+  border: 1px solid hsl(var(--border));
+}
+
+/* ── Status dot ────────────────────────────────────────────── */
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.status-dot.live {
+  background: hsl(var(--success));
+  box-shadow: 0 0 0 3px hsl(var(--success) / 0.2);
+  animation: step-pulse 2s ease-in-out infinite;
+}
+
+/* ── Monospace terminal block ──────────────────────────────── */
+.terminal {
+  background: hsl(224 30% 5%);
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  padding: 1rem;
+  overflow-x: auto;
+}
+.dark .terminal {
+  background: hsl(224 28% 4%);
+}
+
+/* ── Diff colors ───────────────────────────────────────────── */
+.diff-add  { color: hsl(142 69% 50%); }
+.diff-del  { color: hsl(0 72% 55%);   }
+.diff-meta { color: hsl(var(--muted-foreground)); }
+
+/* ── Focus ring override ───────────────────────────────────── */
+.focus-ring {
+  @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
+}
+*:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* ── Chip / inline tag ─────────────────────────────────────── */
+.chip {
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
+}
+
+/* ── Glow utilities ────────────────────────────────────────── */
+.glow-primary {
+  box-shadow: 0 0 20px -4px hsl(217 91% 60% / 0.35), 0 0 40px -8px hsl(217 91% 60% / 0.15);
+}
+.glow-success {
+  box-shadow: 0 0 20px -4px hsl(142 69% 42% / 0.35), 0 0 40px -8px hsl(142 69% 42% / 0.15);
+}
+.glow-danger {
+  box-shadow: 0 0 20px -4px hsl(0 72% 51% / 0.35), 0 0 40px -8px hsl(0 72% 51% / 0.15);
+}
+.glow-warning {
+  box-shadow: 0 0 20px -4px hsl(38 92% 50% / 0.30), 0 0 40px -8px hsl(38 92% 50% / 0.12);
+}
+.glow-purple {
+  box-shadow: 0 0 20px -4px hsl(262 83% 65% / 0.30), 0 0 40px -8px hsl(262 83% 65% / 0.12);
+}
+
+/* ── Inner border glow ─────────────────────────────────────── */
+.border-glow-primary {
+  border-color: hsl(217 91% 60% / 0.35);
+  box-shadow: 0 0 0 1px hsl(217 91% 60% / 0.10) inset;
+}
+.border-glow-success {
+  border-color: hsl(142 69% 42% / 0.4);
+  box-shadow: 0 0 0 1px hsl(142 69% 42% / 0.10) inset;
+}
+
+/* ── Card hover — deeper lift with ambient glow ────────────── */
+.card-lift {
+  transition: transform 140ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+.card-lift:hover {
+  transform: translateY(-1px);
+  border-color: hsl(var(--border-strong));
+  box-shadow: 0 4px 24px -6px hsl(0 0% 0% / 0.35), 0 1px 4px -1px hsl(0 0% 0% / 0.2);
+}
+
+/* ── Card hover (flat, no lift) ────────────────────────────── */
+.card-hover {
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.card-hover:hover {
+  border-color: hsl(var(--border-strong));
+  background: hsl(var(--card-hover));
+}
+
+/* ── Section header rule ───────────────────────────────────── */
+.section-rule {
+  border-bottom: 1px solid hsl(var(--border));
+  padding-bottom: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+/* ── Inset panel (code / log areas) ───────────────────────── */
+.inset-panel {
+  background: hsl(224 28% 4%);
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+}
+.dark .inset-panel {
+  background: hsl(224 30% 3%);
+}
+
+/* ── Page header with subtle gradient separator ─────────────  */
+.page-header {
+  border-bottom: 1px solid hsl(var(--border));
+  background: linear-gradient(
+    180deg,
+    hsl(var(--background-subtle)) 0%,
+    hsl(var(--background)) 100%
+  );
+  backdrop-filter: blur(8px);
+}
+
+/* ── Data row highlight on hover ───────────────────────────── */
+.data-row {
+  transition: background 100ms ease;
+}
+.data-row:hover {
+  background: hsl(var(--muted) / 0.6);
+}
+
+/* ── Mono label ────────────────────────────────────────────── */
+.mono-label {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+
+/* ── Scan line texture (subtle, dark mode only) ────────────── */
+@media (prefers-color-scheme: dark) {
+  .scanlines::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      hsl(0 0% 0% / 0.03) 2px,
+      hsl(0 0% 0% / 0.03) 4px
+    );
+    pointer-events: none;
+  }
+}
+
+/* ── Noise overlay ─────────────────────────────────────────── */
+.noise {
+  position: relative;
+}
+.noise::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  opacity: 0.025;
+  pointer-events: none;
+  border-radius: inherit;
+}
