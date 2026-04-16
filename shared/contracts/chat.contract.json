@@ -2,18 +2,71 @@
   "version": "0.1.0",
   "endpoint": "POST /api/chat",
   "request": {
-    "message": "string",
-    "session_id": "string"
+    "message": "string (optional)",
+    "session_id": "string",
+    "incident_report": {
+      "source_system": "iris",
+      "case_id": "string (optional)",
+      "report_id": "string (optional)",
+      "report_url": "string (optional)",
+      "ingested_at": "string (optional)",
+      "case_name": "string",
+      "short_description": "string",
+      "severity": "string",
+      "tags": [
+        "string"
+      ],
+      "iocs": [
+        "string or object"
+      ],
+      "timeline": [
+        "string or object"
+      ]
+    }
+  },
+  "request_rules": {
+    "accepted_modes": [
+      "message_only",
+      "incident_report_only",
+      "message_and_incident_report"
+    ],
+    "precedence": "When incident_report is present, backend derives canonical query context from incident_report and ignores message for controller query input."
   },
   "response": {
     "answer": "string",
     "trace_id": "string",
-    "needs_approval": "boolean"
+    "needs_approval": "boolean",
+    "dedup_summary": {
+      "documents": {
+        "scanned": "number",
+        "duplicates": "number"
+      },
+      "transcripts": {
+        "scanned": "number",
+        "duplicates": "number"
+      },
+      "deduped_count": "number",
+      "duplication_ratio": "number",
+      "last_run_at": "string|null"
+    }
   },
   "transcript": {
     "endpoint": "GET /api/chat/transcript/{trace_id}",
     "response": {
       "trace_id": "string",
+      "dedup_summary": {
+        "documents": {
+          "scanned": "number",
+          "duplicates": "number"
+        },
+        "transcripts": {
+          "scanned": "number",
+          "duplicates": "number"
+        },
+        "deduped_count": "number",
+        "duplication_ratio": "number",
+        "last_run_at": "string|null"
+      },
       "steps": [
         {
           "step": "string",
