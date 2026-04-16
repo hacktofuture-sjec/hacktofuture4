@@ -63,12 +63,16 @@ async def run_mapper(
     Calls LLM to normalize raw_payload → UnifiedTicketSchema.
     Returns the mapped data as a dict.
     """
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=settings.llm_temperature,
-        api_key=settings.openai_api_key,
-        timeout=60,
-    )
+    llm_kwargs = {
+        "model": settings.llm_model,
+        "temperature": settings.llm_temperature,
+        "api_key": settings.openai_api_key,
+        "timeout": 60,
+    }
+    if settings.openai_api_base_url:
+        llm_kwargs["base_url"] = settings.openai_api_base_url
+
+    llm = ChatOpenAI(**llm_kwargs)
 
     # Structured output enforces JSON schema validation
     structured_llm = llm.with_structured_output(UnifiedTicketSchema)

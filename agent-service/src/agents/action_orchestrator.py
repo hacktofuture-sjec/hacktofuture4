@@ -23,18 +23,17 @@ logger = logging.getLogger(__name__)
 MCP_LIVE = os.getenv("MCP_LIVE", "false").lower() == "true"
 
 
+class ActionItem(BaseModel):
+    tool: str = Field(description="The tool name, exactly one of: 'jira', 'slack', 'linear'")
+    action: str = Field(description="The name of the action to execute.")
+    payload: Dict[str, Any] = Field(description="The relevant data payload for the action.")
+
+
 class ActionPlannerSchema(BaseModel):
     """Structured output for the LLM to decide what actions to take."""
 
     analysis: str = Field(description="Brief explanation of what needs to be done.")
-    actions: List[Dict[str, Any]] = Field(
-        description=(
-            "List of exact actions to take. Each dict must contain "
-            "'tool' (e.g. jira, slack), "
-            "'action' (e.g. create_ticket, transition_status, send_message) "
-            "and 'payload' (relevant data)."
-        )
-    )
+    actions: List[ActionItem] = Field(description="List of exact actions to take.")
 
 
 SYSTEM_PROMPT = """You are the core of an Autonomous Proactive Product Manager.
@@ -45,12 +44,12 @@ and output a structured plan.
 
 AVAILABLE TOOLS:
 - jira: [create_ticket, transition_status, update_ticket]
-  - create_ticket payload: {project_key, summary, issue_type, description, priority, labels}
-  - transition_status payload: {issue_key, transition_name}
+  - create_ticket payload: {{project_key, summary, issue_type, description, priority, labels}}
+  - transition_status payload: {{issue_key, transition_name}}
 - slack: [send_message]
-  - send_message payload: {channel, text}
+  - send_message payload: {{channel, text}}
 - linear: [create_issue, update_issue]
-  - create_issue payload: {title, description, priority, team}
+  - create_issue payload: {{title, description, priority, team}}
 
 RULES:
 1. Be precise — only emit actions the user explicitly or implicitly requested.
@@ -124,12 +123,16 @@ async def _execute_live(tool: str, action: str, payload: dict) -> str:
 
 async def run_action_orchestrator(text: str) -> ActionResult:
     """Takes text, orchestrates LLM, and executes MCP calls (mock or live)."""
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        temperature=settings.llm_temperature,
-        api_key=settings.openai_api_key,
-        timeout=60,
-    )
+    llm_kwargs = {
+        "model": settings.llm_model,
+        "temperature": settings.llm_temperature,
+        "api_key": settings.openai_api_key,
+        "timeout": 60,
+    }
+    if settings.openai_api_base_url:
+        llm_kwargs["base_url"] = settings.openai_api_base_url
+
+    llm = ChatOpenAI(**llm_kwargs)
 
     structured_llm = llm.with_structured_output(ActionPlannerSchema)
     prompt = ChatPromptTemplate.from_messages(
@@ -156,9 +159,9 @@ async def run_action_orchestrator(text: str) -> ActionResult:
     executor = _execute_live if MCP_LIVE else _execute_mock
 
     for act in plan.actions:
-        tool = act.get("tool", "unknown")
-        action = act.get("action", "unknown")
-        payload = act.get("payload", {})
+        tool = act.tool
+        action = act.action
+        payload = act.payload
 
         result_msg = await executor(tool, action, payload)
 

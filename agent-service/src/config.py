@@ -3,12 +3,15 @@ FastAPI Agent Service settings (Pydantic BaseSettings).
 All values loaded from environment variables.
 """
 
+from typing import Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     # LLM
     openai_api_key: str = ""
+    openai_api_base_url: Optional[str] = None
     llm_model: str = "gpt-4o"
     llm_temperature: float = 0.0
 
@@ -22,7 +25,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file="../.env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
