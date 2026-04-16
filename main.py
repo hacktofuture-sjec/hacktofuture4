@@ -16,6 +16,7 @@ import base64
 import json
 import os
 import re
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -530,6 +531,248 @@ def append_incident(
             continue
 
 
+# --- Incident state (interactive Telegram flow) -------------------------------
+# Ephemeral: in-memory + /tmp JSON. Sufficient for hackathon demos on Vercel
+# (warm instance reuse). For production use Vercel KV / Upstash Redis.
+
+_INCIDENT_FILE_PATHS = (
+    Path("data") / "incidents.json",
+    Path("/tmp") / "pipelinemedic_incidents.json",
+)
+_INCIDENTS: dict[str, dict[str, Any]] = {}
+_INCIDENTS_LOADED = False
+_MAX_INCIDENTS = 200
+
+
+def _load_incidents() -> None:
+    global _INCIDENTS_LOADED, _INCIDENTS
+    if _INCIDENTS_LOADED:
+        return
+    for path in _INCIDENT_FILE_PATHS:
+        try:
+            if path.exists():
+                raw = path.read_text(encoding="utf-8")
+                data = json.loads(raw) if raw.strip() else {}
+                if isinstance(data, dict):
+                    _INCIDENTS = data
+                    break
+        except (json.JSONDecodeError, OSError):
+            continue
+    _INCIDENTS_LOADED = True
+
+
+def _save_incidents() -> None:
+    for path in _INCIDENT_FILE_PATHS:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(_INCIDENTS, indent=2), encoding="utf-8")
+            return
+        except OSError:
+            continue
+
+
+def store_incident(data: dict[str, Any]) -> str:
+    _load_incidents()
+    token = secrets.token_hex(4)
+    while token in _INCIDENTS:
+        token = secrets.token_hex(4)
+    _INCIDENTS[token] = data
+    if len(_INCIDENTS) > _MAX_INCIDENTS:
+        oldest = sorted(_INCIDENTS.items(), key=lambda kv: kv[1].get("ts", ""))[
+            : len(_INCIDENTS) - _MAX_INCIDENTS
+        ]
+        for k, _ in oldest:
+            _INCIDENTS.pop(k, None)
+    _save_incidents()
+    return token
+
+
+def get_incident(token: str) -> dict[str, Any] | None:
+    _load_incidents()
+    return _INCIDENTS.get(token)
+
+
+def update_incident(token: str, **kwargs: Any) -> None:
+    _load_incidents()
+    if token in _INCIDENTS:
+        _INCIDENTS[token].update(kwargs)
+        _save_incidents()
+
+
+# --- Telegram interactive helpers ---------------------------------------------
+
+def _tg_request(method: str, payload: dict[str, Any]) -> dict[str, Any]:
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    if not token:
+        return {}
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{token}/{method}",
+            json=payload,
+            timeout=15,
+        )
+        try:
+            return r.json()
+        except ValueError:
+            return {}
+    except requests.RequestException as e:
+        print(f"[PipelineMedic] Telegram {method} failed: {e}", flush=True)
+        return {}
+
+
+def tg_send_with_buttons(
+    chat_id: int | str,
+    text: str,
+    buttons: list[list[dict[str, Any]]],
+) -> dict[str, Any]:
+    return _tg_request(
+        "sendMessage",
+        {
+            "chat_id": chat_id,
+            "text": text,
+            "disable_web_page_preview": True,
+            "reply_markup": {"inline_keyboard": buttons},
+        },
+    )
+
+
+def tg_edit_message(
+    chat_id: int | str,
+    message_id: int,
+    text: str,
+    buttons: list[list[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text,
+        "disable_web_page_preview": True,
+    }
+    if buttons is not None:
+        payload["reply_markup"] = {"inline_keyboard": buttons}
+    return _tg_request("editMessageText", payload)
+
+
+def tg_answer_callback(callback_id: str, text: str = "") -> dict[str, Any]:
+    payload: dict[str, Any] = {"callback_query_id": callback_id}
+    if text:
+        payload["text"] = text[:200]
+    return _tg_request("answerCallbackQuery", payload)
+
+
+def _broadcast_edit(
+    incident: dict[str, Any],
+    text: str,
+    buttons: list[list[dict[str, Any]]] | None,
+) -> None:
+    for tgt in incident.get("message_targets") or []:
+        cid = tgt.get("chat_id")
+        mid = tgt.get("message_id")
+        if cid is not None and mid is not None:
+            tg_edit_message(cid, mid, text, buttons)
+
+
+# --- Interactive message builders ---------------------------------------------
+
+def build_initial_interactive_message(
+    repository: str,
+    log_excerpt: str,
+    analysis: dict[str, Any],
+    source: str,
+    decision: str,
+    token: str,
+) -> str:
+    src = "Groq LLM" if source == "groq" else "rule-based fallback"
+    conf = analysis.get("confidence")
+    return (
+        "🚨 PipelineMedic · CI failed\n\n"
+        f"Repository: {repository}\n\n"
+        "— Error signal —\n"
+        f"{_clip(log_excerpt, 600)}\n\n"
+        "— Diagnosis —\n"
+        f"{_clip(str(analysis.get('root_cause', '')), 600)}\n\n"
+        "— Suggested fix —\n"
+        f"{_clip(str(analysis.get('fix', '')), 600)}\n\n"
+        "— Meta —\n"
+        f"Decision (advisory): {decision}\n"
+        f"Confidence: {conf}\n"
+        f"Analysis source: {src}\n"
+        f"Incident: {token}\n\n"
+        "Choose how to proceed."
+    )
+
+
+def build_pr_created_message(
+    incident: dict[str, Any],
+    github_info: dict[str, Any],
+) -> str:
+    repo = incident.get("repository", "")
+    analysis = incident.get("analysis", {})
+    pr_url = github_info.get("html_url", "")
+    branch = github_info.get("branch", "")
+    pr_num = github_info.get("pull_number", "")
+    return (
+        "✅ PipelineMedic auto-fix PR created\n\n"
+        f"Repository: {repo}\n"
+        f"PR #{pr_num}: {pr_url}\n"
+        f"Branch: {branch}\n\n"
+        "— What was fixed —\n"
+        f"{_clip(str(analysis.get('fix', '')), 600)}\n\n"
+        f"Likely file: {analysis.get('file') or '(none)'}\n\n"
+        "Approve merge to main?"
+    )
+
+
+def build_pr_failed_message(
+    incident: dict[str, Any],
+    github_info: dict[str, Any],
+) -> str:
+    repo = incident.get("repository", "")
+    err = github_info.get("error") or github_info.get("message") or "unknown error"
+    return (
+        "❌ PipelineMedic could not open auto-fix PR\n\n"
+        f"Repository: {repo}\n"
+        f"Reason: {err}\n\n"
+        "Please fix manually."
+    )
+
+
+def build_manual_message(incident: dict[str, Any]) -> str:
+    repo = incident.get("repository", "")
+    analysis = incident.get("analysis", {})
+    return (
+        "🛠 Manual fix selected\n\n"
+        f"Repository: {repo}\n\n"
+        f"Suggested fix: {_clip(str(analysis.get('fix', '')), 600)}\n"
+        f"Likely file: {analysis.get('file') or '(none)'}\n\n"
+        "PipelineMedic will not create a PR for this incident."
+    )
+
+
+def build_merged_message(incident: dict[str, Any], result: dict[str, Any]) -> str:
+    pr = (incident.get("github") or {}).get("html_url", "")
+    if result.get("ok"):
+        sha = result.get("sha", "")
+        return (
+            "🎉 Merged to main.\n"
+            f"PR: {pr}\n"
+            f"Merge commit: {sha}\n\n"
+            "Incident closed."
+        )
+    return f"❌ Merge failed: {result.get('error', 'unknown')}\nPR: {pr}"
+
+
+def build_rollback_message(incident: dict[str, Any], result: dict[str, Any]) -> str:
+    pr = (incident.get("github") or {}).get("html_url", "")
+    if result.get("ok"):
+        return (
+            "↩️ Rollback complete: PR closed and AI branch deleted.\n"
+            "main was not modified.\n\n"
+            f"Closed PR: {pr}"
+        )
+    return f"❌ Rollback failed: {result.get('error', 'unknown')}\nPR: {pr}"
+
+
 # --- GitHub ---------------------------------------------------------------------
 
 GITHUB_API = "https://api.github.com"
@@ -767,6 +1010,86 @@ def maybe_create_autofix_pr(
     }
 
 
+def merge_pull_request(incident: dict[str, Any]) -> dict[str, Any]:
+    token = os.getenv("GITHUB_TOKEN", "").strip()
+    if not token:
+        return {"ok": False, "error": "GITHUB_TOKEN not set"}
+    gh = incident.get("github") or {}
+    pr_num = gh.get("pull_number")
+    if not pr_num:
+        return {"ok": False, "error": "missing PR number"}
+    owner, repo = resolve_repo_slug(
+        incident.get("repository", ""),
+        incident.get("repository_full_name"),
+    )
+    if not owner or not repo:
+        return {"ok": False, "error": "could not resolve owner/repo"}
+
+    method = (os.getenv("GITHUB_MERGE_METHOD", "merge").strip() or "merge").lower()
+    if method not in ("merge", "squash", "rebase"):
+        method = "merge"
+
+    r = requests.put(
+        f"{GITHUB_API}/repos/{owner}/{repo}/pulls/{pr_num}/merge",
+        headers=_gh_headers(token),
+        json={"merge_method": method},
+        timeout=30,
+    )
+    if r.status_code in (200, 201):
+        try:
+            data = r.json()
+        except ValueError:
+            data = {}
+        return {"ok": True, "merged": True, "sha": data.get("sha"), "method": method}
+    return {"ok": False, "error": f"{r.status_code} {r.text[:300]}"}
+
+
+def rollback_pull_request(incident: dict[str, Any]) -> dict[str, Any]:
+    """Pre-merge rollback: close PR and delete AI branch. main is untouched.
+
+    For post-merge revert (true rollback after merging), open a revert PR
+    against main using GitHub's revert endpoint or git revert manually.
+    """
+    token = os.getenv("GITHUB_TOKEN", "").strip()
+    if not token:
+        return {"ok": False, "error": "GITHUB_TOKEN not set"}
+    gh = incident.get("github") or {}
+    pr_num = gh.get("pull_number")
+    branch = gh.get("branch")
+    if not pr_num or not branch:
+        return {"ok": False, "error": "missing PR or branch"}
+    owner, repo = resolve_repo_slug(
+        incident.get("repository", ""),
+        incident.get("repository_full_name"),
+    )
+    if not owner or not repo:
+        return {"ok": False, "error": "could not resolve owner/repo"}
+
+    rc = requests.patch(
+        f"{GITHUB_API}/repos/{owner}/{repo}/pulls/{pr_num}",
+        headers=_gh_headers(token),
+        json={"state": "closed"},
+        timeout=30,
+    )
+    closed = rc.status_code == 200
+
+    rd = requests.delete(
+        f"{GITHUB_API}/repos/{owner}/{repo}/git/refs/heads/{branch}",
+        headers=_gh_headers(token),
+        timeout=30,
+    )
+    deleted = rd.status_code in (200, 204)
+
+    return {
+        "ok": closed and deleted,
+        "closed": closed,
+        "branch_deleted": deleted,
+        "error": None
+        if (closed and deleted)
+        else f"close={rc.status_code}, delete={rd.status_code}",
+    }
+
+
 # --- FastAPI --------------------------------------------------------------------
 
 app = FastAPI(title="PipelineMedic", version="1.0.0")
@@ -785,7 +1108,7 @@ def health_payload() -> dict[str, Any]:
     return {
         "status": "ok",
         "service": "pipelinemedic",
-        "version": "1.0.1",
+        "version": "1.1.0",
         "groq_configured": bool(os.getenv("GROQ_API_KEY", "").strip()),
         "telegram_configured": bool(
             os.getenv("TELEGRAM_BOT_TOKEN", "").strip() and _telegram_chat_ids()
@@ -849,43 +1172,158 @@ async def process_webhook(request: Request) -> JSONResponse:
         decision = decide(analysis)
         log_excerpt = extract_error_line(log_str)
 
-        # Error → (if auto_fix) apply patch + open PR on GitHub → then notify with PR link
-        github_info: dict[str, Any] = {}
-        try:
-            github_info = maybe_create_autofix_pr(
-                repo_str,
-                str(repository_full_name).strip() if repository_full_name else None,
-                analysis,
-                decision,
-            )
-        except Exception as e:
-            github_info = {"ok": False, "mode": "error", "error": str(e)}
-
-        if decision == "auto_fix":
-            mock_pipeline_rerun(decision)
+        token = store_incident(
+            {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "repository": repo_str,
+                "repository_full_name": (
+                    str(repository_full_name).strip() if repository_full_name else None
+                ),
+                "log_excerpt": log_excerpt,
+                "analysis": analysis,
+                "source": source,
+                "decision": decision,
+                "status": "awaiting_choice",
+                "message_targets": [],
+            }
+        )
 
         notify_console_mock_slack(
-            repo_str, decision, analysis, source, log_excerpt, github_info
+            repo_str, decision, analysis, source, log_excerpt, {}
         )
-        notify_telegram(repo_str, decision, analysis, source, log_excerpt, github_info)
+
+        text = build_initial_interactive_message(
+            repo_str, log_excerpt, analysis, source, decision, token
+        )
+        buttons = [
+            [
+                {"text": "🤖 Auto fix", "callback_data": f"autofix:{token}"},
+                {"text": "🛠 Manual fix", "callback_data": f"manual:{token}"},
+            ]
+        ]
+        targets: list[dict[str, Any]] = []
+        if _telegram_configured():
+            for chat_id in _telegram_chat_ids():
+                resp = tg_send_with_buttons(chat_id, text, buttons)
+                msg_id = (((resp or {}).get("result") or {}).get("message_id"))
+                if msg_id:
+                    targets.append({"chat_id": chat_id, "message_id": msg_id})
+            if targets:
+                update_incident(token, message_targets=targets)
 
         try:
             append_incident(repo_str, log_excerpt, analysis, decision)
         except Exception:
             pass
 
-        out: dict[str, Any] = {
-            "status": "processed",
-            "repository": repo_str,
-            "decision": decision,
-            "analysis": analysis,
-            "analysis_source": source,
-        }
-        if github_info:
-            out["github"] = github_info
-        return JSONResponse(status_code=200, content=out)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "awaiting_user_choice",
+                "incident": token,
+                "repository": repo_str,
+                "decision": decision,
+                "analysis": analysis,
+                "analysis_source": source,
+                "telegram_targets": len(targets),
+            },
+        )
     finally:
         _langfuse_flush()
+
+
+async def handle_telegram_callback(body: dict[str, Any]) -> JSONResponse:
+    cq = body.get("callback_query") or {}
+    callback_id = str(cq.get("id") or "")
+    data = str(cq.get("data") or "")
+
+    parts = data.split(":")
+    action = parts[0] if parts else ""
+    tok = parts[1] if len(parts) > 1 else ""
+
+    inc = get_incident(tok) if tok else None
+    if not inc:
+        if callback_id:
+            tg_answer_callback(callback_id, "Session expired or unknown incident")
+        return JSONResponse({"ok": True})
+
+    if action == "manual":
+        tg_answer_callback(callback_id, "Marked as manual fix")
+        update_incident(tok, status="manual")
+        inc = get_incident(tok) or inc
+        _broadcast_edit(inc, build_manual_message(inc), buttons=[])
+        return JSONResponse({"ok": True})
+
+    if action == "autofix":
+        if inc.get("status") not in (None, "awaiting_choice"):
+            tg_answer_callback(callback_id, "Already handled")
+            return JSONResponse({"ok": True})
+        tg_answer_callback(callback_id, "Creating fix branch and PR…")
+        update_incident(tok, status="creating_pr")
+        try:
+            github_info = maybe_create_autofix_pr(
+                inc.get("repository", ""),
+                inc.get("repository_full_name"),
+                inc.get("analysis", {}),
+                "auto_fix",
+            )
+        except Exception as e:
+            github_info = {"ok": False, "mode": "error", "error": str(e)}
+        ok = bool(github_info.get("ok") and github_info.get("mode") == "github")
+        update_incident(
+            tok,
+            github=github_info,
+            status="pr_open" if ok else "pr_failed",
+        )
+        inc = get_incident(tok) or inc
+        if ok:
+            new_buttons = [
+                [
+                    {"text": "✅ Merge to main", "callback_data": f"merge:{tok}"},
+                    {"text": "↩️ Rollback", "callback_data": f"roll:{tok}"},
+                ]
+            ]
+            _broadcast_edit(
+                inc, build_pr_created_message(inc, github_info), new_buttons
+            )
+        else:
+            _broadcast_edit(
+                inc, build_pr_failed_message(inc, github_info), buttons=[]
+            )
+        return JSONResponse({"ok": True})
+
+    if action == "merge":
+        if inc.get("status") != "pr_open":
+            tg_answer_callback(callback_id, "Nothing to merge")
+            return JSONResponse({"ok": True})
+        tg_answer_callback(callback_id, "Merging…")
+        result = merge_pull_request(inc)
+        update_incident(
+            tok,
+            merge=result,
+            status="merged" if result.get("ok") else "merge_failed",
+        )
+        inc = get_incident(tok) or inc
+        _broadcast_edit(inc, build_merged_message(inc, result), buttons=[])
+        return JSONResponse({"ok": True})
+
+    if action == "roll":
+        if inc.get("status") != "pr_open":
+            tg_answer_callback(callback_id, "Nothing to roll back")
+            return JSONResponse({"ok": True})
+        tg_answer_callback(callback_id, "Rolling back…")
+        result = rollback_pull_request(inc)
+        update_incident(
+            tok,
+            rollback=result,
+            status="rolled_back" if result.get("ok") else "rollback_failed",
+        )
+        inc = get_incident(tok) or inc
+        _broadcast_edit(inc, build_rollback_message(inc, result), buttons=[])
+        return JSONResponse({"ok": True})
+
+    tg_answer_callback(callback_id, "Unknown action")
+    return JSONResponse({"ok": True})
 
 
 @app.post("/webhook")
@@ -897,6 +1335,28 @@ async def webhook_post(request: Request):
 @app.post("/")
 async def root_post(request: Request):
     return await process_webhook(request)
+
+
+@app.post("/telegram/webhook")
+@app.post("/api/telegram/webhook")
+async def telegram_webhook(request: Request):
+    body = await _parse_body(request)
+    if "callback_query" in body:
+        return await handle_telegram_callback(body)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/incidents/{token}")
+async def get_incident_status(token: str):
+    inc = get_incident(token)
+    if not inc:
+        return JSONResponse(status_code=404, content={"detail": "incident not found"})
+    safe = {
+        k: v
+        for k, v in inc.items()
+        if k not in ("message_targets",)
+    }
+    return safe
 
 
 if __name__ == "__main__":
