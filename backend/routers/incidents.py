@@ -45,17 +45,35 @@ def _parse_action_index(payload: dict[str, Any]) -> int:
         raise HTTPException(status_code=400, detail="action_index must be a valid integer") from exc
 
 
+def _parse_window_seconds(payload: dict[str, Any]) -> int:
+    try:
+        value = int(payload.get("window_seconds", 120))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="window_seconds must be a valid integer") from exc
+
+    if value <= 0:
+        raise HTTPException(status_code=400, detail="window_seconds must be greater than 0")
+    return value
+
+
 def _coerce_percent(value: Any) -> str:
+    if value is None:
+        return "0%"
+
     text = str(value).strip()
     if not text:
         return "0%"
+
     if text.endswith("%"):
-        return text
+        text = text[:-1].strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="metric values must be valid percentages")
+
     try:
         numeric = float(text)
         return f"{numeric:.0f}%"
-    except ValueError:
-        return "0%"
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="metric values must be valid percentages") from exc
 
 
 def _build_verifier_snapshot(incident: dict[str, Any], payload: dict[str, Any]) -> Any:
@@ -171,8 +189,11 @@ def approve_incident_action(incident_id: str) -> dict:
     """Mark the incident as approved so the next execution stage can proceed."""
     incident = _find_incident(incident_id)
 
-    if incident.get("status") == "failed":
-        raise HTTPException(status_code=400, detail="Incident already closed as failed")
+    if incident.get("status") not in {"planned", "pending_approval"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Incident must be in planned or pending_approval state before approval",
+        )
 
     incident["status"] = "approved"
     return {
@@ -226,7 +247,7 @@ async def verify_incident_recovery(incident_id: str, payload: dict[str, Any] | N
         raise HTTPException(status_code=400, detail="Incident must be in verifying state before verification")
 
     body = payload or {}
-    window_seconds = int(body.get("window_seconds", 120))
+    window_seconds = _parse_window_seconds(body)
     snapshot = _build_verifier_snapshot(incident, body)
 
     verification = await recovery_checker.check_recovery(snapshot=snapshot, window_seconds=window_seconds)
