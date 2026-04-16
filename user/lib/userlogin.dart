@@ -28,7 +28,8 @@ class _UserLoginPageState extends State<UserLoginPage> {
   }
 
   Future<void> _logUserLogin(String email) async {
-    final response = await http.post(
+    final response = await http
+        .post(
       Uri.parse('$backendBaseUrl/session'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -36,7 +37,8 @@ class _UserLoginPageState extends State<UserLoginPage> {
         'device': 'user_dashboard',
         'event': 'user_login',
       }),
-    );
+    )
+        .timeout(const Duration(seconds: 5));
 
     if (response.statusCode != 200) {
       throw Exception('Backend session request failed: ${response.body}');
@@ -175,26 +177,11 @@ class _UserLoginPageState extends State<UserLoginPage> {
                                 width: double.infinity,
                                 height: 52,
                                 child: ElevatedButton(
-                                  onPressed: () async {
+                                  onPressed: () {
                                     final email =
                                         _emailController.text.trim().isEmpty
                                         ? 'anonymous_user'
                                         : _emailController.text.trim();
-
-                                    try {
-                                      await _logUserLogin(email);
-                                    } catch (e) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            'Login recorded locally, but live event send failed: $e',
-                                          ),
-                                          backgroundColor: Colors.orange,
-                                        ),
-                                      );
-                                    }
 
                                     Navigator.pushReplacement(
                                       context,
@@ -203,6 +190,18 @@ class _UserLoginPageState extends State<UserLoginPage> {
                                             const DashboardPage(),
                                       ),
                                     );
+
+                                    _logUserLogin(email).catchError((e) {
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Login recorded locally, but live event send failed: $e',
+                                          ),
+                                          backgroundColor: Colors.orange,
+                                        ),
+                                      );
+                                    });
                                   },
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.white,

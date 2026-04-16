@@ -127,12 +127,15 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                                       onPressed: _isLoading
                                           ? null
                                           : () async {
+                                              print('LOGIN BUTTON PRESSED');
                                               final email = _emailController.text.trim();
                                               final password = _passwordController.text.trim();
+                                              print('Email: $email, Password length: ${password.length}');
                                               final sessionId = email.isNotEmpty ? email : 'guest_session';
                                               final scaffoldMessenger = ScaffoldMessenger.of(context);
                                               final navigator = Navigator.of(context);
                                               if (email.isEmpty || password.isEmpty) {
+                                                print('Email or password is empty');
                                                 scaffoldMessenger.showSnackBar(
                                                   const SnackBar(
                                                     content: Text('Please enter email and password'),
@@ -148,12 +151,16 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                                               });
 
                                               try {
+                                                print('Starting Firebase auth...');
                                                 final credential = await AuthService.signInWithEmailAndPassword(
                                                   email: email,
                                                   password: password,
                                                 );
 
+                                                print('Firebase auth successful for: $email');
+
                                                 if (!AuthService.isAdmin(credential.user)) {
+                                                  print('User is not admin: ${credential.user?.email}');
                                                   // For non-admin users, navigate to employee portal
                                                   if (!mounted) return;
                                                   navigator.pushReplacement(
@@ -162,8 +169,11 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                                                   return;
                                                 }
 
+                                                print('User is admin, proceeding with login...');
+
                                                 try {
                                                   // Call /session to store login data automatically
+                                                  print('Calling createSession...');
                                                   final sessionResult = await ApiService.createSession(
                                                     email: email,
                                                     device: 'Android Chrome',  // Or detect dynamically: e.g., Platform.isAndroid ? 'Android' : 'iOS'
@@ -174,6 +184,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                                                   print('Session created with ID: ${sessionResult['session_id']}');
 
                                                   // Optional: Still call analyzeEvent if needed for risk scoring
+                                                  print('Calling analyzeEvent...');
                                                   final result = await ApiService.analyzeEvent(
                                                     sessionId: sessionResult['session_id'],  // Use the new session ID
                                                     location: 'India',  // Or omit if location is fetched server-side
@@ -181,21 +192,30 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                                                     event: 'admin_login',
                                                     keystrokeInterval: 15,
                                                   );
+                                                  print('analyzeEvent completed: ${result['action']}');
 
                                                   setState(() {
                                                     _statusMessage = 'Login logged: ${result['action']} (${result['trust_score']})';
                                                   });
                                                 } catch (backendError) {
+                                                  print('Backend error: $backendError');
                                                   setState(() {
-                                                    _statusMessage = 'Authenticated, but logging failed.';
+                                                    _statusMessage = 'Authenticated, but logging failed: $backendError';
                                                   });
                                                 }
 
-                                                if (!mounted) return;
+                                                print('About to navigate to dashboard...');
+                                                if (!mounted) {
+                                                  print('Widget not mounted, aborting navigation');
+                                                  return;
+                                                }
+                                                print('Navigating to dashboard...');
                                                 navigator.pushReplacement(
                                                   MaterialPageRoute(builder: (context) => const DashboardPage()),
                                                 );
+                                                print('Navigation call completed');
                                               } on FirebaseAuthException catch (error) {
+                                                print('FirebaseAuthException: ${error.code} - ${error.message}');
                                                 if (!mounted) return;
                                                 String message;
 
@@ -213,9 +233,13 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                                                     message = 'This user account has been disabled.';
                                                     break;
                                                   default:
-                                                    message = error.message ?? 'Authentication failed.';
+                                                    message = '${error.code}: ${error.message ?? "Authentication failed"}';
                                                 }
 
+                                                setState(() {
+                                                  _isLoading = false;
+                                                  _statusMessage = message;
+                                                });
                                                 scaffoldMessenger.showSnackBar(
                                                   SnackBar(
                                                     content: Text(message),
@@ -223,7 +247,12 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                                                   ),
                                                 );
                                               } catch (error) {
+                                                print('General error: $error');
                                                 if (!mounted) return;
+                                                setState(() {
+                                                  _isLoading = false;
+                                                  _statusMessage = error.toString();
+                                                });
                                                 scaffoldMessenger.showSnackBar(
                                                   SnackBar(
                                                     content: Text(error.toString()),

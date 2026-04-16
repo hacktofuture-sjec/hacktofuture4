@@ -13,12 +13,12 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyASbHP7t0twh2kwCISgcIKkaIf5hI5GfDU',
-    authDomain: 'htf4c08.firebaseapp.com',
-    projectId: 'htf4c08',
-    storageBucket: 'htf4c08.firebasestorage.app',
-    messagingSenderId: '491353842417',
-    appId: '1:491353842417:web:9e0ad65b9f5b32f543bf50',
+    apiKey: 'AIzaSyAn-IeB4JATh0sP4zt8dkM-MFCyOXVLC_A',
+    authDomain: 'tbrs-ca680.firebaseapp.com',
+    projectId: 'tbrs-ca680',
+    storageBucket: 'tbrs-ca680.firebasestorage.app',
+    messagingSenderId: '309076285379',
+    appId: '1:309076285379:web:7e12819b8517a639c94f76',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
