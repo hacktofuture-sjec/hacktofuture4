@@ -10,6 +10,10 @@ data/
 *.egg-info/
 .DS_Store
 
+# Vercel CLI (keep project.json for team link; ignore local cache)
+.vercel/*
+!.vercel/project.json
+
 # Next.js frontend (web/)
 web/node_modules/
 web/.next/
