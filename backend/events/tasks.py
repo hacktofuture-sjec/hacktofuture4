@@ -32,7 +32,7 @@ def process_raw_webhook(self, event_id: int):
     Retries up to 5 times with exponential backoff (60s, 120s, 240s, 480s, 960s).
     Exhausted events are pushed to DeadLetterQueue.
     """
-    from events.models import DeadLetterQueue, RawWebhookEvent
+    from events.models import RawWebhookEvent  # noqa: PLC0415
 
     try:
         with transaction.atomic():

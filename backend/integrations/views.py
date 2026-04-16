@@ -43,11 +43,14 @@ class IntegrationAccountListView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         org = self.request.user.profile.organization
-        serializer.save(organization=org, integration_id=self.kwargs["integration_id"])
+        serializer.save(
+            organization=org,
+            integration_id=self.kwargs["integration_id"],
+        )
 
 
 class IntegrationSyncView(APIView):
-    """POST /api/v1/integrations/{id}/accounts/{account_id}/sync/ — trigger manual sync."""
+    """POST /api/v1/integrations/{id}/accounts/{account_id}/sync/"""
 
     def post(self, request, integration_id, account_id):
         from tickets.tasks import sync_integration_tickets

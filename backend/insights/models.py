@@ -8,8 +8,6 @@ DashboardWidget — individual widget within a dashboard
 SavedQuery    — stored natural language query + cached results
 """
 
-import uuid
-
 from django.contrib.auth import get_user_model
 from django.db import models
 
@@ -174,7 +172,7 @@ class DashboardWidget(TimestampedModel):
 
 
 class SavedQuery(TimestampedModel):
-    """A stored natural language query with compiled filters and optional result cache."""
+    """Stored natural language query with compiled filters and optional result cache."""
 
     organization = models.ForeignKey(
         "accounts.Organization",

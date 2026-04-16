@@ -1,5 +1,14 @@
 .PHONY: help setup install backend agent jira hubspot frontend docker-up docker-down lint format fl test clean
 
+# ── Tooling paths ─────────────────────────────────────────────────────────────
+UV            := $(shell pwd)/.venv/bin/uv
+PYTHON        := $(shell pwd)/.venv/bin/python
+BACKEND_PY    := $(shell pwd)/.venv/bin/python
+BACKEND_PYTEST := $(shell pwd)/.venv/bin/pytest
+AGENT_PYTEST  := $(shell pwd)/.venv/bin/pytest
+BLACK         := $(shell pwd)/.venv/bin/black
+FLAKE8        := $(shell pwd)/.venv/bin/flake8
+
 # Default target
 help:
 	@echo "Voice-to-Action Hackathon Project"
@@ -21,13 +30,13 @@ help:
 # Setup all services
 setup:
 	@echo "Setting up backend..."
-	cd backend && uv sync
+	cd backend && $(UV) sync
 	@echo "Setting up agent service..."
-	cd agent-service && uv sync
+	cd agent-service && $(UV) sync
 	@echo "Setting up Jira MCP server..."
-	cd mcp-servers/jira && uv sync
+	cd mcp-servers/jira && $(UV) sync
 	@echo "Setting up HubSpot MCP server..."
-	cd mcp-servers/hubspot && uv sync
+	cd mcp-servers/hubspot && $(UV) sync
 	@echo "Setting up frontend..."
 	cd frontend && npm install
 	@echo "Setup complete!"
@@ -47,20 +56,20 @@ install:
 
 # Backend commands
 backend:
-	cd backend && uv run python manage.py runserver 8000
+	cd backend && $(BACKEND_PY) manage.py runserver 8000
 
 backend-migrate:
-	cd backend && uv run python manage.py migrate
+	cd backend && $(BACKEND_PY) manage.py migrate
 
 backend-makemigrations:
-	cd backend && uv run python manage.py makemigrations
+	cd backend && $(BACKEND_PY) manage.py makemigrations
 
 backend-shell:
-	cd backend && uv run python manage.py shell
+	cd backend && $(BACKEND_PY) manage.py shell
 
 # Agent service
 agent:
-	cd agent-service && uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8001
+	cd agent-service && $(PYTHON) -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8001
 
 # MCP servers
 jira:
@@ -88,31 +97,38 @@ fl: format lint
 
 lint:
 	@echo "Running Black linter..."
-	cd backend && uv run black --check .
-	cd agent-service && uv run black --check .
-	cd mcp-servers/jira && uv run black --check .
-	cd mcp-servers/hubspot && uv run black --check .
+	cd backend && $(BLACK) --check .
+	cd agent-service && $(BLACK) --check .
 	@echo "Running Flake8 linter..."
-	cd backend && uv run flake8 .
-	cd agent-service && uv run flake8 .
-	cd mcp-servers/jira && uv run flake8 .
-	cd mcp-servers/hubspot && uv run flake8 .
+	cd backend && $(FLAKE8) .
+	cd agent-service && $(FLAKE8) .
 	@echo "Linting complete!"
 
 format:
 	@echo "Formatting Python code with Black..."
-	cd backend && uv run black .
-	cd agent-service && uv run black .
-	cd mcp-servers/jira && uv run black .
-	cd mcp-servers/hubspot && uv run black .
+	cd backend && $(BLACK) .
+	cd agent-service && $(BLACK) .
 	@echo "Formatting complete!"
 
 # Testing
 test:
-	@echo "Running tests..."
-	cd backend && uv run python manage.py test
-	cd agent-service && uv run python -m unittest discover -s tests
+	@echo "Running backend tests (pytest)..."
+	cd backend && $(BACKEND_PYTEST) --tb=short -q
+	@echo "Running agent service tests (pytest)..."
+	cd agent-service && $(AGENT_PYTEST) --tb=short -q
 	@echo "Tests complete!"
+
+test-backend:
+	@echo "Running backend tests only..."
+	cd backend && $(BACKEND_PYTEST) --tb=short -v
+
+test-agent:
+	@echo "Running agent service tests only..."
+	cd agent-service && $(AGENT_PYTEST) --tb=short -v
+
+test-cov:
+	@echo "Running tests with coverage..."
+	cd backend && $(BACKEND_PYTEST) --tb=short --cov=. --cov-report=term-missing -q
 
 # Clean
 clean:

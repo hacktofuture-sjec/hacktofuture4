@@ -1,8 +1,8 @@
 """Insights, Dashboard, SavedQuery serializers + views + URLs."""
 
-from rest_framework import generics, serializers
+from rest_framework import serializers
 
-from .models import Dashboard, DashboardWidget, Insight, InsightSource, SavedQuery
+from .models import Dashboard, DashboardWidget, Insight, SavedQuery
 
 # ── serializers ──────────────────────────────────────────────────────────────
 

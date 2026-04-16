@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from .models import MappedPayload, ProcessingRun, ProcessingStepLog, ValidationResult
+from .models import ProcessingRun, ProcessingStepLog, ValidationResult
 
 
 class ProcessingStepLogSerializer(serializers.ModelSerializer):

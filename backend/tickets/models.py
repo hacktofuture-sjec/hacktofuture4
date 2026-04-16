@@ -104,7 +104,8 @@ class ExternalIdentity(TimestampedModel):
         ]
 
     def __str__(self):
-        return f"{self.display_name or self.external_user_id} ({self.integration.provider})"
+        name = self.display_name or self.external_user_id
+        return f"{name} ({self.integration.provider})"
 
 
 class UnifiedTicket(TimestampedModel):

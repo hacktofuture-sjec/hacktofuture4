@@ -22,7 +22,6 @@ from core.permissions import HasApiKey
 from .filters import UnifiedTicketFilter
 from .models import ExternalIdentity, TicketActivity, TicketComment, UnifiedTicket
 from .serializers import (
-    ExternalIdentitySerializer,
     TicketActivitySerializer,
     TicketCommentSerializer,
     TicketUpsertSerializer,

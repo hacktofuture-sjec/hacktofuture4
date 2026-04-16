@@ -2,7 +2,7 @@
 Chat models: ChatSession, ChatMessage.
 
 ChatSession  — multi-turn conversation between a user and the AI agent
-ChatMessage  — individual turn (user or assistant), with JSONB metadata for sources/tool calls
+ChatMessage  — individual turn (user or assistant), JSONB metadata for tool calls
 """
 
 import uuid

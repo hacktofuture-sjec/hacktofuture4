@@ -45,7 +45,7 @@ class ApiKey(TimestampedModel):
     )
     permissions = models.JSONField(
         default=list,
-        help_text="JSONB list of allowed scopes, e.g. ['events.ingest', 'tickets.upsert']",
+        help_text="JSONB list of allowed scopes, e.g. ['events.ingest']",
     )
     rate_limit_per_minute = models.IntegerField(default=60)
     is_active = models.BooleanField(default=True, db_index=True)

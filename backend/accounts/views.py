@@ -5,6 +5,7 @@ Accounts views — auth endpoints, org management, RBAC.
 import logging
 
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
@@ -60,6 +61,9 @@ class LoginView(TokenObtainPairView):
 
 class LogoutView(APIView):
     """POST /api/v1/auth/logout/ — blacklists refresh token."""
+
+    authentication_classes = []
+    permission_classes = []
 
     def post(self, request):
         try:
@@ -180,6 +184,4 @@ class RoleListView(generics.ListAPIView):
 
     def get_queryset(self):
         org_id = self.request.user.profile.organization_id
-        return Role.objects.filter(
-            models.Q(organization_id=org_id) | models.Q(is_system=True)
-        )
+        return Role.objects.filter(Q(organization_id=org_id) | Q(is_system=True))

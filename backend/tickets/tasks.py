@@ -8,7 +8,6 @@ sync_all_active_integrations — beat task to trigger all active account syncs
 import logging
 
 from celery import shared_task
-from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +97,7 @@ def sync_integration_tickets(self, integration_account_id: int):
     name="tickets.tasks.sync_all_active_integrations",
 )
 def sync_all_active_integrations(self):
-    """Beat task (every 15 min): fires sync_integration_tickets for each active account."""
+    """Beat task (15 min): fires sync_integration_tickets per active account."""
     from integrations.models import IntegrationAccount
 
     accounts = IntegrationAccount.objects.filter(is_active=True).values_list(

@@ -11,7 +11,6 @@ Routing:
 """
 
 import logging
-import traceback
 import uuid
 from typing import Any, Dict
 

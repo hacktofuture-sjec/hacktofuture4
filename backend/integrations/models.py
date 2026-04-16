@@ -133,4 +133,5 @@ class IntegrationAccount(TimestampedModel):
         ]
 
     def __str__(self):
-        return f"{self.display_name or self.external_account_id} ({self.integration.provider})"
+        name = self.display_name or self.external_account_id
+        return f"{name} ({self.integration.provider})"

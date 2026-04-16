@@ -72,7 +72,7 @@ class ChatMessageListView(generics.ListAPIView):
 
 
 class SendMessageView(APIView):
-    """POST /api/v1/chat/sessions/{id}/messages/ — stores user message, proxies to agent."""
+    """POST /api/v1/chat/sessions/{id}/send/ — stores user msg, proxies to agent."""
 
     def post(self, request, session_id):
         import httpx
