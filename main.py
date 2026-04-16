@@ -816,7 +816,18 @@ def _build_state_snapshot(
 
 
 def _attach_state(text: str, state: dict[str, Any]) -> str:
-    return f"{text}{_STATE_FENCE}{_STATE_MARKER}{_encode_state(state)}"
+    """Append the state as an expandable-blockquote (collapsed by default).
+
+    Telegram's HTML parser supports `<blockquote expandable>`, so the
+    state token is technically present in the message (required for
+    cold-start callback recovery) but invisible unless a user taps to
+    expand it.
+    """
+    encoded = _encode_state(state)
+    return (
+        f"{text}"
+        f"\n\n<blockquote expandable>{_STATE_MARKER}{encoded}</blockquote>"
+    )
 
 
 def _incident_from_snapshot(snap: dict[str, Any]) -> dict[str, Any]:
@@ -865,6 +876,16 @@ def _tg_request(method: str, payload: dict[str, Any]) -> dict[str, Any]:
         return {}
 
 
+def _h(value: Any) -> str:
+    """HTML-escape a value for safe embedding in Telegram HTML messages."""
+    return (
+        str(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
 def tg_send_with_buttons(
     chat_id: int | str,
     text: str,
@@ -875,6 +896,7 @@ def tg_send_with_buttons(
         {
             "chat_id": chat_id,
             "text": text,
+            "parse_mode": "HTML",
             "disable_web_page_preview": True,
             "reply_markup": {"inline_keyboard": buttons},
         },
@@ -891,6 +913,7 @@ def tg_edit_message(
         "chat_id": chat_id,
         "message_id": message_id,
         "text": text,
+        "parse_mode": "HTML",
         "disable_web_page_preview": True,
     }
     if buttons is not None:
@@ -919,6 +942,32 @@ def _broadcast_edit(
 
 # --- Interactive message builders ---------------------------------------------
 
+_PATCH_SOURCE_LABEL = {
+    "llm": "LLM-synthesized",
+    "rule:append_requirement": "rule-based (dependency)",
+    "rule:new_requirements": "rule-based (new requirements.txt)",
+}
+
+
+def _format_confidence(value: Any) -> str:
+    try:
+        return f"{float(value):.0%}"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _format_source(source: str) -> str:
+    if source == "groq":
+        return "Groq LLM"
+    if source == "rules":
+        return "rule-based"
+    return source or "unknown"
+
+
+def _repo_line(repository: str) -> str:
+    return f"<b>Repo</b> · <code>{_h(repository)}</code>"
+
+
 def build_initial_interactive_message(
     repository: str,
     log_excerpt: str,
@@ -929,31 +978,45 @@ def build_initial_interactive_message(
     expires_at: datetime | None = None,
     ttl_minutes: int | None = None,
 ) -> str:
-    src = "Groq LLM" if source == "groq" else "rule-based fallback"
-    conf = analysis.get("confidence")
-    deadline_line = ""
+    """Initial alert. Clean, professional, no meta noise."""
+
+    lines: list[str] = ["🚨 <b>PipelineMedic — CI failure detected</b>", ""]
+    lines.append(_repo_line(repository))
     if expires_at is not None and ttl_minutes is not None:
-        deadline_line = (
-            f"⏱ Decide within {ttl_minutes} min "
-            f"(expires {expires_at.strftime('%H:%M UTC')})\n"
+        lines.append(
+            f"<b>Window</b> · {ttl_minutes} min "
+            f"(expires {_h(expires_at.strftime('%H:%M UTC'))})"
         )
-    return (
-        "🚨 PipelineMedic · CI failed\n\n"
-        f"Repository: {repository}\n"
-        f"{deadline_line}\n"
-        "— Error signal —\n"
-        f"{_clip(log_excerpt, 600)}\n\n"
-        "— Diagnosis —\n"
-        f"{_clip(str(analysis.get('root_cause', '')), 600)}\n\n"
-        "— Suggested fix —\n"
-        f"{_clip(str(analysis.get('fix', '')), 600)}\n\n"
-        "— Meta —\n"
-        f"Decision (advisory): {decision}\n"
-        f"Confidence: {conf}\n"
-        f"Analysis source: {src}\n"
-        f"Incident: {token}\n\n"
-        "Choose how to proceed."
+    lines.append("")
+
+    error = _clip(log_excerpt or "(no log excerpt)", 500)
+    lines.append("<b>Error</b>")
+    lines.append(f"<pre>{_h(error)}</pre>")
+
+    root_cause = _clip(str(analysis.get("root_cause") or ""), 400).strip()
+    if root_cause:
+        lines.append("<b>Diagnosis</b>")
+        lines.append(_h(root_cause))
+        lines.append("")
+
+    fix = _clip(str(analysis.get("fix") or ""), 400).strip()
+    if fix:
+        lines.append("<b>Proposed fix</b>")
+        lines.append(_h(fix))
+        lines.append("")
+
+    file_hint = (analysis.get("file") or "").strip()
+    if file_hint:
+        lines.append(f"<b>Likely file</b> · <code>{_h(file_hint)}</code>")
+
+    conf = _format_confidence(analysis.get("confidence"))
+    src_label = _format_source(source)
+    fixable_hint = "auto-fix eligible" if analysis.get("fixable") else "advisory only"
+    lines.append(
+        f"<i>Confidence {_h(conf)} · {_h(fixable_hint)} · analysed by {_h(src_label)}</i>"
     )
+
+    return "\n".join(lines)
 
 
 def build_pr_created_message(
@@ -961,27 +1024,32 @@ def build_pr_created_message(
     github_info: dict[str, Any],
 ) -> str:
     repo = incident.get("repository", "")
-    analysis = incident.get("analysis", {})
+    analysis = incident.get("analysis") or {}
     pr_url = github_info.get("html_url", "")
     branch = github_info.get("branch", "")
     pr_num = github_info.get("pull_number", "")
     patch_source = github_info.get("patch_source") or "llm"
-    source_label = {
-        "llm": "LLM-synthesized patch",
-        "rule:append_requirement": "rule-based dependency append",
-        "rule:new_requirements": "rule-based: new requirements.txt",
-    }.get(patch_source, patch_source)
-    return (
-        "✅ PipelineMedic auto-fix PR created\n\n"
-        f"Repository: {repo}\n"
-        f"PR #{pr_num}: {pr_url}\n"
-        f"Branch: {branch}\n"
-        f"File: {github_info.get('file') or analysis.get('file') or '(none)'}\n"
-        f"Patch source: {source_label}\n\n"
-        "— What was fixed —\n"
-        f"{_clip(str(analysis.get('fix', '')), 600)}\n\n"
-        "Review the diff and approve merge to main?"
-    )
+    label = _PATCH_SOURCE_LABEL.get(patch_source, patch_source)
+    file = github_info.get("file") or analysis.get("file") or "—"
+    fix = _clip(str(analysis.get("fix") or ""), 400).strip()
+
+    lines: list[str] = ["✅ <b>Auto-fix PR opened</b>", ""]
+    lines.append(_repo_line(repo))
+    if pr_url:
+        lines.append(
+            f"<b>PR</b> · <a href=\"{_h(pr_url)}\">#{_h(pr_num)}</a>"
+        )
+    if branch:
+        lines.append(f"<b>Branch</b> · <code>{_h(branch)}</code>")
+    lines.append(f"<b>File</b> · <code>{_h(file)}</code>")
+    lines.append(f"<b>Patch source</b> · {_h(label)}")
+    if fix:
+        lines.append("")
+        lines.append("<b>What changed</b>")
+        lines.append(_h(fix))
+    lines.append("")
+    lines.append("Review the diff, then merge to <code>main</code> or roll back.")
+    return "\n".join(lines)
 
 
 def build_pr_failed_message(
@@ -990,48 +1058,96 @@ def build_pr_failed_message(
 ) -> str:
     repo = incident.get("repository", "")
     err = github_info.get("error") or github_info.get("message") or "unknown error"
-    return (
-        "❌ PipelineMedic could not open auto-fix PR\n\n"
-        f"Repository: {repo}\n"
-        f"Reason: {err}\n\n"
-        "Please fix manually."
+    return "\n".join(
+        [
+            "❌ <b>Auto-fix PR could not be opened</b>",
+            "",
+            _repo_line(repo),
+            f"<b>Reason</b> · <code>{_h(err)}</code>",
+            "",
+            "Please fix this one manually.",
+        ]
     )
 
 
 def build_manual_message(incident: dict[str, Any]) -> str:
     repo = incident.get("repository", "")
-    analysis = incident.get("analysis", {})
-    return (
-        "🛠 Manual fix selected\n\n"
-        f"Repository: {repo}\n\n"
-        f"Suggested fix: {_clip(str(analysis.get('fix', '')), 600)}\n"
-        f"Likely file: {analysis.get('file') or '(none)'}\n\n"
-        "PipelineMedic will not create a PR for this incident."
-    )
+    analysis = incident.get("analysis") or {}
+    fix = _clip(str(analysis.get("fix") or ""), 400).strip()
+    file = (analysis.get("file") or "—").strip() or "—"
+    lines: list[str] = ["🛠 <b>Manual fix selected</b>", ""]
+    lines.append(_repo_line(repo))
+    lines.append(f"<b>File</b> · <code>{_h(file)}</code>")
+    if fix:
+        lines.append("")
+        lines.append("<b>Suggested fix</b>")
+        lines.append(_h(fix))
+    lines.append("")
+    lines.append("PipelineMedic will not open a PR for this incident.")
+    return "\n".join(lines)
 
 
 def build_merged_message(incident: dict[str, Any], result: dict[str, Any]) -> str:
     pr = (incident.get("github") or {}).get("html_url", "")
+    pr_num = (incident.get("github") or {}).get("pull_number", "")
     if result.get("ok"):
-        sha = result.get("sha", "")
-        return (
-            "🎉 Merged to main.\n"
-            f"PR: {pr}\n"
-            f"Merge commit: {sha}\n\n"
-            "Incident closed."
-        )
-    return f"❌ Merge failed: {result.get('error', 'unknown')}\nPR: {pr}"
+        sha = (result.get("sha") or "")[:7]
+        lines = ["🎉 <b>Merged to main</b>", ""]
+        lines.append(_repo_line(incident.get("repository", "")))
+        if pr:
+            lines.append(
+                f"<b>PR</b> · <a href=\"{_h(pr)}\">#{_h(pr_num)}</a>"
+            )
+        if sha:
+            lines.append(f"<b>Commit</b> · <code>{_h(sha)}</code>")
+        lines.append("")
+        lines.append("Incident resolved.")
+        return "\n".join(lines)
+    return "\n".join(
+        [
+            "❌ <b>Merge failed</b>",
+            "",
+            _repo_line(incident.get("repository", "")),
+            f"<b>Reason</b> · <code>{_h(result.get('error') or 'unknown')}</code>",
+        ]
+    )
 
 
 def build_rollback_message(incident: dict[str, Any], result: dict[str, Any]) -> str:
     pr = (incident.get("github") or {}).get("html_url", "")
+    pr_num = (incident.get("github") or {}).get("pull_number", "")
     if result.get("ok"):
-        return (
-            "↩️ Rollback complete: PR closed and AI branch deleted.\n"
-            "main was not modified.\n\n"
-            f"Closed PR: {pr}"
+        lines = ["↩️ <b>Rolled back</b>", ""]
+        lines.append(_repo_line(incident.get("repository", "")))
+        if pr:
+            lines.append(
+                f"<b>PR</b> · <a href=\"{_h(pr)}\">#{_h(pr_num)}</a> (closed)"
+            )
+        lines.append("")
+        lines.append(
+            "AI branch deleted. <code>main</code> was not modified."
         )
-    return f"❌ Rollback failed: {result.get('error', 'unknown')}\nPR: {pr}"
+        return "\n".join(lines)
+    return "\n".join(
+        [
+            "❌ <b>Rollback failed</b>",
+            "",
+            _repo_line(incident.get("repository", "")),
+            f"<b>Reason</b> · <code>{_h(result.get('error') or 'unknown')}</code>",
+        ]
+    )
+
+
+def build_expired_message(incident: dict[str, Any]) -> str:
+    return "\n".join(
+        [
+            "⏰ <b>Decision window expired</b>",
+            "",
+            _repo_line(incident.get("repository", "")),
+            "",
+            "Re-run the pipeline to trigger a new analysis.",
+        ]
+    )
 
 
 # --- GitHub ---------------------------------------------------------------------
@@ -1461,7 +1577,7 @@ def health_payload() -> dict[str, Any]:
     return {
         "status": "ok",
         "service": "pipelinemedic",
-        "version": "1.2.1",
+        "version": "1.3.0",
         "groq_configured": bool(os.getenv("GROQ_API_KEY", "").strip()),
         "telegram_configured": bool(
             os.getenv("TELEGRAM_BOT_TOKEN", "").strip() and _telegram_chat_ids()
@@ -1643,17 +1759,8 @@ async def handle_telegram_callback(body: dict[str, Any]) -> JSONResponse:
     if action in ("autofix", "manual") and _is_expired(inc):
         tg_answer_callback(callback_id, "Decision window expired")
         update_incident(tok, status="expired")
-        inc = get_incident(tok) or inc
-        _broadcast_edit(
-            inc,
-            (
-                "⏰ PipelineMedic decision window expired\n\n"
-                f"Repository: {inc.get('repository', '')}\n"
-                f"Incident: {tok}\n\n"
-                "Trigger a new pipeline run to re-analyze."
-            ),
-            buttons=[],
-        )
+        inc["status"] = "expired"
+        _refresh_buttons_edit(build_expired_message(inc), [], None)
         return JSONResponse({"ok": True})
 
     if action == "manual":
