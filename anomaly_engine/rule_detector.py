@@ -8,8 +8,23 @@
 #     if signals["latency"] > 2000:
 #         return True
 #     return False
-
-# anomaly_engine/rule_detector.py
-
 def detect_anomaly(signals):
-    return True
+    cpu = signals.get("cpu", 0)
+    memory = signals.get("memory", 0)
+    restarts = signals.get("restarts", 0)
+    latency = signals.get("latency", 0)
+
+    if cpu > 85:
+        return True
+    if memory > 85:
+        return True
+    if restarts > 2:
+        return True
+    if latency > 1000:
+        return True
+
+    return False
+
+#for anamoly
+# def detect_anomaly(signals):
+#     return True
