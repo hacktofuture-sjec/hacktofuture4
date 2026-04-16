@@ -1,264 +1,144 @@
-import json
-import sqlite3
-from datetime import datetime
-from uuid import uuid4
+from datetime import datetime, timezone
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException
 
-from agents.monitor_agent import MonitorAgent
-from classification.failure_classifier import FailureClassifier
-from collectors.k8s_events_collector import K8sEventsCollector
-from collectors.prometheus_collector import PrometheusCollector
-from collectors.tempo_collector import TempoCollector
-from config import settings
-from db import get_db_dep
-from incident.snapshot_builder import SnapshotBuilder
-from models.schemas import IncidentFromAlertRequest
-from signal_intelligence.log_pattern_extractor import LogPatternExtractor
-from signal_intelligence.metric_feature_builder import MetricFeatureBuilder
-from signal_intelligence.trace_dependency_mapper import TraceDependencyMapper
+from agents.phase3_orchestrator import collect_monitor_snapshot, diagnose_snapshot
+from planner.plan_simulator import simulate_action
+from planner.planner_agent import PlannerAgent
 
-router = APIRouter()
+router = APIRouter(prefix="/incidents", tags=["incidents"])
+planner_agent = PlannerAgent()
 
-
-def _get_incident_row(db: sqlite3.Connection, incident_id: str) -> sqlite3.Row:
-    row = db.execute("SELECT * FROM incidents WHERE id=?", (incident_id,)).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail={"error": "not_found", "incident_id": incident_id})
-    return row
-
-
-def _row_to_detail_payload(row: sqlite3.Row) -> dict:
-    data = dict(row)
-    detail = {
-        "incident_id": data["id"],
-        "status": data["status"],
-        "scenario_id": data["scenario_id"],
-        "service": data["service"],
-        "namespace": data["namespace"],
-        "pod": data["pod"],
-        "failure_class": data["failure_class"],
-        "severity": data["severity"],
-        "monitor_confidence": data["monitor_confidence"],
-        "snapshot": json.loads(data["snapshot_json"]) if data.get("snapshot_json") else None,
-        "diagnosis": json.loads(data["diagnosis_json"]) if data.get("diagnosis_json") else None,
-        "plan": json.loads(data["plan_json"]) if data.get("plan_json") else None,
-        "execution": json.loads(data["execution_json"]) if data.get("execution_json") else None,
-        "verification": json.loads(data["verification_json"]) if data.get("verification_json") else None,
-        "created_at": data["created_at"],
-        "resolved_at": data["resolved_at"],
-    }
-    return detail
-
-
-@router.post("/from-alert")
-async def create_incident_from_alert(
-    body: IncidentFromAlertRequest,
-    request: Request,
-    db: sqlite3.Connection = Depends(get_db_dep),
-):
-    incident_id = f"inc-{uuid4().hex[:8]}"
-    pod = body.pod or f"{body.deployment}-{uuid4().hex[:5]}"
-
-    prometheus = PrometheusCollector()
-    k8s_events = K8sEventsCollector()
-    tempo = TempoCollector()
-
-    metrics_raw = await prometheus.get_service_metrics(
-        namespace=body.namespace,
-        deployment=body.deployment,
-        pod=pod,
-    )
-    metric_features = MetricFeatureBuilder.build(metrics_raw)
-
-    events_raw = await k8s_events.get_recent_events(
-        namespace=body.namespace,
-        deployment=body.deployment,
-        minutes=10,
-    )
-    logs_summary = await LogPatternExtractor.extract(
-        namespace=body.namespace,
-        service=body.service,
-        window_minutes=settings.log_query_window_minutes,
-        top_n=settings.log_top_signatures,
-    )
-
-    timeout_count = sum(
-        item.get("count", 0)
-        for item in logs_summary
-        if "timeout" in item.get("signature", "").lower()
-    )
-    cross_service_suspected = any(
-        "connection" in item.get("signature", "").lower() for item in logs_summary
-    )
-
-    trace_raw = None
-    if tempo.should_query(
-        latency_delta_x=metric_features["latency_delta_ratio"],
-        timeout_log_count=timeout_count,
-        cross_service_suspected=cross_service_suspected,
-    ):
-        trace_raw = await tempo.get_trace_summary(service=body.service)
-
-    failure_class = FailureClassifier.classify(
-        features=metric_features,
-        events=events_raw,
-        logs_summary=logs_summary,
-    )
-    confidence = MonitorAgent.compute_confidence(
-        features=metric_features,
-        events=events_raw,
-        logs_summary=logs_summary,
-    )
-
-    dependency_summary = TraceDependencyMapper.summarize(trace_raw, body.service)
-    snapshot = SnapshotBuilder.build(
-        incident_id=incident_id,
-        alert=body.alert,
-        service=body.service,
-        namespace=body.namespace,
-        deployment=body.deployment,
-        pod=pod,
-        metrics_raw=metrics_raw,
-        events_raw=events_raw,
-        logs_raw=logs_summary,
-        trace_raw=trace_raw,
-        failure_class=failure_class.value,
-        confidence=confidence,
-        dependency_graph_summary=dependency_summary,
-    )
-
-    now = datetime.utcnow().isoformat() + "Z"
-    db.execute(
-        """INSERT INTO incidents
-           (id, status, scenario_id, service, namespace, pod, failure_class,
-            severity, monitor_confidence, snapshot_json, created_at, updated_at)
-           VALUES (?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            incident_id,
-            body.scenario_id,
-            body.service,
-            body.namespace,
-            pod,
-            failure_class.value,
-            body.severity.value,
-            snapshot.monitor_confidence,
-            json.dumps(snapshot.model_dump()),
-            now,
-            now,
-        ),
-    )
-    db.execute(
-        "INSERT INTO incident_timeline (incident_id, status, actor, note, timestamp) "
-        "VALUES (?, 'open', 'monitor', ?, datetime('now'))",
-        (incident_id, "Incident created from alert correlation pipeline"),
-    )
-    db.commit()
-
-    broadcaster = getattr(request.app.state, "broadcaster", None)
-    if broadcaster is not None:
-        await broadcaster.broadcast(
-            {
-                "type": "incident_event",
-                "incident_id": incident_id,
-                "status": "open",
-                "scenario_id": body.scenario_id,
-                "severity": body.severity.value,
-                "created_at": now,
-            }
-        )
-
-    return {
-        "incident_id": incident_id,
+INCIDENTS: list[dict] = [
+    {
+        "incident_id": "inc-001",
+        "service": "payment-api",
         "status": "open",
-        "service": body.service,
-        "failure_class": failure_class.value,
-        "monitor_confidence": snapshot.monitor_confidence,
-        "created_at": now,
+        "failure_class": "resource",
+        "scope": {"namespace": "default", "deployment": "payment-api"},
+        "dependency_graph_summary": "frontend -> payment-api -> db",
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
+]
 
 
-@router.get("/")
-def list_incidents(
-    status: str | None = Query(None),
-    limit: int = Query(20, le=100),
-    offset: int = Query(0, ge=0),
-    db: sqlite3.Connection = Depends(get_db_dep),
-):
-    where = "WHERE status=?" if status else ""
-    params = [status] if status else []
+def _find_incident(incident_id: str) -> dict[str, Any]:
+    """Return the in-memory incident record for the requested incident ID."""
+    for incident in INCIDENTS:
+        if incident["incident_id"] == incident_id:
+            return incident
+    raise HTTPException(status_code=404, detail="Incident not found")
 
-    total = db.execute(f"SELECT COUNT(*) FROM incidents {where}", params).fetchone()[0]
 
-    rows = db.execute(
-        f"""SELECT id, status, service, failure_class, severity, monitor_confidence,
-                   created_at, updated_at
-            FROM incidents {where}
-            ORDER BY created_at DESC LIMIT ? OFFSET ?""",
-        params + [limit, offset],
-    ).fetchall()
-
-    items = [
-        {
-            "incident_id": row["id"],
-            "status": row["status"],
-            "service": row["service"],
-            "failure_class": row["failure_class"],
-            "severity": row["severity"],
-            "monitor_confidence": row["monitor_confidence"],
-            "created_at": row["created_at"],
-            "updated_at": row["updated_at"],
-        }
-        for row in rows
-    ]
-
-    return {"total": total, "incidents": items}
+@router.get("")
+def list_incidents() -> list[dict]:
+    """Return all in-memory incidents for the demo API."""
+    return INCIDENTS
 
 
 @router.get("/{incident_id}")
-def get_incident(incident_id: str, db: sqlite3.Connection = Depends(get_db_dep)):
-    row = _get_incident_row(db, incident_id)
+def get_incident(incident_id: str) -> dict:
+    """Return the incident detail payload for a single incident."""
+    return _find_incident(incident_id)
 
-    token_row = db.execute(
-        """SELECT SUM(input_tokens), SUM(output_tokens), COUNT(*),
-                  SUM(actual_cost_usd), MAX(fallback_triggered)
-           FROM token_usage WHERE incident_id=?""",
-        (incident_id,),
-    ).fetchone()
 
-    token_summary = {
-        "total_input_tokens": token_row[0] or 0,
-        "total_output_tokens": token_row[1] or 0,
-        "total_ai_calls": token_row[2] or 0,
-        "total_actual_cost_usd": round(token_row[3] or 0.0, 6),
-        "rule_only_resolution": (token_row[2] or 0) == 0,
-        "fallback_triggered": bool(token_row[4] or 0),
+@router.post("/{incident_id}/plan")
+def plan_incident(incident_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Generate and persist a plan for the incident using the planner agent."""
+    incident = _find_incident(incident_id)
+    body = payload or {}
+
+    context = dict(incident.get("scope", {}))
+    context.update(body.get("context", {}))
+    context["dependency_graph_summary"] = body.get(
+        "dependency_graph_summary",
+        incident.get("dependency_graph_summary", ""),
+    )
+    context["has_rollback_revision"] = body.get("has_rollback_revision", True)
+
+    # Persist planner context used for downstream simulation calls.
+    incident["dependency_graph_summary"] = context["dependency_graph_summary"]
+
+    snapshot = body.get("snapshot") or collect_monitor_snapshot()
+    diagnosis = body.get("diagnosis") or diagnose_snapshot(snapshot)
+
+    plan_output = planner_agent.run(
+        diagnosis=diagnosis,
+        snapshot={
+            "dependency_graph_summary": context["dependency_graph_summary"],
+            "has_rollback_revision": context["has_rollback_revision"],
+        },
+        context=context,
+    )
+
+    actions = [action.model_dump(mode="json") for action in plan_output.actions]
+    incident["diagnosis"] = diagnosis
+    incident["plan_json"] = {"actions": actions}
+    incident["planned_at"] = datetime.now(timezone.utc).isoformat()
+
+    if any(action["approval_required"] for action in actions):
+        incident["status"] = "pending_approval"
+    else:
+        incident["status"] = "planned"
+
+    return {
+        "incident_id": incident_id,
+        "status": incident["status"],
+        "plan": incident["plan_json"],
     }
 
-    detail = _row_to_detail_payload(row)
-    detail["token_summary"] = token_summary
-    return detail
+
+@router.post("/{incident_id}/simulate")
+def simulate_incident_action(incident_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Recompute the simulation result for a planned action."""
+    incident = _find_incident(incident_id)
+    if "plan_json" not in incident or not incident["plan_json"].get("actions"):
+        raise HTTPException(status_code=400, detail="No plan available. Run /plan first.")
+
+    body = payload or {}
+    try:
+        action_index = int(body.get("action_index", 0))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="action_index must be a valid integer") from exc
+
+    actions = incident["plan_json"]["actions"]
+
+    if action_index < 0 or action_index >= len(actions):
+        raise HTTPException(status_code=400, detail="Invalid action_index")
+
+    action = actions[action_index]
+    simulated = simulate_action(
+        {
+            "command": action["action"],
+            "risk": action["risk_level"],
+            "approval_required": action["approval_required"],
+        },
+        {
+            "dependency_graph_summary": incident.get("dependency_graph_summary", ""),
+            "has_rollback_revision": bool(body.get("has_rollback_revision", True)),
+        },
+    )
+    action["simulation_result"] = simulated.model_dump(mode="json")
+
+    return {
+        "incident_id": incident_id,
+        "action_index": action_index,
+        "simulation_result": action["simulation_result"],
+    }
 
 
-@router.get("/{incident_id}/snapshot")
-def get_snapshot(incident_id: str, db: sqlite3.Connection = Depends(get_db_dep)):
-    row = _get_incident_row(db, incident_id)
-    if not row["snapshot_json"]:
-        raise HTTPException(
-            status_code=400,
-            detail={"error": "snapshot_missing", "message": "No snapshot found for this incident"},
-        )
-    return json.loads(row["snapshot_json"])
+@router.post("/{incident_id}/approve")
+def approve_incident_action(incident_id: str) -> dict:
+    """Mark the incident as approved so the next execution stage can proceed."""
+    incident = _find_incident(incident_id)
 
+    if incident.get("status") == "failed":
+        raise HTTPException(status_code=400, detail="Incident already closed as failed")
 
-@router.get("/{incident_id}/timeline")
-def get_timeline(incident_id: str, db: sqlite3.Connection = Depends(get_db_dep)):
-    _get_incident_row(db, incident_id)
-
-    rows = db.execute(
-        "SELECT status, actor, note, timestamp FROM incident_timeline "
-        "WHERE incident_id=? ORDER BY timestamp ASC",
-        (incident_id,),
-    ).fetchall()
-
-    return {"incident_id": incident_id, "events": [dict(row) for row in rows]}
+    incident["status"] = "approved"
+    return {
+        "incident_id": incident_id,
+        "status": incident["status"],
+        "message": "Approval accepted. Executor integration is next.",
+    }

@@ -1,85 +1,90 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-
-import tiktoken
+from typing import Optional
 
 
 @dataclass
-class BudgetDecision:
-    allowed: bool
-    reason: str | None
+class TokenBudget:
+    max_calls_per_incident: int = 2
+    max_estimated_cost_usd: float = 0.15
+    rule_confidence_threshold: float = 0.75
 
 
 class TokenGovernor:
+    """
+    Governance layer for AI token usage and cost enforcement.
+    Ensures budget caps and cost tracking for all AI calls.
+    """
+
+    # Model pricing (example rates - adjust per actual model)
+    # Rates are per token; divide per-1M-token price by 1_000_000.
     MODEL_PRICING = {
-        "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-        "gpt-4o": {"input": 5.00, "output": 15.00},
+        "gpt-4": {"input": 30.0 / 1_000_000, "output": 60.0 / 1_000_000},
+        "gpt-3.5-turbo": {"input": 0.5 / 1_000_000, "output": 1.5 / 1_000_000},
+        "claude": {"input": 8.0 / 1_000_000, "output": 24.0 / 1_000_000},
     }
 
-    def __init__(self, model_name: str, budget_cap_per_incident: float, budget_cap_per_run: float):
-        self.model_name = model_name
-        self.budget_cap_per_incident = budget_cap_per_incident
-        self.budget_cap_per_run = budget_cap_per_run
-        try:
-            self.encoder = tiktoken.encoding_for_model(model_name)
-        except Exception:
-            self.encoder = tiktoken.get_encoding("cl100k_base")
+    def __init__(self, budget: Optional[TokenBudget] = None, model: str = "gpt-3.5-turbo") -> None:
+        self.budget = budget or TokenBudget()
+        self.model = model
+        self.calls_this_incident = 0
+        self.cost_this_incident = 0.0
+        self.estimated_tokens_this_incident = 0
+        self.actual_tokens_this_incident = 0
+        self.estimated_cost_this_incident = 0.0
 
-    def estimate(self, prompt: str) -> dict:
-        tokens = len(self.encoder.encode(prompt))
-        pricing = self.MODEL_PRICING.get(self.model_name, self.MODEL_PRICING["gpt-4o-mini"])
-        estimated_cost = (tokens / 1_000_000) * pricing["input"]
-        return {"tokens": tokens, "estimated_cost_usd": estimated_cost}
+    def estimate_tokens(self, text: str) -> int:
+        """
+        Rough token estimation: ~4 chars per token on average.
+        For production, use tiktoken library.
+        """
+        return max(1, len(text) // 4)
 
-    def compute_actual_cost(self, input_tokens: int, output_tokens: int) -> float:
-        pricing = self.MODEL_PRICING.get(self.model_name, self.MODEL_PRICING["gpt-4o-mini"])
-        return ((input_tokens / 1_000_000) * pricing["input"]) + ((output_tokens / 1_000_000) * pricing["output"])
+    def estimate_cost(self, input_tokens: int, output_tokens: int) -> float:
+        """Estimate cost based on token count and model pricing.
+        
+        Returns unrounded cost to preserve precision for budget enforcement.
+        Callers should round only when presenting/logging to users.
+        """
+        pricing = self.MODEL_PRICING.get(self.model, self.MODEL_PRICING["gpt-3.5-turbo"])
+        input_cost = input_tokens * pricing["input"]
+        output_cost = output_tokens * pricing["output"]
+        return input_cost + output_cost
 
-    def check_budget(self, estimated_cost: float, incident_accumulated: float, run_accumulated: float) -> BudgetDecision:
-        if incident_accumulated + estimated_cost > self.budget_cap_per_incident:
-            return BudgetDecision(allowed=False, reason="budget_exceeded")
-        if run_accumulated + estimated_cost > self.budget_cap_per_run:
-            return BudgetDecision(allowed=False, reason="budget_exceeded")
-        return BudgetDecision(allowed=True, reason=None)
+    def can_afford_ai_call(self, estimated_cost: float) -> bool:
+        """Check if AI call is within the estimated-cost budget."""
+        if self.calls_this_incident >= self.budget.max_calls_per_incident:
+            return False
+        if (self.estimated_cost_this_incident + estimated_cost) > self.budget.max_estimated_cost_usd:
+            return False
+        return True
 
-    def record_usage(
-        self,
-        db,
-        incident_id: str,
-        stage: str,
-        input_tokens: int,
-        output_tokens: int,
-        estimated_cost: float,
-        actual_cost: float,
-        fallback_triggered: bool,
-        reason: str | None,
-    ) -> None:
-        db.execute(
-            """INSERT INTO token_usage
-               (incident_id, stage, model_name, input_tokens, output_tokens,
-                estimated_cost_usd, actual_cost_usd, fallback_triggered, reason, timestamp)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
-            (
-                incident_id,
-                stage,
-                self.model_name,
-                input_tokens,
-                output_tokens,
-                estimated_cost,
-                actual_cost,
-                int(fallback_triggered),
-                reason,
-            ),
-        )
-        db.commit()
+    def record_ai_call(self, estimated_tokens: int, actual_tokens: int, estimated_cost: float, actual_cost: float) -> None:
+        """Record AI call metrics."""
+        self.calls_this_incident += 1
+        self.estimated_tokens_this_incident += estimated_tokens
+        self.actual_tokens_this_incident += actual_tokens
+        self.estimated_cost_this_incident += estimated_cost
+        self.cost_this_incident += actual_cost
 
+    def reset_incident(self) -> None:
+        """Reset counters for next incident."""
+        self.calls_this_incident = 0
+        self.estimated_tokens_this_incident = 0
+        self.actual_tokens_this_incident = 0
+        self.estimated_cost_this_incident = 0.0
+        self.cost_this_incident = 0.0
 
-def get_incident_ai_spend(db, incident_id: str) -> float:
-    row = db.execute("SELECT COALESCE(SUM(actual_cost_usd), 0.0) FROM token_usage WHERE incident_id=?", (incident_id,)).fetchone()
-    return float(row[0] or 0.0)
+    def should_fallback_to_rule_only(self, rule_confidence: float, estimated_ai_cost: Optional[float] = None) -> bool:
+        """Determine if we should use rule-only path based on confidence."""
+        if rule_confidence >= self.budget.rule_confidence_threshold:
+            return True  # High confidence, skip AI
 
+        if estimated_ai_cost is None:
+            default_input = self.estimate_tokens("incident snapshot")
+            default_output = self.estimate_tokens("diagnosis summary")
+            estimated_ai_cost = self.estimate_cost(default_input, default_output)
 
-def get_run_ai_spend(db) -> float:
-    row = db.execute("SELECT COALESCE(SUM(actual_cost_usd), 0.0) FROM token_usage").fetchone()
-    return float(row[0] or 0.0)
+        if not self.can_afford_ai_call(estimated_ai_cost):
+            return True  # Out of budget
+        return False
+

@@ -1,15 +1,11 @@
-# Python
 __pycache__/
-*.py[cod]
+*.pyc
+*.pyo
+*.pyd
 .venv/
 venv/
-
-# Backend local artifacts
-backend/venv/
-backend/data/t3ps2.db
-backend/data/t3ps2_backup_*.db
-backend/.env
-.env
-
-# Node
 node_modules/
+.next/
+*.db
+.env
+.env.*

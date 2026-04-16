@@ -1,14 +1,4 @@
-from __future__ import annotations
-
-from models.schemas import IncidentSnapshot
-
-
-def _metric_int(value: str) -> int:
-    return int(value.replace("%", "").strip()) if value else 0
-
-
-def _latency_x(value: str) -> float:
-    return float(value.replace("x", "").strip()) if value else 1.0
+from typing import Any, Optional
 
 
 FINGERPRINT_CATALOG = [
@@ -16,79 +6,103 @@ FINGERPRINT_CATALOG = [
         "id": "FP-001",
         "name": "memory_exhaustion_oom",
         "conditions": [
-            lambda s: any(e.reason == "OOMKilled" for e in s.events),
-            lambda s: _metric_int(s.metrics.memory) >= 90,
+            lambda s: float(s.get("metrics", {}).get("memory_pct", 0)) >= 90,
+            lambda s: "OOMKilled" in str(s.get("events", [])),
         ],
-        "root_cause": "memory exhaustion: container exceeded memory limit",
-        "affected_services": lambda s: [s.service],
-        "confidence": 0.95,
+        "confidence_base": 0.95,
+        "recommended_fix": "increase memory limit or restart pod",
     },
     {
         "id": "FP-002",
         "name": "crash_loop_application_error",
         "conditions": [
-            lambda s: any(e.reason in {"CrashLoopBackOff", "BackOff"} for e in s.events),
-            lambda s: s.metrics.restarts >= 5,
+            lambda s: "CrashLoopBackOff" in str(s.get("events", [])),
+            lambda s: float(s.get("metrics", {}).get("restart_count", 0)) >= 3,
         ],
-        "root_cause": "application crash loop: repeated process exit",
-        "affected_services": lambda s: [s.service],
-        "confidence": 0.90,
+        "confidence_base": 0.92,
+        "recommended_fix": "review application logs and fix deployment",
     },
     {
         "id": "FP-003",
         "name": "image_pull_failure",
         "conditions": [
-            lambda s: any(e.reason in {"ImagePullBackOff", "ErrImagePull"} for e in s.events),
+            lambda s: "ImagePullBackOff" in str(s.get("events", [])),
         ],
-        "root_cause": "image pull failure: invalid image tag or registry auth",
-        "affected_services": lambda s: [s.service],
-        "confidence": 0.92,
+        "confidence_base": 0.90,
+        "recommended_fix": "verify container image and registry credentials",
     },
     {
         "id": "FP-004",
-        "name": "infra_resource_saturation",
-        "conditions": [lambda s: any(e.reason == "FailedScheduling" for e in s.events)],
-        "root_cause": "infrastructure saturation: pods cannot be scheduled",
-        "affected_services": lambda s: [s.service],
-        "confidence": 0.88,
+        "name": "cpu_starvation",
+        "conditions": [
+            lambda s: float(s.get("metrics", {}).get("cpu_pct", 0)) >= 90,
+            lambda s: float(s.get("metrics", {}).get("memory_pct", 0)) < 80,
+        ],
+        "confidence_base": 0.85,
+        "recommended_fix": "scale up replicas or increase CPU limit",
     },
     {
         "id": "FP-005",
         "name": "db_connection_pool_saturation",
         "conditions": [
-            lambda s: _latency_x(s.metrics.latency_delta) >= 2.0,
-            lambda s: any(
-                ("timeout" in sig.signature.lower()) or ("connection" in sig.signature.lower())
-                for sig in s.logs_summary
-            ),
+            lambda s: float(s.get("metrics", {}).get("latency_delta", 0)) > 2.0,
+            lambda s: "timeout" in str(s.get("logs_summary", [])).lower(),
         ],
-        "root_cause": "database connection pool saturation",
-        "affected_services": lambda s: [s.service, "db-primary"],
-        "confidence": 0.82,
-    },
-    {
-        "id": "FP-006",
-        "name": "cpu_starvation",
-        "conditions": [
-            lambda s: _metric_int(s.metrics.cpu) >= 90,
-            lambda s: not any(e.reason == "OOMKilled" for e in s.events),
-        ],
-        "root_cause": "cpu starvation: container throttled by CPU limits",
-        "affected_services": lambda s: [s.service],
-        "confidence": 0.85,
+        "confidence_base": 0.80,
+        "recommended_fix": "increase database connection pool size",
     },
 ]
 
 
-def match_fingerprint(snapshot: IncidentSnapshot) -> dict | None:
-    matches = []
-    for fingerprint in FINGERPRINT_CATALOG:
-        try:
-            if all(cond(snapshot) for cond in fingerprint["conditions"]):
-                matches.append(fingerprint)
-        except Exception:
-            continue
+def _normalize_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Normalize flat monitor snapshots into nested diagnosis shape."""
+    if "metrics" in snapshot:
+        return snapshot
 
-    if not matches:
-        return None
-    return max(matches, key=lambda item: item["confidence"])
+    return {
+        "metrics": {
+            "memory_pct": snapshot.get("memory_pct", 0),
+            "cpu_pct": snapshot.get("cpu_pct", 0),
+            "restart_count": snapshot.get("restart_count", 0),
+            "latency_delta": snapshot.get("latency_delta", 0),
+        },
+        "events": snapshot.get("event_reason", snapshot.get("events", [])),
+        "logs_summary": snapshot.get("log_signatures", snapshot.get("logs_summary", [])),
+    }
+
+
+def match_fingerprint(snapshot: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """
+    Match incident snapshot against fingerprint catalog.
+    Returns the best matching fingerprint with confidence score.
+    """
+    normalized_snapshot = _normalize_snapshot(snapshot)
+    matches = []
+
+    for fp in FINGERPRINT_CATALOG:
+        # Check if all conditions match
+        all_match = True
+        for condition in fp["conditions"]:
+            try:
+                if not condition(normalized_snapshot):
+                    all_match = False
+                    break
+            except (KeyError, ValueError, TypeError):
+                all_match = False
+                break
+
+        if all_match:
+            matches.append(
+                {
+                    "fingerprint_id": fp["id"],
+                    "name": fp["name"],
+                    "confidence": fp["confidence_base"],
+                    "recommended_fix": fp["recommended_fix"],
+                }
+            )
+
+    if matches:
+        # Return highest confidence match
+        return max(matches, key=lambda m: m["confidence"])
+
+    return None

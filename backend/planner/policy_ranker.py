@@ -1,84 +1,133 @@
-from __future__ import annotations
-
-from models.schemas import DiagnosisPayload, IncidentSnapshot
+from string import Formatter
+from typing import Any, Optional
 
 
 POLICY_CATALOG = [
     {
-        "failure_class": "resource_exhaustion",
+        "fingerprint_id": "FP-001",  # memory exhaustion
         "actions": [
             {
-                "action": "kubectl rollout restart deployment/{deployment} -n {namespace}",
-                "description": "Restart pods to clear leaked resources and stale process state",
-                "risk_level": "medium",
-                "expected_outcome": "Memory and restart indicators return to baseline",
-                "confidence": 0.85,
-                "approval_required": False,
+                "action_id": "act-1-001",
+                "command": "kubectl rollout restart deployment/{deployment} -n {namespace}",
+                "risk": "medium",
+                "approval_required": True,
+                "blast_radius_score": 0.3,
+                "description": "Restart pod to clear memory state",
             },
             {
-                "action": "kubectl set resources deployment/{deployment} --limits=memory=2Gi -n {namespace}",
-                "description": "Increase memory limit to prevent repeated OOM",
-                "risk_level": "medium",
-                "expected_outcome": "OOM events stop under current load",
-                "confidence": 0.79,
-                "approval_required": False,
+                "action_id": "act-1-002",
+                "command": "kubectl set resources deployment/{deployment} -n {namespace} --limits=memory=2Gi",
+                "risk": "medium",
+                "approval_required": True,
+                "blast_radius_score": 0.2,
+                "description": "Increase memory limit",
             },
         ],
     },
     {
-        "failure_class": "application_crash",
+        "fingerprint_id": "FP-002",  # crash loop
         "actions": [
             {
-                "action": "kubectl rollout undo deployment/{deployment} -n {namespace}",
-                "description": "Rollback to last stable deployment revision",
-                "risk_level": "high",
-                "expected_outcome": "Crash loop terminates with previous revision",
-                "confidence": 0.88,
+                "action_id": "act-2-001",
+                "command": "kubectl rollout undo deployment/{deployment} -n {namespace}",
+                "risk": "high",
                 "approval_required": True,
-            }
+                "blast_radius_score": 0.5,
+                "description": "Rollback to previous stable version",
+            },
         ],
     },
     {
-        "failure_class": "config_error",
+        "fingerprint_id": "FP-003",  # image pull failure
         "actions": [
             {
-                "action": "kubectl rollout restart deployment/{deployment} -n {namespace}",
-                "description": "Restart deployment after configuration correction",
-                "risk_level": "high",
-                "expected_outcome": "Pods start cleanly with corrected config",
-                "confidence": 0.76,
+                "action_id": "act-3-001",
+                "command": "kubectl set image deployment/{deployment} {container}={image}",
+                "risk": "high",
                 "approval_required": True,
-            }
+                "blast_radius_score": 0.4,
+                "description": "Update container image to correct version",
+            },
         ],
     },
     {
-        "failure_class": "dependency_failure",
+        "fingerprint_id": "FP-004",  # CPU starvation
         "actions": [
             {
-                "action": "kubectl rollout restart deployment/{deployment} -n {namespace}",
-                "description": "Restart service to reset dependency client state",
-                "risk_level": "medium",
-                "expected_outcome": "Latency and timeout signatures reduce",
-                "confidence": 0.80,
+                "action_id": "act-4-001",
+                "command": "kubectl scale deployment/{deployment} -n {namespace} --replicas=3",
+                "risk": "low",
                 "approval_required": False,
-            }
+                "blast_radius_score": 0.1,
+                "description": "Scale up replicas to distribute load",
+            },
+        ],
+    },
+    {
+        "fingerprint_id": "FP-005",  # DB connection pool
+        "actions": [
+            {
+                "action_id": "act-5-001",
+                "command": "kubectl set env deployment/{deployment} -n {namespace} DB_POOL_SIZE=50",
+                "risk": "medium",
+                "approval_required": True,
+                "blast_radius_score": 0.2,
+                "description": "Increase database connection pool size",
+            },
         ],
     },
 ]
 
 
-def lookup_policy(diagnosis: DiagnosisPayload, snapshot: IncidentSnapshot) -> list[dict] | None:
-    del diagnosis  # not used directly in phase implementation
+def _format_actions_with_context(
+    actions: list[dict[str, Any]], context: Optional[dict[str, Any]] = None
+) -> list[dict[str, Any]]:
+    """
+    Return action copies with command templates formatted from context when all
+    required placeholders are present. If context is missing or incomplete, the
+    original command template is preserved.
+    """
+    context_data = context or {}
+    formatter = Formatter()
+    formatted_actions: list[dict[str, Any]] = []
 
-    for entry in POLICY_CATALOG:
-        if snapshot.failure_class.value == entry["failure_class"]:
-            actions = []
-            for raw in entry["actions"]:
-                action = raw.copy()
-                action["action"] = action["action"].format(
-                    deployment=snapshot.scope.deployment,
-                    namespace=snapshot.scope.namespace,
-                )
-                actions.append(action)
-            return actions
+    for action in actions:
+        formatted_action = dict(action)
+        command = formatted_action.get("command")
+        if isinstance(command, str):
+            field_names = {
+                field_name
+                for _, field_name, _, _ in formatter.parse(command)
+                if field_name
+            }
+            if field_names and field_names.issubset(context_data.keys()):
+                formatted_action["command"] = command.format_map(context_data)
+        formatted_actions.append(formatted_action)
+
+    return formatted_actions
+
+
+def lookup_policy(fingerprint_id: str, context: Optional[dict[str, Any]] = None) -> Optional[list[dict[str, Any]]]:
+    """
+    Look up policy actions for a given fingerprint.
+    Returns ranked list of actions or None if no policy matches.
+    """
+    for policy in POLICY_CATALOG:
+        if policy["fingerprint_id"] == fingerprint_id:
+            actions = _format_actions_with_context(policy["actions"], context)
+            return rank_actions_by_risk(actions)
+
     return None
+
+
+def rank_actions_by_risk(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Rank actions by risk level: low → medium → high.
+    Among same risk, prioritize lower blast_radius.
+    """
+    risk_order = {"low": 0, "medium": 1, "high": 2}
+    return sorted(
+        actions,
+        key=lambda a: (risk_order.get(a.get("risk", "high"), 999), a.get("blast_radius_score", 1.0)),
+    )
+

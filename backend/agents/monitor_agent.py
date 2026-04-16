@@ -1,18 +1,37 @@
-from __future__ import annotations
+from collectors.k8s_events_collector import K8sEventsCollector
+from collectors.loki_collector import LokiCollector
+from collectors.prometheus_collector import PrometheusCollector
+from collectors.tempo_collector import TempoCollector
 
 
 class MonitorAgent:
-    @staticmethod
-    def compute_confidence(features: dict, events: list[dict], logs_summary: list[dict]) -> float:
-        score = 0.35
-        if features.get("memory_anomaly") or features.get("cpu_anomaly"):
-            score += 0.2
-        if features.get("restart_burst"):
-            score += 0.15
-        if features.get("latency_anomaly"):
-            score += 0.15
-        if events:
-            score += 0.1
-        if logs_summary:
-            score += 0.1
-        return max(0.0, min(1.0, score))
+    def __init__(self) -> None:
+        self.prom = PrometheusCollector()
+        self.loki = LokiCollector()
+        self.tempo = TempoCollector()
+        self.events = K8sEventsCollector()
+
+    def collect_snapshot(self) -> dict:
+        metrics = {
+            "memory_pct": self.prom.query_instant("memory_usage_percent").get("value", 0.0),
+            "cpu_pct": self.prom.query_instant("cpu_usage_percent").get("value", 0.0),
+            "restart_count": self.prom.query_instant("pod_restart_count").get("value", 0.0),
+            "latency_delta": self.prom.query_instant("latency_delta_multiplier").get("value", 0.0),
+        }
+        events = self.events.list_recent_events().get("events", [])
+        signatures = self.loki.query_logs("{app=\"payment-api\"} |= \"error\"").get("signatures", [])
+        trace = self.tempo.get_trace_summary("trace-stub")
+
+        # Keep both nested and flat keys while Phase 3 is integrated.
+        return {
+            "metrics": metrics,
+            "events": events,
+            "logs_summary": signatures,
+            "trace": trace,
+            "memory_pct": metrics["memory_pct"],
+            "cpu_pct": metrics["cpu_pct"],
+            "restart_count": metrics["restart_count"],
+            "latency_delta": metrics["latency_delta"],
+            "event_reason": events,
+            "log_signatures": signatures,
+        }

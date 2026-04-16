@@ -1,0 +1,292 @@
+:root {
+  --color-bg: #0d1117;
+  --color-surface: #161b22;
+  --color-surface-2: #21262d;
+  --color-border: #30363d;
+  --color-text-primary: #e6edf3;
+  --color-text-secondary: #8b949e;
+
+  --color-open: #f0883e;
+  --color-diagnosing: #a371f7;
+  --color-planned: #79c0ff;
+  --color-executing: #56d364;
+  --color-verifying: #ffa657;
+  --color-resolved: #3fb950;
+  --color-failed: #f85149;
+  --color-pending: #d29922;
+
+  --color-risk-low: #3fb950;
+  --color-risk-medium: #ffa657;
+  --color-risk-high: #f85149;
+
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+
+  --radius: 8px;
+  --transition: 200ms ease;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+.dashboard {
+  min-height: 100vh;
+  padding: 16px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.logo {
+  font-weight: 700;
+  font-size: 20px;
+}
+
+.header-sub {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.main {
+  margin-top: 12px;
+}
+
+.stats-bar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0 12px;
+}
+
+.stat-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 10px;
+}
+
+.incident-feed {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.incident-card {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  padding: 10px;
+  cursor: pointer;
+}
+
+.incident-card.selected {
+  border-color: var(--color-planned);
+}
+
+.card-header,
+.card-body,
+.card-footer,
+.action-header,
+.action-meta,
+.modal-actions,
+.drawer-header,
+.fault-injector {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-body,
+.card-footer,
+.action-meta {
+  margin-top: 8px;
+}
+
+.badge,
+.status-dot,
+.connection-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drawer-overlay,
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 50;
+}
+
+.drawer {
+  width: min(900px, 95vw);
+  height: 100%;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  padding: 14px;
+  overflow: auto;
+}
+
+.drawer-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 12px 0;
+}
+
+.tab-btn,
+.btn-primary,
+.btn-danger,
+.btn-ghost,
+.btn-approve,
+.btn-inject,
+.close-btn {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  border-color: var(--color-planned);
+}
+
+.btn-primary,
+.btn-inject {
+  background: var(--color-planned);
+  color: #0d1117;
+}
+
+.btn-danger {
+  background: var(--color-failed);
+  color: #fff;
+}
+
+.btn-ghost {
+  background: transparent;
+}
+
+.panel,
+.panel-empty,
+.modal,
+.empty-feed,
+.timeline-panel,
+.token-cost-panel,
+.signal-panel,
+.diagnosis-panel,
+.executor-panel,
+.verifier-panel,
+.planner-panel {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.modal {
+  width: min(560px, 95vw);
+  margin: auto;
+}
+
+.textarea,
+.scenario-select {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: #0f141a;
+  color: var(--color-text-primary);
+  padding: 8px;
+}
+
+.action-list,
+.signal-grid,
+.timeline-list,
+.sim-list {
+  display: grid;
+  gap: 8px;
+}
+
+.action-item,
+.signal-item,
+.timeline-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 8px;
+  background: var(--color-surface);
+}
+
+.progress-wrap {
+  margin: 8px 0;
+}
+
+.progress-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: #0f141a;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--color-executing);
+}
+
+.mono,
+.action-command,
+.incident-id,
+.modal-command {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-planned);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.error-text {
+  color: var(--color-failed);
+  font-size: 12px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -1,86 +1,76 @@
-# HackToFuture 4.0 — RanOutOfTokens
+# RanOutOfTokens (A-07)
 
-Welcome to your official HackToFuture 4 repository.
+Agentic Self-Healing Cloud for Autonomous Kubernetes Operations
 
-This repository template will be used for development, tracking progress, and final submission of your project. Ensure that all work is committed here within the allowed hackathon duration.
+This repository is now split for 4 parallel contributors with minimum merge conflicts.
 
----
+## Quick Navigation
 
-### Instructions for the teams:
+- Sequential understanding summary: docs/00-sequential-doc-understanding.md
+- Team ownership and boundaries: docs/01-team-split-and-boundaries.md
+- Day-1 parallel kickoff checklist: docs/02-day1-start-checklist.md
+- Shared API contract freeze: shared/contracts/api-contract.md
+- Shared AI JSON shape contract: shared/contracts/ai-prompts-and-json-shapes.md
 
-- Fork the Repository and name the forked repo in this convention: hacktofuture4-team_id (for eg: hacktofuture4-A01)
+## Problem Statement
 
----
-
-## Rules
-
-- Work must be done ONLY in the forked repository
-- Only Four Contributors are allowed.
-- After 36 hours, Please make PR to the Main Repository. A Form will be sent to fill the required information.
-- Do not copy code from other teams
-- All commits must be from individual GitHub accounts
-- Please provide meaningful commits for tracking.
-- Do not share your repository with other teams
-- Final submission must be pushed before the deadline
-- Any violation may lead to disqualification
-
----
-
-# The Final README Template 
-
-## Problem Statement / Idea
-
-Clearly describe the problem you are solving.
-
-- What is the problem?
-- Why is it important?
-- Who are the target users?
-
----
+Kubernetes can restart failed pods, but it does not diagnose root cause across metrics, events, logs, and traces. In production, incident triage is still manual and slow.
 
 ## Proposed Solution
 
-Explain your approach:
+Build an agentic reliability loop that:
 
-- What are you building?
-- How does it solve the problem?
-- What makes your solution unique?
+- detects anomalies from telemetry,
+- diagnoses root cause with rule-first logic and optional AI fallback,
+- ranks remediation by risk,
+- executes approved actions safely,
+- verifies recovery and stores incident memory.
 
----
+## Team Split (Conflict-Minimized)
 
-## Features
+- Vivek: frontend and dashboard integration
+- Aravind: backend core, routers, DB, app lifecycle
+- Rajatha: diagnose/planner/governance and AI contracts
+- Kushal: collectors, monitor, infra, scenarios, memory
 
-List the core features of your project:
+Detailed ownership: docs/01-team-split-and-boundaries.md
 
-- Feature 1
-- Feature 2
-- Feature 3
+## Repository Structure (Prepared for Parallel Work)
 
----
+- backend/
+- frontend/
+- k8s/
+- scripts/
+- shared/contracts/
+- docs/
 
-## Tech Stack
+## Freeze Gates
 
-Mention all technologies used:
+1. Freeze model and API contracts first:
+   - backend/models/schemas.py
+   - backend/models/enums.py
+   - shared/contracts/api-contract.md
+   - frontend/lib/types.ts
+2. Freeze fingerprint IDs, policy IDs, and scenario IDs next.
+3. Freeze demo payload shapes and frontend layout before final dry run.
 
-- Frontend:
-- Backend:
-- Database:
-- APIs / Services:
-- Tools / Libraries:
+## Branch Strategy
 
----
+- feature/backend-core-aravind
+- feature/agents-rajatha
+- feature/observation-kushal
+- feature/frontend-vivek
+- integration/e2e-stabilization
 
-## Project Setup Instructions
+Merge in this order:
 
-Provide clear steps to run your project:
+1. Backend contracts and core skeleton
+2. Observation and monitor
+3. Diagnose/planner/governance
+4. Executor/verification/memory
+5. Frontend integration
+6. Testing and dry-run hardening
 
-```bash
-# Clone the repository
-git clone <repo-link>
+## Next Immediate Step
 
-# Install dependencies
-...
-
-# Run the project
-...
-```
+Start with docs/02-day1-start-checklist.md and finish the first 90-minute sync gates before deeper implementation.

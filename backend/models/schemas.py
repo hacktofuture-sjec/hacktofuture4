@@ -1,22 +1,18 @@
 from __future__ import annotations
 
-import re
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
-from .enums import (
+from models.enums import (
     DependencyImpact,
     DiagnosisMode,
     ExecutorStatus,
     FailureClass,
     IncidentStatus,
-    Outcome,
     RiskLevel,
     Severity,
 )
-
-INCIDENT_ID_PATTERN = re.compile(r"^inc-[0-9a-f]{8}$")
 
 
 class MetricSummary(BaseModel):
@@ -68,13 +64,6 @@ class IncidentSnapshot(BaseModel):
     failure_class: FailureClass
     dependency_graph_summary: str
 
-    @field_validator("incident_id")
-    @classmethod
-    def validate_incident_id(cls, value: str) -> str:
-        if not INCIDENT_ID_PATTERN.match(value):
-            raise ValueError("incident_id must match inc-{8 hex chars}")
-        return value
-
 
 class StructuredReasoning(BaseModel):
     matched_rules: list[str]
@@ -112,40 +101,9 @@ class PlannerAction(BaseModel):
     actual_token_cost: float = 0.0
     simulation_result: SimulationResult
 
-    @field_validator("action")
-    @classmethod
-    def validate_action_prefix(cls, value: str) -> str:
-        if not value.startswith("kubectl"):
-            raise ValueError("action must start with 'kubectl'")
-        return value
-
 
 class PlannerOutput(BaseModel):
     actions: list[PlannerAction]
-
-
-class ApprovalRequest(BaseModel):
-    action_index: int
-    approved: bool
-    operator_id: str = "operator"
-    operator_note: str = ""
-
-
-class ApprovalResponse(BaseModel):
-    incident_id: str
-    action_index: Optional[int]
-    approved: bool
-    status: IncidentStatus
-    message: str
-
-
-class ExecutorResult(BaseModel):
-    action: str
-    status: ExecutorStatus
-    sandbox_validated: bool
-    rollback_needed: bool
-    execution_timestamp: Optional[str] = None
-    error: Optional[str] = None
 
 
 class ThresholdCheck(BaseModel):
@@ -160,6 +118,15 @@ class VerificationOutput(BaseModel):
     thresholds_checked: list[ThresholdCheck]
     recovered: bool
     close_reason: str
+
+
+class ExecutorResult(BaseModel):
+    action: str
+    status: ExecutorStatus
+    sandbox_validated: bool
+    rollback_needed: bool
+    execution_timestamp: Optional[str] = None
+    error: Optional[str] = None
 
 
 class TokenUsageRecord(BaseModel):
@@ -184,63 +151,12 @@ class TokenSummary(BaseModel):
     fallback_triggered: bool
 
 
-class CostReport(BaseModel):
-    incident_id: Optional[str]
-    stages: list[TokenUsageRecord]
-    summary: TokenSummary
-
-
-class IncidentMemoryRecord(BaseModel):
-    incident_fingerprint: str
-    symptoms: list[str]
-    failure_class: FailureClass
-    root_cause: str
-    selected_fix: str
-    outcome: Outcome
-    success_rate: float = Field(ge=0.0, le=1.0)
-    median_recovery_seconds: int
-
-
-class FaultInjectionRequest(BaseModel):
-    scenario_id: str
-
-
-class FaultInjectionResponse(BaseModel):
-    incident_id: str
-    scenario_id: str
-    status: IncidentStatus
-    message: str
-
-
-class ScenarioListItem(BaseModel):
-    scenario_id: str
-    name: str
-    failure_class: FailureClass
-
-
-class IncidentFromAlertRequest(BaseModel):
-    alert: str
-    service: str
-    namespace: str
-    deployment: str
-    pod: Optional[str] = None
-    severity: Severity = Severity.MEDIUM
-    scenario_id: Optional[str] = None
-
-
 class IncidentEvent(BaseModel):
     incident_id: str
     status: IncidentStatus
     scenario_id: Optional[str] = None
     severity: Severity
     created_at: str
-
-    @field_validator("incident_id")
-    @classmethod
-    def validate_incident_event_id(cls, value: str) -> str:
-        if not INCIDENT_ID_PATTERN.match(value):
-            raise ValueError("incident_id must match inc-{8 hex chars}")
-        return value
 
 
 class IncidentListItem(BaseModel):
@@ -252,18 +168,6 @@ class IncidentListItem(BaseModel):
     monitor_confidence: float
     created_at: str
     updated_at: str
-
-
-class TimelineEvent(BaseModel):
-    timestamp: str
-    status: IncidentStatus
-    actor: str
-    note: str
-
-
-class IncidentTimeline(BaseModel):
-    incident_id: str
-    events: list[TimelineEvent]
 
 
 class IncidentDetail(BaseModel):
@@ -286,34 +190,28 @@ class IncidentDetail(BaseModel):
     resolved_at: Optional[str] = None
 
 
-class WSStatusChange(BaseModel):
-    type: str = "status_change"
-    incident_id: str
-    previous_status: IncidentStatus
-    new_status: IncidentStatus
+class TimelineEvent(BaseModel):
     timestamp: str
+    status: IncidentStatus
+    actor: str
+    note: str
 
 
-class WSDiagnosisComplete(BaseModel):
-    type: str = "diagnosis_complete"
+class IncidentTimeline(BaseModel):
     incident_id: str
-    diagnosis: DiagnosisPayload
+    events: list[TimelineEvent]
 
 
-class WSPlanReady(BaseModel):
-    type: str = "plan_ready"
+class ApprovalRequest(BaseModel):
+    action_index: int
+    approved: bool
+    operator_id: str = "operator"
+    operator_note: str = ""
+
+
+class ApprovalResponse(BaseModel):
     incident_id: str
-    plan: PlannerOutput
-
-
-class WSExecutionUpdate(BaseModel):
-    type: str = "execution_update"
-    incident_id: str
-    execution: ExecutorResult
-
-
-class WSIncidentResolved(BaseModel):
-    type: str = "incident_resolved"
-    incident_id: str
-    verification: VerificationOutput
-    token_summary: TokenSummary
+    action_index: Optional[int]
+    approved: bool
+    status: IncidentStatus
+    message: str
