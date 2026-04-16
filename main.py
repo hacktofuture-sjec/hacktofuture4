@@ -287,12 +287,15 @@ def generate_fix_content(
     analysis: dict[str, Any],
     repository: str,
     log_excerpt: str | None = None,
+    *,
+    strict: bool = False,
 ) -> str | None:
     """Ask Groq to produce the full patched content for `file_path`.
 
     Returns the new file content, or None if the call fails or the
-    response is unusable. The caller is expected to validate (e.g. fall
-    back to a rule-based patch for requirements.txt).
+    response is unusable. When ``strict`` is True the prompt is
+    reinforced — useful as a second-chance attempt when the first
+    return was unchanged or rejected.
     """
     api_key = os.getenv("GROQ_API_KEY", "").strip()
     if not api_key:
@@ -304,7 +307,7 @@ def generate_fix_content(
         "Content-Type": "application/json",
     }
 
-    system_prompt = (
+    base_rules = (
         "You are a senior engineer producing a minimal, surgical code fix. "
         "You will be given (1) the current full content of a source file, "
         "(2) a short failure analysis describing the root cause and the fix, "
@@ -315,6 +318,18 @@ def generate_fix_content(
         "the input. Change only what the fix requires. Never delete code you "
         "do not understand."
     )
+    if strict:
+        base_rules += (
+            " IMPORTANT: on the previous attempt you returned content "
+            "identical to the input. That is wrong — the file has a bug "
+            "that MUST be changed. Identify the exact offending "
+            "token/operator/literal (for example a wrong arithmetic "
+            "operator, wrong comparison, wrong constant, missing import, "
+            "off-by-one) and change only that. You MUST return a file "
+            "that differs from the input by at least one character."
+        )
+    system_prompt = base_rules
+
     user_payload = (
         f"Repository: {repository}\n"
         f"File: {file_path}\n\n"
@@ -1219,22 +1234,35 @@ def _fetch_file(
         return None, None
 
 
-def _looks_like_safe_patch(old: str, new: str) -> bool:
-    """Cheap sanity check: reject patches that blow the file away.
+def _safe_patch_reason(old: str, new: str) -> str | None:
+    """Return None if the patch is safe, otherwise a short reason string.
 
-    We refuse to commit if the new content is empty, or if it removes
-    more than half of the original non-empty lines (heuristic against
-    an LLM returning only the changed snippet).
+    Reject empty output, or an LLM response that removed so much of the
+    original file it's almost certainly a snippet instead of the full
+    replacement we asked for. For tiny files we are permissive: any
+    non-empty, non-identical output is accepted.
     """
     if not new or not new.strip():
-        return False
+        return "empty"
+    if new == old:
+        return "unchanged"
     old_lines = [line for line in old.splitlines() if line.strip()]
     new_lines = [line for line in new.splitlines() if line.strip()]
     if not old_lines:
-        return True
-    if len(new_lines) < max(3, len(old_lines) // 2):
-        return False
-    return True
+        return None
+    if len(old_lines) < 8:
+        return None
+    if len(new_lines) < max(3, int(len(old_lines) * 0.4)):
+        return (
+            f"shrunk ({len(new_lines)} lines after, {len(old_lines)} before) —"
+            " looks like a snippet, not full file"
+        )
+    return None
+
+
+def _looks_like_safe_patch(old: str, new: str) -> bool:
+    """Backwards-compatible boolean wrapper around ``_safe_patch_reason``."""
+    return _safe_patch_reason(old, new) is None
 
 
 def _strip_code_fences(text: str) -> str:
@@ -1396,19 +1424,34 @@ def maybe_create_autofix_pr(
             }
     else:
         log_excerpt = str(analysis.get("_log_excerpt") or "")
-        generated = generate_fix_content(
-            cur_content,
-            target_file,
-            analysis,
-            f"{owner}/{repo}",
-            log_excerpt=log_excerpt,
-        )
-        if (
-            generated
-            and generated.strip()
-            and generated != cur_content
-            and _looks_like_safe_patch(cur_content, generated)
-        ):
+        repo_slug = f"{owner}/{repo}"
+
+        def _try_llm(strict: bool) -> tuple[str | None, str]:
+            out = generate_fix_content(
+                cur_content,
+                target_file,
+                analysis,
+                repo_slug,
+                log_excerpt=log_excerpt,
+                strict=strict,
+            )
+            if out is None:
+                return None, "llm_call_failed"
+            reason = _safe_patch_reason(cur_content, out)
+            if reason is None:
+                return out, "ok"
+            print(
+                f"[PipelineMedic] LLM patch rejected "
+                f"(strict={strict}): {reason}",
+                flush=True,
+            )
+            return None, reason
+
+        generated, reject_reason = _try_llm(strict=False)
+        if generated is None and reject_reason in {"unchanged", "empty", "llm_call_failed"}:
+            generated, reject_reason = _try_llm(strict=True)
+
+        if generated is not None:
             new_content = generated
             patch_source = "llm"
         elif target_file.endswith("requirements.txt"):
@@ -1427,7 +1470,7 @@ def maybe_create_autofix_pr(
             return {
                 "ok": False,
                 "mode": "error",
-                "error": "LLM produced no safe patch for this file",
+                "error": f"LLM produced no safe patch ({reject_reason})",
             }
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
