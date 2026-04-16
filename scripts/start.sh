@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+Ok I am Kushal, My work is on Observation layer (Prometheus, Loki, Tempo, K8s Events), signal intelligence, memory | Infra setup and scenario determinism | Remediation execution and recovery proof, I want you to first go through the entire docs to get the context and understand the project, the branch is already created, then I want you to read to README.md to understand what my work is to do, respective to what is written in the README for my task and go through the docs and implement as told by the docs, fixes we shall see later during testing, but follow the respective docs for my tasks as it is, the setup, file creation, everything as it is, do not deviate to any other issue or domain, we will work only my o#!/usr/bin/env bash
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -40,10 +40,21 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 cd "$ROOT_DIR"
 
-sleep 3
-curl -sf http://localhost:8000/healthz >/dev/null
+sleep 2
+backend_ready=false
+for _ in {1..20}; do
+  if curl --max-time 2 -sf http://localhost:8000/healthz >/dev/null; then
+    backend_ready=true
+    break
+  fi
+  sleep 1
+done
 
-curl -sf -X POST http://localhost:8000/admin/load-scenarios >/dev/null || true
+if [ "$backend_ready" != "true" ]; then
+  echo "WARN: backend health check did not respond in time; continuing startup."
+fi
+
+curl --max-time 5 -sf -X POST http://localhost:8000/admin/load-scenarios >/dev/null || true
 
 cd "$ROOT_DIR/frontend"
 npm install
