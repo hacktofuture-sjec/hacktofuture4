@@ -13,6 +13,7 @@ import styles from "./page.module.css";
 export default function Dashboard() {
   const { incidents, reload } = useIncidents();
   const [selected, setSelected] = useState<string | null>(null);
+  const incidentList = Array.isArray(incidents) ? incidents : [];
 
   const onMessage = useCallback(
     (msg: WSMessage) => {
@@ -29,20 +30,24 @@ export default function Dashboard() {
         reload();
       }
     },
-    [reload]
+    [reload],
   );
 
   const { connected } = useWebSocket(onMessage);
 
-  const resolved = incidents.filter((i) => i.status === "resolved").length;
-  const open = incidents.filter((i) => !["resolved", "failed"].includes(i.status)).length;
+  const resolved = incidentList.filter((i) => i.status === "resolved").length;
+  const open = incidentList.filter(
+    (i) => !["resolved", "failed"].includes(i.status),
+  ).length;
 
   return (
     <div className={`${styles.page} dashboard`}>
       <header className="header">
         <div className="header-left">
           <span className="logo">T3PS2</span>
-          <span className="header-sub">Autonomous Kubernetes Incident Response</span>
+          <span className="header-sub">
+            Autonomous Kubernetes Incident Response
+          </span>
         </div>
         <div className="header-right">
           <ConnectionBadge connected={connected} />
@@ -50,13 +55,22 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <StatsBar total={incidents.length} open={open} resolved={resolved} />
+      <StatsBar total={incidentList.length} open={open} resolved={resolved} />
 
       <main className="main">
-        <IncidentFeed incidents={incidents} onSelect={setSelected} selected={selected} />
+        <IncidentFeed
+          incidents={incidentList}
+          onSelect={setSelected}
+          selected={selected}
+        />
       </main>
 
-      {selected && <IncidentDrawer incidentId={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <IncidentDrawer
+          incidentId={selected}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   );
 }

@@ -22,6 +22,17 @@ function Stop-PidFile {
     Remove-Item $Path -Force -ErrorAction SilentlyContinue
 }
 
+function Stop-ProcessOnPort {
+    param([Parameter(Mandatory = $true)][int]$Port)
+
+    $connections = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+    foreach ($connection in $connections) {
+        if ($connection.OwningProcess) {
+            Stop-Process -Id $connection.OwningProcess -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Start-LoggedProcess {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -97,6 +108,10 @@ function Ensure-BackendVenv {
     return ([string]$PythonExe)
 }
 
+foreach ($port in 3000, 8000, 9090, 3100, 3200, 3300) {
+    Stop-ProcessOnPort -Port $port
+}
+
 kubectl config use-context kind-t3ps2 | Out-Null
 kubectl get nodes | Out-Null
 
@@ -127,7 +142,7 @@ if (Test-Path (Join-Path $FrontendDir 'package.json')) {
         }
     }
 
-    Start-LoggedProcess -Name 'frontend' -FilePath 'npm.cmd' -ArgumentList @('run', 'dev') -WorkingDirectory $FrontendDir | Out-Null
+    Start-LoggedProcess -Name 'frontend' -FilePath 'npm.cmd' -ArgumentList @('run', 'dev', '--', '-p', '3000') -WorkingDirectory $FrontendDir | Out-Null
 }
 
 Write-Host ''
