@@ -105,9 +105,10 @@ class TestDashboardViews:
         assert resp.json()["name"] == "Detail Board"
 
     def test_cannot_access_other_org_dashboard(self, auth_client, db):
+        from django.contrib.auth import get_user_model
+
         from accounts.models import Organization
         from insights.models import Dashboard
-        from django.contrib.auth import get_user_model
 
         other_org = Organization.objects.create(
             name="OtherDash", slug="other-dash", plan_tier="free"

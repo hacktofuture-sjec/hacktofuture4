@@ -10,9 +10,9 @@ ProcessingResult   — final pipeline result
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
-from typing_extensions import TypedDict
 
 from pydantic import BaseModel, Field, field_validator
+from typing_extensions import TypedDict
 
 # ── LangGraph State ───────────────────────────────────────────────────────────
 

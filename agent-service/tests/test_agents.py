@@ -5,8 +5,9 @@ Tests deterministic validation without any LLM calls.
 All 5 validation rules must be tested: status, date, title, external_id, assignee.
 """
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 VALID_STATUS_VALUES = ["open", "in_progress", "blocked", "resolved"]
 

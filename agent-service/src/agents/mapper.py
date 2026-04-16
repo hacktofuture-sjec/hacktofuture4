@@ -8,8 +8,8 @@ Feeds validation errors back into the prompt on retry attempts.
 import logging
 from typing import Any, Dict, List, Optional
 
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
 
 from ..config import settings
 from ..schemas import UnifiedTicketSchema

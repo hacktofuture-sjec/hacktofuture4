@@ -9,13 +9,12 @@ from django.utils.text import slugify
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from .models import (
+from .models import (  # RolePermission,
     Organization,
     OrganizationInvite,
     OrganizationMember,
     Permission,
     Role,
-    # RolePermission,
     UserProfile,
 )
 

@@ -141,7 +141,9 @@ async def get_channel_messages(
     next_cursor = data.get("response_metadata", {}).get("next_cursor", "")
 
     logger.info(
-        "[slack] get_channel_messages(channel=%s) → %d messages", channel_id, len(messages)
+        "[slack] get_channel_messages(channel=%s) → %d messages",
+        channel_id,
+        len(messages),
     )
     return {
         "messages": messages,

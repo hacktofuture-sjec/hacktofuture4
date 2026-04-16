@@ -1,7 +1,8 @@
 """Health check router."""
 
-from fastapi import APIRouter
 import httpx
+from fastapi import APIRouter
+
 from ..config import settings
 
 router = APIRouter(tags=["Health"])

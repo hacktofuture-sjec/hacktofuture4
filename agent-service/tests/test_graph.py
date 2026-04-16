@@ -10,8 +10,9 @@ Key behaviors verified:
   4. attempt_count: starts at 1, incremented each time validator runs
 """
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 
 @pytest.mark.asyncio

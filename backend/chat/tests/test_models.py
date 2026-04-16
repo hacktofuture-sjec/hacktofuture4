@@ -96,9 +96,10 @@ class TestChatSession:
 
     def test_chat_session_scoped_to_org(self, org_fixture, user_fixture, db):
         """Sessions from other orgs must not leak."""
+        from django.contrib.auth import get_user_model
+
         from accounts.models import Organization
         from chat.models import ChatSession
-        from django.contrib.auth import get_user_model
 
         other_org = Organization.objects.create(
             name="Other Co", slug="other-co", plan_tier="free"

@@ -164,9 +164,10 @@ class TestIntegrationAPI:
         self, auth_client, integration_fixture, db
     ):
         """List should only return integrations for the authenticated user's org."""
+        from django.contrib.auth import get_user_model
+
         from accounts.models import Organization
         from integrations.models import Integration
-        from django.contrib.auth import get_user_model
 
         # Create integration in a different org — should NOT appear in list
         other_org = Organization.objects.create(

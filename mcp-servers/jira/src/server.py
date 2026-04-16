@@ -34,9 +34,7 @@ def _headers() -> dict:
         raise RuntimeError(
             "JIRA_BASE_URL, JIRA_EMAIL and JIRA_API_TOKEN must all be set"
         )
-    credentials = base64.b64encode(
-        f"{_JIRA_EMAIL}:{_JIRA_API_TOKEN}".encode()
-    ).decode()
+    credentials = base64.b64encode(f"{_JIRA_EMAIL}:{_JIRA_API_TOKEN}".encode()).decode()
     return {
         "Authorization": f"Basic {credentials}",
         "Accept": "application/json",
@@ -60,7 +58,10 @@ async def search_issues(
     jql: str = "ORDER BY created DESC",
     limit: int = 50,
     start_at: int = 0,
-    fields: str = "summary,status,issuetype,priority,assignee,reporter,created,updated,duedate,labels,description",
+    fields: str = (
+        "summary,status,issuetype,priority,assignee,reporter,"
+        "created,updated,duedate,labels,description"
+    ),
 ) -> dict:
     """
     Search Jira issues via JQL.

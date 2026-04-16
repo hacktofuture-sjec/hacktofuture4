@@ -22,8 +22,8 @@ from core.permissions import HasApiKey
 from .filters import RawWebhookEventFilter
 from .models import DeadLetterQueue, RawWebhookEvent
 from .serializers import (
-    DLQIngestSerializer,
     DeadLetterQueueSerializer,
+    DLQIngestSerializer,
     EventIngestSerializer,
     RawWebhookEventSerializer,
 )

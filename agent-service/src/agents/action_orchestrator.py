@@ -28,19 +28,17 @@ class ActionPlannerSchema(BaseModel):
 
     analysis: str = Field(description="Brief explanation of what needs to be done.")
     actions: List[Dict[str, Any]] = Field(
-        description=(
-            "List of exact actions to take. Each dict must contain "
-            "'tool' (e.g. jira, slack), "
-            "'action' (e.g. create_ticket, transition_status, send_message) "
-            "and 'payload' (relevant data)."
-        )
+        description="List of exact actions to take. Each dict must contain "
+        "'tool' (e.g. jira, slack), 'action' (e.g. update_ticket, create_ticket, "
+        "send_message) and 'payload' (relevant data)."
     )
 
 
 SYSTEM_PROMPT = """You are the core of an Autonomous Proactive Product Manager.
 
-The user will provide natural language text (e.g. standup updates, bug reports, status changes).
-Your job is to parse this text, determine what actions need to occur across platforms, and output a structured plan.
+The user will provide natural language text (e.g. checking in standup updates, reporting a bug).
+Your job is to parse this text, determine what actions need to occur across various platforms,
+and output a structured plan.
 
 AVAILABLE TOOLS:
 - jira: [create_ticket, transition_status, update_ticket]
