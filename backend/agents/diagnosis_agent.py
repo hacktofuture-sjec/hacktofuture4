@@ -1,11 +1,11 @@
 """
-Diagnosis Agent – Uses LangChain + Mistral to analyze pipeline logs
-and identify root causes of failures.
+Diagnosis Agent – analyzes pipeline logs and identifies root causes of failures.
 """
 import re
 import json
 import logging
-from typing import Tuple, Optional
+import time
+from google import genai
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_community.chat_models import ChatOllama
@@ -45,20 +45,148 @@ class DiagnosisAgent:
         self.vector_store = VectorStore()
         self._init_llm()
 
-    def _init_llm(self):
+    def _resolve_provider(self) -> str:
+        provider = (settings.LLM_PROVIDER or "").strip().lower()
+        if provider:
+            return provider
         if settings.USE_OLLAMA:
+            return "ollama"
+        if settings.MISTRAL_API_KEY:
+            return "mistral"
+        return "gemini"
+
+    def _init_llm(self):
+        self.provider = self._resolve_provider()
+        self.last_provider_used = self.provider
+        self.llm = None
+        self.gemini_client = None
+        self.ollama_fallback_llm = None
+
+        if self.provider == "gemini":
+            client_kwargs = {}
+            if settings.GEMINI_API_KEY:
+                client_kwargs["api_key"] = settings.GEMINI_API_KEY
+            self.gemini_client = genai.Client(**client_kwargs)
+            # Keep a local Ollama fallback so quota/rate limits don't force rule-based fallback.
+            self.ollama_fallback_llm = ChatOllama(
+                model=settings.LLM_MODEL,
+                base_url=settings.OLLAMA_BASE_URL,
+                temperature=0.1,
+                format="json"
+            )
+            logger.info(f"[DiagnosisAgent] Using Gemini model: {settings.GEMINI_MODEL}")
+        elif self.provider == "ollama":
             self.llm = ChatOllama(
                 model=settings.LLM_MODEL,
                 base_url=settings.OLLAMA_BASE_URL,
                 temperature=0.1,
                 format="json"
             )
-        else:
+            logger.info(f"[DiagnosisAgent] Using Ollama model: {settings.LLM_MODEL}")
+        elif self.provider == "mistral":
             self.llm = ChatMistralAI(
-                model="mistral-large-latest",
+                model=settings.MISTRAL_MODEL,
                 api_key=settings.MISTRAL_API_KEY,
                 temperature=0.1
             )
+            logger.info(f"[DiagnosisAgent] Using Mistral model: {settings.MISTRAL_MODEL}")
+        else:
+            raise ValueError(f"Unsupported LLM_PROVIDER '{self.provider}'. Use gemini, ollama, or mistral.")
+
+    def get_provider_label(self) -> str:
+        active_provider = getattr(self, "last_provider_used", self.provider)
+        if active_provider == "gemini":
+            return f"gemini:{settings.GEMINI_MODEL}"
+        if active_provider == "mistral":
+            return f"mistral:{settings.MISTRAL_MODEL}"
+        return f"ollama:{settings.LLM_MODEL}"
+
+    def _invoke_with_ollama_fallback(self, system_prompt: str, user_prompt: str, reason: str) -> str | None:
+        if not self.ollama_fallback_llm:
+            return None
+
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt),
+        ]
+        try:
+            response = self.ollama_fallback_llm.invoke(messages)
+            self.last_provider_used = "ollama"
+            logger.warning(
+                f"[DiagnosisAgent] Switched to Ollama fallback due to Gemini issue: {reason}"
+            )
+            return response.content if hasattr(response, "content") else str(response)
+        except Exception as fallback_error:
+            logger.warning(
+                f"[DiagnosisAgent] Ollama fallback also failed: {fallback_error}"
+            )
+            return None
+
+    def _invoke_with_prompts(self, system_prompt: str, user_prompt: str) -> str:
+        self.last_provider_used = self.provider
+        if self.provider == "gemini":
+            combined_prompt = (
+                f"{system_prompt}\n\n"
+                f"{user_prompt}\n\n"
+                "Return ONLY valid JSON."
+            )
+            last_error = None
+            max_attempts = 3
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    response = self.gemini_client.models.generate_content(
+                        model=settings.GEMINI_MODEL,
+                        contents=combined_prompt,
+                    )
+                    text = getattr(response, "text", None)
+                    self.last_provider_used = "gemini"
+                    return text if text else str(response)
+                except Exception as e:
+                    last_error = e
+                    error_text = str(e).upper()
+                    is_quota_limited = (
+                        "429" in error_text
+                        or "RESOURCE_EXHAUSTED" in error_text
+                        or "QUOTA" in error_text
+                    )
+                    if is_quota_limited:
+                        fallback_response = self._invoke_with_ollama_fallback(
+                            system_prompt,
+                            user_prompt,
+                            str(e),
+                        )
+                        if fallback_response:
+                            return fallback_response
+
+                    is_retryable = (
+                        "503" in error_text
+                        or "UNAVAILABLE" in error_text
+                        or "429" in error_text
+                        or "RESOURCE_EXHAUSTED" in error_text
+                        or "TIMEOUT" in error_text
+                    )
+                    if not is_retryable or attempt == max_attempts:
+                        raise
+
+                    backoff_seconds = 0.7 * (2 ** (attempt - 1))
+                    logger.warning(
+                        f"[DiagnosisAgent] Gemini transient error on attempt {attempt}/{max_attempts}: {e}. Retrying in {backoff_seconds:.1f}s"
+                    )
+                    time.sleep(backoff_seconds)
+
+            if last_error:
+                raise last_error
+
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt),
+        ]
+        response = self.llm.invoke(messages)
+        self.last_provider_used = self.provider
+        return response.content if hasattr(response, "content") else str(response)
+
+    def invoke_prompt(self, system_prompt: str, user_prompt: str) -> str:
+        return self._invoke_with_prompts(system_prompt, user_prompt)
 
     async def analyze(self, event_id: str, logs: str, repo: str, branch: str,
                       commit_message: str) -> dict:
@@ -88,18 +216,24 @@ Commit: {commit_message}
 
 Analyze the above logs and return a JSON diagnosis.
 """
-        messages = [
-            SystemMessage(content=DIAGNOSIS_SYSTEM_PROMPT),
-            HumanMessage(content=user_prompt)
-        ]
-
         # 4. Call LLM
         try:
-            response = self.llm.invoke(messages)
-            result = self._parse_json_response(response.content)
+            response_text = self._invoke_with_prompts(
+                DIAGNOSIS_SYSTEM_PROMPT,
+                user_prompt,
+            )
+            result = self._parse_json_response(response_text)
+            if self.provider == "gemini" and self.last_provider_used == "ollama":
+                result["summary"] = (
+                    f"Gemini quota/rate limit hit; answered via local Ollama fallback: {result.get('summary', '')}".strip()
+                )
         except Exception as e:
             logger.error(f"LLM diagnosis failed: {e}")
             result = self._fallback_diagnosis(logs)
+            if self.provider == "gemini":
+                result["summary"] = (
+                    f"Gemini was temporarily unavailable; used rule-based fallback: {result['root_cause']}"
+                )
 
         # 5. Store in vector DB for future recall
         await self.vector_store.store_failure(
@@ -129,6 +263,9 @@ Analyze the above logs and return a JSON diagnosis.
 
     def _parse_json_response(self, content: str) -> dict:
         """Extract JSON from LLM response even if wrapped in markdown."""
+        if not isinstance(content, str):
+            content = str(content)
+
         # Try direct parse
         try:
             return json.loads(content)

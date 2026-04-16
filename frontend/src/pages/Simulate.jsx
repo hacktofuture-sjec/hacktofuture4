@@ -298,6 +298,14 @@ export default function Simulate() {
   const logLineCount = form.logs.split('\n').filter((line) => line.trim().length > 0).length
   const previewState = diagnosis ? 'Diagnosis ready' : diagnosisLoading ? 'Analyzing' : 'No diagnosis yet'
   const fixState = fixPreview ? 'Fix preview ready' : fixPreviewLoading ? 'Generating fix' : 'No fix preview yet'
+  const previewRiskLevel = fixPreview?.risk_assessment?.level || fixPreview?.risk_assessment?.risk_level
+  const previewFixDescription =
+    fixPreview?.proposed_fix?.fix_description ||
+    fixPreview?.proposed_fix?.description ||
+    null
+  const previewRiskSummary =
+    fixPreview?.risk_assessment?.justification ||
+    (Array.isArray(fixPreview?.risk_assessment?.reasons) ? fixPreview.risk_assessment.reasons[0] : null)
 
   return (
     <div className="page-stack">
@@ -542,18 +550,18 @@ export default function Simulate() {
                   <div>
                     <strong style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Proposed fix</strong>
                     <p style={{ margin: '4px 0 0', fontSize: '0.95rem', lineHeight: '1.5' }}>
-                      {fixPreview.proposed_fix?.description || 'No fix description available'}
+                      {previewFixDescription || 'No fix description available'}
                     </p>
                   </div>
 
                   <div>
                     <strong style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Risk assessment</strong>
                     <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Badge variant={fixPreview.risk_assessment?.risk_level === 'high' ? 'danger' : fixPreview.risk_assessment?.risk_level === 'medium' ? 'warning' : 'success'}>
-                        {(fixPreview.risk_assessment?.risk_level || 'unknown').toUpperCase()}
+                      <Badge variant={previewRiskLevel === 'high' ? 'danger' : previewRiskLevel === 'medium' ? 'warning' : 'success'}>
+                        {(previewRiskLevel || 'unknown').toUpperCase()}
                       </Badge>
                       <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                        {fixPreview.risk_assessment?.justification || 'No risk details'}
+                        {previewRiskSummary || 'No risk details'}
                       </span>
                     </div>
                   </div>

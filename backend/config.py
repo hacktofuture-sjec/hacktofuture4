@@ -25,11 +25,17 @@ class Settings(BaseSettings):
     PIPEGENIE_BOT_NAME: str = "PipeGenie Bot"
     PIPEGENIE_BOT_EMAIL: str = "pipegenie-bot@users.noreply.github.com"
 
-    # AI / Mistral
-    MISTRAL_API_KEY: str = ""          # For Mistral API
+    # AI / LLM provider
+    LLM_PROVIDER: str = "gemini"      # gemini (default) | ollama | mistral
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+
+    # Legacy/manual options (kept for compatibility)
+    MISTRAL_API_KEY: str = ""          # Manual fallback provider
+    MISTRAL_MODEL: str = "mistral-large-latest"
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    USE_OLLAMA: bool = True            # True = local Ollama, False = Mistral API
-    LLM_MODEL: str = "mistral"         # Ollama model name
+    USE_OLLAMA: bool = False            # Legacy switch; prefer LLM_PROVIDER
+    LLM_MODEL: str = "mistral"         # Ollama model name when LLM_PROVIDER=ollama
 
     # MilvusDB
     MILVUS_HOST: str = "localhost"
@@ -44,6 +50,13 @@ class Settings(BaseSettings):
 
     # CORS
     FRONTEND_URL: str = "http://localhost:5173"
+
+    # Observability (SigNoz / OpenTelemetry)
+    OTEL_ENABLED: bool = True
+    OTEL_SERVICE_NAME: str = "pipegenie-backend"
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://127.0.0.1:4318/v1/traces"
+    OTEL_EXPORTER_OTLP_INSECURE: bool = True
+    OTEL_RESOURCE_ATTRIBUTES: str = "service.namespace=pipegenie,deployment.environment=dev"
 
     class Config:
         env_file = ".env"

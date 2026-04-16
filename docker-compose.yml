@@ -74,8 +74,21 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - USE_OLLAMA=true
       - LLM_MODEL=mistral
+      - OTEL_ENABLED=true
+      - OTEL_SERVICE_NAME=pipegenie-backend
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://host.docker.internal:4318/v1/traces
+      - OTEL_EXPORTER_OTLP_INSECURE=true
+      - OTEL_RESOURCE_ATTRIBUTES=service.namespace=pipegenie,deployment.environment=docker
     env_file: ./backend/.env
     depends_on: [mongodb, redis, milvus]
+
+  backend-tests:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.tests
+    container_name: pipegenie-backend-tests
+    profiles: ["test"]
+    command: ["python", "-m", "pytest", "-q", "backend/tests/test_risk_evaluator.py"]
 
   ollama:
     image: ollama/ollama:latest

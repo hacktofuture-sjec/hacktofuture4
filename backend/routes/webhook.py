@@ -12,7 +12,6 @@ from fastapi import APIRouter, Request, HTTPException, BackgroundTasks, Depends
 from backend.config import settings
 from backend.models.pipeline_event import PipelineEvent, PipelineStatus
 from backend.services.github_service import GitHubService
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhook", tags=["webhooks"])
@@ -59,29 +58,28 @@ async def scenario_builder_chat(request: Request, orchestrator=Depends(get_orche
     session["history"].append({"role": "user", "content": user_message})
     session["turn_count"] += 1
     
-    # Build message history for LLM (cap history for lower latency)
-    messages = [SystemMessage(content=BUILDER_SYSTEM_PROMPT)]
-    for msg in session["history"][-8:]:
-        if msg["role"] == "user":
-            messages.append(HumanMessage(content=msg["content"]))
-        else:
-            messages.append(AIMessage(content=msg["content"]))
-    
     try:
         started = time.perf_counter()
         provider = "unknown"
         parsed_payload = None
 
-        # Try to use orchestrator's LLM model
-        if hasattr(orchestrator.diagnosis_agent, 'llm'):
-            provider = type(orchestrator.diagnosis_agent.llm).__name__
-            response = orchestrator.diagnosis_agent.llm.invoke(messages)
-            assistant_message = response.content
+        # Build compact conversation transcript for the LLM
+        conversation_lines = []
+        for msg in session["history"][-8:]:
+            role = "User" if msg["role"] == "user" else "Assistant"
+            conversation_lines.append(f"{role}: {msg['content']}")
+        conversation_lines.append("Assistant:")
+        conversation_prompt = "\n".join(conversation_lines)
+
+        if hasattr(orchestrator.diagnosis_agent, "invoke_prompt"):
+            provider = orchestrator.diagnosis_agent.get_provider_label()
+            assistant_message = orchestrator.diagnosis_agent.invoke_prompt(
+                BUILDER_SYSTEM_PROMPT,
+                conversation_prompt,
+            )
         else:
-            # Fallback
             assistant_message = "I'm having trouble connecting. Could you describe what error you saw?"
 
-        # ChatOllama may return JSON text because diagnosis model is configured for JSON output.
         if isinstance(assistant_message, str):
             try:
                 parsed_payload = json.loads(assistant_message)

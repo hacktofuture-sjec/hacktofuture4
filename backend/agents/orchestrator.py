@@ -3,7 +3,8 @@ Agent Orchestrator – coordinates Diagnosis → Fixer → Guardian → Executor
 """
 import logging
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from opentelemetry import trace
 
 from backend.agents.diagnosis_agent import DiagnosisAgent
 from backend.agents.fixer_agent import FixerAgent
@@ -17,6 +18,7 @@ from backend.agents.vector_store import VectorStore
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 class AgentOrchestrator:
@@ -45,7 +47,7 @@ class AgentOrchestrator:
             "step": step,
             "message": message,
             "status": (status or event.status).value if hasattr((status or event.status), "value") else str(status or event.status),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "details": details or {},
         })
 
@@ -57,93 +59,114 @@ class AgentOrchestrator:
         logger.info(f"[Orchestrator] Starting processing for event {event.event_id}")
 
         try:
-            # === STEP 1: DIAGNOSIS ===
-            event.status = PipelineStatus.DIAGNOSING
-            await self._append_timeline(
-                event,
-                "diagnosis_started",
-                "Diagnosis started",
-                details={"repo": event.repo_full_name, "branch": event.branch},
-            )
-            await event.save()
-            await self._broadcast("diagnosis_started", event)
+            with tracer.start_as_current_span("orchestrator.process_failure") as process_span:
+                process_span.set_attribute("pipegenie.event_id", event.event_id)
+                process_span.set_attribute("pipegenie.repo", event.repo_full_name)
+                process_span.set_attribute("pipegenie.branch", event.branch)
 
-            diagnosis = await self.diagnosis_agent.analyze(
-                event_id=str(event.id),
-                logs=event.raw_logs,
-                repo=event.repo_full_name,
-                branch=event.branch,
-                commit_message=event.commit_message
-            )
+                # === STEP 1: DIAGNOSIS ===
+                with tracer.start_as_current_span("orchestrator.diagnosis") as diagnosis_span:
+                    event.status = PipelineStatus.DIAGNOSING
+                    await self._append_timeline(
+                        event,
+                        "diagnosis_started",
+                        "Diagnosis started",
+                        details={"repo": event.repo_full_name, "branch": event.branch},
+                    )
+                    await event.save()
+                    await self._broadcast("diagnosis_started", event)
 
-            event.root_cause = diagnosis.get("root_cause")
-            event.log_summary = diagnosis.get("summary", "")
-            event.failure_category = FailureCategory(
-                diagnosis.get("failure_category", "unknown")
-            )
-            event.metadata["diagnosis"] = diagnosis
-            await self._append_timeline(
-                event,
-                "diagnosis_complete",
-                "Diagnosis completed",
-                details={"failure_category": diagnosis.get("failure_category", "unknown")},
-            )
-            await event.save()
-            await self._broadcast("diagnosis_complete", event, extra={"diagnosis": diagnosis})
+                    diagnosis = await self.diagnosis_agent.analyze(
+                        event_id=str(event.id),
+                        logs=event.raw_logs,
+                        repo=event.repo_full_name,
+                        branch=event.branch,
+                        commit_message=event.commit_message
+                    )
 
-            # === STEP 2: FIX GENERATION ===
-            event.status = PipelineStatus.FIX_PENDING
-            await self._append_timeline(
-                event,
-                "fix_generation_started",
-                "Fix generation started",
-            )
-            await event.save()
+                    event.root_cause = diagnosis.get("root_cause")
+                    event.log_summary = diagnosis.get("summary", "")
+                    event.failure_category = FailureCategory(
+                        diagnosis.get("failure_category", "unknown")
+                    )
+                    event.metadata["diagnosis"] = diagnosis
+                    diagnosis_span.set_attribute(
+                        "pipegenie.failure_category",
+                        diagnosis.get("failure_category", "unknown"),
+                    )
+                    diagnosis_span.set_attribute(
+                        "pipegenie.diagnosis_confidence",
+                        float(diagnosis.get("confidence", 0.0) or 0.0),
+                    )
+                    await self._append_timeline(
+                        event,
+                        "diagnosis_complete",
+                        "Diagnosis completed",
+                        details={"failure_category": diagnosis.get("failure_category", "unknown")},
+                    )
+                    await event.save()
+                    await self._broadcast("diagnosis_complete", event, extra={"diagnosis": diagnosis})
 
-            fix = await self.fixer_agent.generate_fix(
-                diagnosis=diagnosis,
-                repo=event.repo_full_name,
-                branch=event.branch,
-                raw_logs=event.raw_logs
-            )
+                # === STEP 2: FIX GENERATION ===
+                with tracer.start_as_current_span("orchestrator.fix_generation") as fix_span:
+                    event.status = PipelineStatus.FIX_PENDING
+                    await self._append_timeline(
+                        event,
+                        "fix_generation_started",
+                        "Fix generation started",
+                    )
+                    await event.save()
 
-            event.proposed_fix = fix.get("fix_description")
-            event.fix_script = fix.get("fix_script")
-            event.metadata["fix"] = fix
-            await self._append_timeline(
-                event,
-                "fix_generated",
-                "Fix generated",
-                details={"fix_type": fix.get("fix_type", "unknown")},
-            )
-            await event.save()
-            await self._broadcast("fix_generated", event, extra={"fix": fix})
+                    fix = await self.fixer_agent.generate_fix(
+                        diagnosis=diagnosis,
+                        repo=event.repo_full_name,
+                        branch=event.branch,
+                        raw_logs=event.raw_logs
+                    )
 
-            # === STEP 3: GUARDIAN RISK EVALUATION ===
-            risk = self.risk_evaluator.evaluate(
-                fix=fix,
-                diagnosis=diagnosis,
-                repo=event.repo_full_name,
-                branch=event.branch
-            )
+                    event.proposed_fix = fix.get("fix_description")
+                    event.fix_script = fix.get("fix_script")
+                    event.metadata["fix"] = fix
+                    fix_span.set_attribute("pipegenie.fix_type", fix.get("fix_type", "unknown"))
+                    await self._append_timeline(
+                        event,
+                        "fix_generated",
+                        "Fix generated",
+                        details={"fix_type": fix.get("fix_type", "unknown")},
+                    )
+                    await event.save()
+                    await self._broadcast("fix_generated", event, extra={"fix": fix})
 
-            event.risk_score = risk["score"]
-            event.risk_level = risk["level"]
-            event.metadata["risk"] = risk
-            await self._append_timeline(
-                event,
-                "risk_evaluated",
-                "Risk evaluated",
-                details={"risk_level": risk["level"], "risk_score": risk["score"]},
-            )
-            await event.save()
-            await self._broadcast("risk_evaluated", event, extra={"risk": risk})
+                # === STEP 3: GUARDIAN RISK EVALUATION ===
+                with tracer.start_as_current_span("orchestrator.risk_evaluation") as risk_span:
+                    risk = self.risk_evaluator.evaluate(
+                        fix=fix,
+                        diagnosis=diagnosis,
+                        repo=event.repo_full_name,
+                        branch=event.branch
+                    )
 
-            # === STEP 4: ALWAYS REQUIRE HUMAN APPROVAL ===
-            logger.info(
-                f"[Orchestrator] Routing fix to human approval (risk={risk['level']}, score={risk['score']})"
-            )
-            await self._request_approval(event, fix, risk)
+                    event.risk_score = risk["score"]
+                    event.risk_level = risk["level"]
+                    event.metadata["risk"] = risk
+                    risk_span.set_attribute("pipegenie.risk_level", risk["level"])
+                    risk_span.set_attribute("pipegenie.risk_score", float(risk["score"]))
+                    await self._append_timeline(
+                        event,
+                        "risk_evaluated",
+                        "Risk evaluated",
+                        details={"risk_level": risk["level"], "risk_score": risk["score"]},
+                    )
+                    await event.save()
+                    await self._broadcast("risk_evaluated", event, extra={"risk": risk})
+
+                # === STEP 4: ALWAYS REQUIRE HUMAN APPROVAL ===
+                logger.info(
+                    f"[Orchestrator] Routing fix to human approval (risk={risk['level']}, score={risk['score']})"
+                )
+                process_span.set_attribute("pipegenie.final_risk_level", risk["level"])
+                process_span.set_attribute("pipegenie.final_risk_score", float(risk["score"]))
+                await self._request_approval(event, fix, risk)
 
         except Exception as e:
             logger.error(f"[Orchestrator] Pipeline failed for {event.event_id}: {e}", exc_info=True)
@@ -275,6 +298,8 @@ class AgentOrchestrator:
         )
         await event.save()
 
+        timing = risk.get("timing", {}) if isinstance(risk, dict) else {}
+
         approval = ApprovalRequest(
             event_id=str(event.id),
             repo_full_name=event.repo_full_name,
@@ -286,6 +311,9 @@ class AgentOrchestrator:
             risk_score=risk["score"],
             risk_level=risk["level"],
             risk_reasons=risk.get("reasons", []),
+            estimated_duration_seconds=float(timing.get("estimated_seconds", 0.0) or 0.0),
+            timing_level=timing.get("level", "unknown"),
+            timing_reasons=timing.get("reasons", []),
             expires_at=datetime.utcnow() + timedelta(hours=24)
         )
         await approval.insert()
@@ -298,11 +326,73 @@ class AgentOrchestrator:
             "risk": risk
         })
 
-    async def execute_approved_fix(self, approval_id: str, reviewer: str, note: str = ""):
+    async def execute_approved_fix(
+        self,
+        approval_id: str,
+        reviewer: str,
+        note: str = "",
+        edited_fix_script: str | None = None,
+    ):
         """Called when a human approves a fix."""
         approval = await ApprovalRequest.get(approval_id)
         if not approval or approval.status != ApprovalStatus.PENDING:
             raise ValueError("Approval not found or already processed")
+
+        event = await PipelineEvent.get(approval.event_id)
+        if not event:
+            raise ValueError("Pipeline event not found")
+
+        fix = dict(event.metadata.get("fix", {}) or {})
+        if not fix.get("fix_script"):
+            fix["fix_script"] = approval.fix_script or ""
+        if not fix.get("fix_description"):
+            fix["fix_description"] = approval.proposed_fix or event.proposed_fix or ""
+
+        risk = dict(event.metadata.get("risk", {}) or {})
+
+        edit_applied = False
+        if edited_fix_script is not None:
+            edited_value = edited_fix_script.strip()
+            if not edited_value:
+                raise ValueError("Edited script cannot be empty")
+
+            existing_script = (approval.fix_script or "").strip()
+            if edited_value != existing_script:
+                fix["fix_script"] = edited_value
+                diagnosis = event.metadata.get("diagnosis", {})
+                if not isinstance(diagnosis, dict):
+                    diagnosis = {}
+
+                risk = self.risk_evaluator.evaluate(
+                    fix=fix,
+                    diagnosis=diagnosis,
+                    repo=event.repo_full_name,
+                    branch=event.branch,
+                )
+
+                event.fix_script = edited_value
+                event.risk_score = risk.get("score")
+                event.risk_level = risk.get("level")
+                event.metadata["fix"] = fix
+                event.metadata["risk"] = risk
+
+                approval.fix_script = edited_value
+                approval.risk_score = risk.get("score", approval.risk_score)
+                approval.risk_level = risk.get("level", approval.risk_level)
+                approval.risk_reasons = risk.get("reasons", [])
+                timing = risk.get("timing", {})
+                approval.estimated_duration_seconds = float(timing.get("estimated_seconds", 0.0) or 0.0)
+                approval.timing_level = timing.get("level", "unknown")
+                approval.timing_reasons = timing.get("reasons", [])
+
+                edit_applied = True
+                await self._append_timeline(
+                    event,
+                    "approval_script_edited",
+                    f"Fix script edited by {reviewer}",
+                    details={"reviewer": reviewer, "line_count": len([line for line in edited_value.splitlines() if line.strip()])},
+                )
+                await event.save()
 
         approval.status = ApprovalStatus.APPROVED
         approval.reviewed_by = reviewer
@@ -310,17 +400,11 @@ class AgentOrchestrator:
         approval.reviewed_at = datetime.utcnow()
         await approval.save()
 
-        event = await PipelineEvent.get(approval.event_id)
-        if not event:
-            raise ValueError("Pipeline event not found")
-
-        fix = event.metadata.get("fix", {})
-        risk = event.metadata.get("risk", {})
         await self._append_timeline(
             event,
             "approval_approved",
             f"Approval approved by {reviewer}",
-            details={"reviewer": reviewer, "note": note},
+            details={"reviewer": reviewer, "note": note, "script_edited": edit_applied},
         )
         await event.save()
         await self._auto_apply_fix(event, fix, risk, auto_applied=False, approved_by=reviewer)
@@ -363,7 +447,7 @@ class AgentOrchestrator:
                 "risk_level": event.risk_level,
                 "root_cause": event.root_cause,
                 "proposed_fix": event.proposed_fix,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             }
             if extra:
                 payload.update(extra)

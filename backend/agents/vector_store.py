@@ -150,7 +150,7 @@ class VectorStore:
             import httpx
             response = httpx.post(
                 f"{settings.OLLAMA_BASE_URL}/api/embeddings",
-                json={"model": "mistral", "prompt": text}
+                json={"model": settings.LLM_MODEL, "prompt": text}
             )
             if response.status_code == 200:
                 return response.json()["embedding"]

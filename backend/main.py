@@ -17,6 +17,7 @@ from backend.models.fix_record import FixRecord
 from backend.routes import webhook, approvals, dashboard
 from backend.agents.orchestrator import AgentOrchestrator
 from backend.services.websocket_manager import WebSocketManager
+from backend.observability import setup_observability
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,6 +74,7 @@ app = FastAPI(
     version=settings.APP_VERSION,
     lifespan=lifespan
 )
+setup_observability(app)
 
 # CORS
 app.add_middleware(
@@ -101,11 +103,20 @@ async def root():
 
 @app.get("/health")
 async def health():
+    llm_provider = (settings.LLM_PROVIDER or "").strip().lower()
+    llm_model = {
+        "gemini": settings.GEMINI_MODEL,
+        "mistral": settings.MISTRAL_MODEL,
+        "ollama": settings.LLM_MODEL,
+    }.get(llm_provider, settings.GEMINI_MODEL)
+
     return {
         "status": "healthy",
         "mongodb": "connected",
         "redis": "connected" if app.state.redis else "unavailable",
-        "ollama": settings.OLLAMA_BASE_URL if settings.USE_OLLAMA else "mistral-api"
+        "llm_provider": llm_provider or "gemini",
+        "llm_model": llm_model,
+        "llm_endpoint": settings.OLLAMA_BASE_URL if llm_provider == "ollama" else "managed-api",
     }
 
 
