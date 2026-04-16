@@ -7,6 +7,7 @@ export type HealthPayload = {
   groq_configured: boolean;
   telegram_configured: boolean;
   github_token_configured: boolean;
+  langfuse_configured?: boolean;
 };
 
 function Flag({ ok, label }: { ok: boolean; label: string }) {
@@ -61,10 +62,11 @@ export async function HealthPanel() {
           Could not reach the API: {error}
         </p>
       ) : data ? (
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <Flag ok={data.groq_configured} label="Groq" />
           <Flag ok={data.telegram_configured} label="Telegram" />
           <Flag ok={data.github_token_configured} label="GitHub token" />
+          <Flag ok={Boolean(data.langfuse_configured)} label="Langfuse" />
         </div>
       ) : null}
     </section>

@@ -6,6 +6,7 @@ PipelineMedic — intended flow:
   (message includes PR link when a PR was opened).
 
 Env: GROQ_API_KEY, TELEGRAM_*, GITHUB_* (token required for real PRs).
+Optional: LANGFUSE_* for LLM observability and cost tracking (Groq generations).
 CI: POST { "repository", "log" | "log_text" } to /webhook.
 """
 
@@ -21,11 +22,59 @@ from typing import Any, Literal
 
 import requests
 from dotenv import load_dotenv
+from langfuse import Langfuse
+from langfuse.types import TraceContext
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 load_dotenv()
+
+# --- Langfuse (optional: LLM cost / usage tracking) -------------------------------
+
+_langfuse_client: Langfuse | None = None
+_langfuse_init_done: bool = False
+
+
+def _get_langfuse() -> Langfuse | None:
+    """Returns client when LANGFUSE_SECRET_KEY + LANGFUSE_PUBLIC_KEY are set; else None."""
+    global _langfuse_client, _langfuse_init_done
+    if _langfuse_init_done:
+        return _langfuse_client
+    _langfuse_init_done = True
+    sk = os.getenv("LANGFUSE_SECRET_KEY", "").strip()
+    pk = os.getenv("LANGFUSE_PUBLIC_KEY", "").strip()
+    if not sk or not pk:
+        return None
+    host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com").strip()
+    _langfuse_client = Langfuse(
+        secret_key=sk,
+        public_key=pk,
+        host=host or "https://cloud.langfuse.com",
+    )
+    return _langfuse_client
+
+
+def _langfuse_flush() -> None:
+    lf = _get_langfuse()
+    if lf is None:
+        return
+    try:
+        lf.flush()
+    except Exception as e:
+        print(f"[PipelineMedic] Langfuse flush failed: {e}", flush=True)
+
+
+def _groq_usage_to_usage_details(usage: dict[str, Any]) -> dict[str, int]:
+    pt = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+    ct = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+    tt = int(usage.get("total_tokens") or (pt + ct))
+    return {
+        "prompt_tokens": pt,
+        "completion_tokens": ct,
+        "total_tokens": tt,
+    }
+
 
 # --- Groq + rule-based analysis -------------------------------------------------
 
@@ -117,7 +166,11 @@ def _parse_json_content(content: str) -> dict[str, Any]:
     return json.loads(content)
 
 
-def analyze_log(log_text: str) -> tuple[dict[str, Any], str]:
+def analyze_log(
+    log_text: str,
+    *,
+    repository: str | None = None,
+) -> tuple[dict[str, Any], str]:
     key = os.getenv("GROQ_API_KEY", "").strip()
     if not key:
         print("[PipelineMedic] GROQ_API_KEY is empty — using rule-based analysis", flush=True)
@@ -134,22 +187,78 @@ def analyze_log(log_text: str) -> tuple[dict[str, Any], str]:
         "temperature": 0.2,
     }
 
-    def _call_groq(with_json_object: bool) -> tuple[dict[str, Any], str]:
+    lf = _get_langfuse()
+    trace_id: str | None = None
+    if lf is not None:
+        try:
+            trace_id = lf.create_trace_id()
+        except Exception as e:
+            print(f"[PipelineMedic] Langfuse create_trace_id failed: {e}", flush=True)
+            lf = None
+
+    def _call_groq(with_json_object: bool, attempt_label: str) -> tuple[dict[str, Any], str]:
         body = {**base_body}
         if with_json_object:
             body["response_format"] = {"type": "json_object"}
-        r = requests.post(GROQ_URL, headers=headers, json=body, timeout=60)
-        r.raise_for_status()
-        data = r.json()
-        msg = data["choices"][0]["message"]["content"]
-        parsed = _parse_json_content(msg)
-        return _normalize_analysis(parsed), "groq"
+        gen = None
+        if lf is not None and trace_id is not None:
+            try:
+                mp: dict[str, Any] = {"temperature": body.get("temperature", 0.2)}
+                if with_json_object:
+                    mp["response_format"] = "json_object"
+                gen = lf.start_observation(
+                    trace_context=TraceContext(trace_id=trace_id),
+                    as_type="generation",
+                    name="groq_chat_completion",
+                    model=model,
+                    model_parameters=mp,
+                    input=body.get("messages"),
+                    metadata={
+                        "attempt": attempt_label,
+                        "repository": (repository or "")[:200],
+                        "provider": "groq",
+                    },
+                )
+            except Exception as e:
+                print(f"[PipelineMedic] Langfuse start_observation failed: {e}", flush=True)
+
+        try:
+            r = requests.post(GROQ_URL, headers=headers, json=body, timeout=60)
+            r.raise_for_status()
+            data = r.json()
+            msg = data["choices"][0]["message"]["content"]
+            parsed = _parse_json_content(msg)
+            norm = _normalize_analysis(parsed)
+            if gen is not None:
+                try:
+                    usage_raw = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+                    ud = _groq_usage_to_usage_details(usage_raw)
+                    gen.update(output=norm, usage_details=ud)
+                except Exception as e:
+                    print(f"[PipelineMedic] Langfuse generation update failed: {e}", flush=True)
+            return norm, "groq"
+        except Exception as e:
+            if gen is not None:
+                try:
+                    gen.update(
+                        level="ERROR",
+                        status_message=str(e)[:500],
+                    )
+                except Exception:
+                    pass
+            raise
+        finally:
+            if gen is not None:
+                try:
+                    gen.end()
+                except Exception as e:
+                    print(f"[PipelineMedic] Langfuse generation end failed: {e}", flush=True)
 
     try:
-        return _call_groq(True)
+        return _call_groq(True, "json_object")
     except Exception as e1:
         try:
-            return _call_groq(False)
+            return _call_groq(False, "plain")
         except Exception as e2:
             print(
                 f"[PipelineMedic] Groq failed (json_object: {e1!r}; retry: {e2!r}) — using rules",
@@ -682,6 +791,10 @@ def health_payload() -> dict[str, Any]:
             os.getenv("TELEGRAM_BOT_TOKEN", "").strip() and _telegram_chat_ids()
         ),
         "github_token_configured": bool(os.getenv("GITHUB_TOKEN", "").strip()),
+        "langfuse_configured": bool(
+            os.getenv("LANGFUSE_SECRET_KEY", "").strip()
+            and os.getenv("LANGFUSE_PUBLIC_KEY", "").strip()
+        ),
     }
 
 
@@ -731,45 +844,48 @@ async def process_webhook(request: Request) -> JSONResponse:
     repo_str = str(repository).strip()
     log_str = str(log_text)
 
-    analysis, source = analyze_log(log_str)
-    decision = decide(analysis)
-    log_excerpt = extract_error_line(log_str)
-
-    # Error → (if auto_fix) apply patch + open PR on GitHub → then notify with PR link
-    github_info: dict[str, Any] = {}
     try:
-        github_info = maybe_create_autofix_pr(
-            repo_str,
-            str(repository_full_name).strip() if repository_full_name else None,
-            analysis,
-            decision,
+        analysis, source = analyze_log(log_str, repository=repo_str)
+        decision = decide(analysis)
+        log_excerpt = extract_error_line(log_str)
+
+        # Error → (if auto_fix) apply patch + open PR on GitHub → then notify with PR link
+        github_info: dict[str, Any] = {}
+        try:
+            github_info = maybe_create_autofix_pr(
+                repo_str,
+                str(repository_full_name).strip() if repository_full_name else None,
+                analysis,
+                decision,
+            )
+        except Exception as e:
+            github_info = {"ok": False, "mode": "error", "error": str(e)}
+
+        if decision == "auto_fix":
+            mock_pipeline_rerun(decision)
+
+        notify_console_mock_slack(
+            repo_str, decision, analysis, source, log_excerpt, github_info
         )
-    except Exception as e:
-        github_info = {"ok": False, "mode": "error", "error": str(e)}
+        notify_telegram(repo_str, decision, analysis, source, log_excerpt, github_info)
 
-    if decision == "auto_fix":
-        mock_pipeline_rerun(decision)
+        try:
+            append_incident(repo_str, log_excerpt, analysis, decision)
+        except Exception:
+            pass
 
-    notify_console_mock_slack(
-        repo_str, decision, analysis, source, log_excerpt, github_info
-    )
-    notify_telegram(repo_str, decision, analysis, source, log_excerpt, github_info)
-
-    try:
-        append_incident(repo_str, log_excerpt, analysis, decision)
-    except Exception:
-        pass
-
-    out: dict[str, Any] = {
-        "status": "processed",
-        "repository": repo_str,
-        "decision": decision,
-        "analysis": analysis,
-        "analysis_source": source,
-    }
-    if github_info:
-        out["github"] = github_info
-    return JSONResponse(status_code=200, content=out)
+        out: dict[str, Any] = {
+            "status": "processed",
+            "repository": repo_str,
+            "decision": decision,
+            "analysis": analysis,
+            "analysis_source": source,
+        }
+        if github_info:
+            out["github"] = github_info
+        return JSONResponse(status_code=200, content=out)
+    finally:
+        _langfuse_flush()
 
 
 @app.post("/webhook")
