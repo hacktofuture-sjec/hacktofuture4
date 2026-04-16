@@ -1,5 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'userdashboard.dart';
+
+const String backendBaseUrl = 'http://127.0.0.1:5000';
 
 class MyTaskPage extends StatefulWidget {
   const MyTaskPage({super.key});
@@ -12,6 +16,16 @@ class _MyTaskPageState extends State<MyTaskPage> {
   final _taskController = TextEditingController();
   String _selectedPriority = 'Medium';
   String _selectedStatus = 'To Do';
+  bool _taskInteractionSent = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!_taskInteractionSent && AppState.tasks.length > 2) {
+      _sendTaskInteractionEvent();
+      _taskInteractionSent = true;
+    }
+  }
 
   void _addTask() {
     if (_taskController.text.isNotEmpty) {
@@ -26,6 +40,43 @@ class _MyTaskPageState extends State<MyTaskPage> {
       });
       _taskController.clear();
       Navigator.pop(context);
+
+      // Track interaction when task is added
+      InteractionTracker.trackButtonClick();
+
+      // If user now has more than 2 tasks, send interaction event
+      if (AppState.tasks.length > 2 && !_taskInteractionSent) {
+        _sendTaskInteractionEvent();
+        _taskInteractionSent = true;
+      }
+    }
+  }
+
+  Future<void> _sendTaskInteractionEvent() async {
+    final interactionData = InteractionTracker.getInteractionData();
+    InteractionTracker.recordLiveEvent('User created task: now has ${AppState.tasks.length} tasks');
+    
+    try {
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl/session'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': AppState.currentUserEmail.isEmpty ? 'anonymous_user' : AppState.currentUserEmail,
+          'device': 'user_dashboard',
+          'event': 'user_task_interaction',
+          'keystroke_interval': 0,
+          'interaction_data': {
+            ...interactionData,
+            'task_count': AppState.tasks.length,
+          },
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        print('Failed to send task interaction: ${response.body}');
+      }
+    } catch (e) {
+      print('Error sending task interaction: $e');
     }
   }
 

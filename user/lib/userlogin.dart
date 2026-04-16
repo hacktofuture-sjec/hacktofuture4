@@ -183,6 +183,9 @@ class _UserLoginPageState extends State<UserLoginPage> {
                                         ? 'anonymous_user'
                                         : _emailController.text.trim();
 
+                                    // Store current user email in AppState
+                                    AppState.currentUserEmail = email;
+
                                     Navigator.pushReplacement(
                                       context,
                                       MaterialPageRoute(

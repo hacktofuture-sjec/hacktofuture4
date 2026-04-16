@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import firebase_admin
 from firebase_admin import credentials, firestore
 from config import FIREBASE_KEY_PATH
@@ -66,6 +66,34 @@ except Exception as e:
 _load_fallback_events()
 
 
+def _is_duplicate_event(data, window_seconds=30):
+    if _db is None:
+        return False
+
+    if not data.get('email') or not data.get('event') or not data.get('ip'):
+        return False
+
+    try:
+        cutoff = datetime.utcnow() - timedelta(seconds=window_seconds)
+        query = (
+            _db.collection('events')
+            .where('event', '==', data['event'])
+            .where('email', '==', data['email'])
+            .where('ip', '==', data['ip'])
+            .where('device', '==', data.get('device', 'unknown'))
+        )
+        for doc in query.stream():
+            doc_data = doc.to_dict()
+            created_at = doc_data.get('created_at')
+            if isinstance(created_at, datetime) and created_at >= cutoff:
+                print('Duplicate event detected, skipping store:', data)
+                return True
+    except Exception as e:
+        print('Duplicate check failed:', e)
+
+    return False
+
+
 def store_event(data):
     print('store_event FUNCTION CALLED')
 
@@ -74,6 +102,8 @@ def store_event(data):
 
     if _db is not None:
         try:
+            if _is_duplicate_event(data):
+                return
             data['created_at'] = firestore.SERVER_TIMESTAMP
             print('Writing to Firestore:', data)
             _db.collection('events').add(data)

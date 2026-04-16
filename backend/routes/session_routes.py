@@ -28,6 +28,13 @@ def resolve_client_ip():
 
     return ip or "unknown"
 
+def is_dummy_event(email, event):
+    if not email or not str(email).strip():
+        return event != 'admin_login'
+    normalized = str(email).strip().lower()
+    return normalized == 'unknown'
+
+
 @session_bp.route('/session', methods=['POST'])
 def handle_session():
     data = request.json or {}
@@ -40,6 +47,12 @@ def handle_session():
 
     ip = resolve_client_ip()
     location = get_location(ip)
+
+    if is_dummy_event(email, event):
+        return jsonify({"message": "Ignored anonymous/dummy event"}), 204
+
+    if not email:
+        email = 'ADMIN' if event == 'admin_login' else 'Unknown'
 
     session_id = str(uuid.uuid4())
 
@@ -83,7 +96,8 @@ def handle_session():
 def get_events_route():
     try:
         events = get_events()
-        return jsonify(events)
+        filtered = [e for e in events if e.get('email') and str(e.get('email')).strip().lower() != 'unknown']
+        return jsonify(filtered)
     except Exception as e:
         print("Error in /events route:", e)
         return jsonify([]), 200

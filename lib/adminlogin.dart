@@ -183,19 +183,8 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
 
                                                   print('Session created with ID: ${sessionResult['session_id']}');
 
-                                                  // Optional: Still call analyzeEvent if needed for risk scoring
-                                                  print('Calling analyzeEvent...');
-                                                  final result = await ApiService.analyzeEvent(
-                                                    sessionId: sessionResult['session_id'],  // Use the new session ID
-                                                    location: 'India',  // Or omit if location is fetched server-side
-                                                    device: 'Android Chrome',
-                                                    event: 'admin_login',
-                                                    keystrokeInterval: 15,
-                                                  );
-                                                  print('analyzeEvent completed: ${result['action']}');
-
                                                   setState(() {
-                                                    _statusMessage = 'Login logged: ${result['action']} (${result['trust_score']})';
+                                                    _statusMessage = 'Login successful';
                                                   });
                                                 } catch (backendError) {
                                                   print('Backend error: $backendError');

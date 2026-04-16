@@ -9,6 +9,17 @@ import 'userlogin.dart';
 
 // Simple global state for the demo
 class AppState {
+  static String currentUserEmail = ''; // Store logged-in user's email
+  static String get currentUserName {
+    final email = currentUserEmail.trim();
+    if (email.isEmpty) return 'Guest';
+    if (email.contains('@')) {
+      final name = email.split('@').first;
+      return name.isEmpty ? email : name;
+    }
+    return email;
+  }
+
   static bool isClockedIn = true; // Set to true by default as requested
   static DateTime? clockInTime;
   static DateTime? clockOutTime;
@@ -117,7 +128,32 @@ class InteractionTracker {
           : 'High interaction burst: $burstCount interactions in 10 seconds.';
       if (lastMessage != newMessage) {
         recordLiveEvent(newMessage);
+        // Send data to backend only during bursts
+        _sendInteractionDataToBackend();
       }
+    }
+  }
+
+  static Future<void> _sendInteractionDataToBackend() async {
+    final interactionData = getInteractionData();
+    try {
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl/session'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': AppState.currentUserEmail.isEmpty ? 'anonymous_user' : AppState.currentUserEmail,
+          'device': 'user_dashboard',
+          'event': 'user_interaction_burst',
+          'keystroke_interval': 0,
+          'interaction_data': interactionData,
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        print('Failed to send interaction burst data: ${response.body}');
+      }
+    } catch (e) {
+      print('Error sending interaction burst data: $e');
     }
   }
 
@@ -203,7 +239,7 @@ class _DashboardPageState extends State<DashboardPage> {
         Uri.parse('$backendBaseUrl/session'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'email': 'monis@skyportal.com', // Current user email
+          'email': AppState.currentUserEmail.isEmpty ? 'anonymous_user' : AppState.currentUserEmail,
           'device': 'user_dashboard',
           'event': 'user_interaction_update',
           'keystroke_interval': 0,
@@ -229,7 +265,6 @@ class _DashboardPageState extends State<DashboardPage> {
             onNavigate: _refresh,
             onTabSwitch: () {
               InteractionTracker.trackTabSwitch();
-              _sendInteractionData();
             },
           ),
           Expanded(
@@ -239,7 +274,6 @@ class _DashboardPageState extends State<DashboardPage> {
                   onClockToggle: _refresh,
                   onButtonClick: () {
                     InteractionTracker.trackButtonClick();
-                    _sendInteractionData();
                   },
                 ),
                 Expanded(
@@ -248,20 +282,20 @@ class _DashboardPageState extends State<DashboardPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Column(
+                        Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Welcome back, user1!',
-                              style: TextStyle(
+                              'Welcome back, ${AppState.currentUserName}!',
+                              style: const TextStyle(
                                 color: Color(0xFF0369A1),
                                 fontSize: 34,
                                 fontWeight: FontWeight.w900,
                                 letterSpacing: -0.5,
                               ),
                             ),
-                            SizedBox(height: 8),
-                            Text(
+                            const SizedBox(height: 8),
+                            const Text(
                               ' SkyPortal Employee Hub ',
                               style: TextStyle(color: Color(0xFF0EA5E9), fontSize: 16, fontWeight: FontWeight.w500),
                             ),
@@ -480,12 +514,14 @@ class _TopBarState extends State<_TopBar> {
             onPressed: _logout,
           ),
           const SizedBox(width: 16),
-          const CircleAvatar(
+          CircleAvatar(
             radius: 22,
-            backgroundColor: Color(0xFF0EA5E9),
+            backgroundColor: const Color(0xFF0EA5E9),
             child: CircleAvatar(
               radius: 20,
-              backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=user1'),
+              backgroundImage: NetworkImage(
+                'https://i.pravatar.cc/150?u=${Uri.encodeComponent(AppState.currentUserEmail.isEmpty ? 'anonymous_user' : AppState.currentUserEmail)}',
+              ),
             ),
           ),
         ],
@@ -896,15 +932,20 @@ class _UserCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const CircleAvatar(radius: 18, backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=user1')),
+          CircleAvatar(
+            radius: 18,
+            backgroundImage: NetworkImage(
+              'https://i.pravatar.cc/150?u=${Uri.encodeComponent(AppState.currentUserEmail.isEmpty ? 'anonymous_user' : AppState.currentUserEmail)}',
+            ),
+          ),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('user1', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                Text('UI/UX Designer', style: TextStyle(color: Colors.white70, fontSize: 11)),
+                Text(AppState.currentUserName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                const Text('UI/UX Designer', style: TextStyle(color: Colors.white70, fontSize: 11)),
               ],
             ),
           ),
