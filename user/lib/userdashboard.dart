@@ -1,11 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'Mytask.dart';
 import 'Profile.dart';
 import 'leaveandatt.dart';
+import 'userlogin.dart';
 
 // Simple global state for the demo
 class AppState {
-  static bool isClockedIn = false;
+  static bool isClockedIn = true; // Set to true by default as requested
   static DateTime? clockInTime;
   static DateTime? clockOutTime;
   static List<Map<String, dynamic>> attendanceLogs = [];
@@ -40,6 +42,28 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Automatically clock in and start timer when the dashboard loads (login)
+    if (AppState.clockInTime == null) {
+      AppState.clockInTime = DateTime.now();
+      AppState.isClockedIn = true;
+    }
+    
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
   void _refresh() => setState(() {});
 
   @override
@@ -63,7 +87,7 @@ class _DashboardPageState extends State<DashboardPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Welcome back, Monis!',
+                              'Welcome back, user1!',
                               style: TextStyle(
                                 color: Color(0xFF0369A1),
                                 fontSize: 34,
@@ -73,7 +97,7 @@ class _DashboardPageState extends State<DashboardPage> {
                             ),
                             SizedBox(height: 8),
                             Text(
-                              'SkyPortal Employee Hub • Monday, Oct 23',
+                              ' SkyPortal Employee Hub ',
                               style: TextStyle(color: Color(0xFF0EA5E9), fontSize: 16, fontWeight: FontWeight.w500),
                             ),
                           ],
@@ -139,7 +163,6 @@ class _Sidebar extends StatelessWidget {
           const SizedBox(height: 64),
           _buildSidebarItem(context, Icons.home_rounded, 'My Dashboard', isSelected: true, destination: const DashboardPage()),
           _buildSidebarItem(context, Icons.assignment_rounded, 'My Tasks', destination: const MyTaskPage()),
-          _buildSidebarItem(context, Icons.groups_rounded, 'Team Hub', destination: null),
           _buildSidebarItem(context, Icons.event_note_rounded, 'Leave & Attendance', destination: const LeaveAndAttPage()),
           _buildSidebarItem(context, Icons.badge_rounded, 'My Profile', destination: const ProfilePage()),
           const Spacer(),
@@ -160,7 +183,7 @@ class _Sidebar extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.white.withValues(alpha: 0.2) : Colors.transparent,
+          color: isSelected ? Colors.white.withAlpha(51) : Colors.transparent,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
@@ -191,6 +214,39 @@ class _TopBar extends StatefulWidget {
 }
 
 class _TopBarState extends State<_TopBar> {
+  void _logout() {
+    // Record out time
+    AppState.clockOutTime = DateTime.now();
+    AppState.isClockedIn = false;
+    
+    // Calculate session duration and add to logs
+    if (AppState.clockInTime != null) {
+      Duration duration = AppState.clockOutTime!.difference(AppState.clockInTime!);
+      AppState.attendanceLogs.add({
+        'in': AppState.clockInTime,
+        'out': AppState.clockOutTime,
+        'duration': duration,
+      });
+    }
+
+    // Reset clockInTime for next potential session
+    AppState.clockInTime = null; 
+
+    // Navigate to login page
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const UserLoginPage()),
+      (route) => false,
+    );
+  }
+
+  String _formatTime(DateTime? time) {
+    if (time == null) return '--:--';
+    final hour = time.hour == 0 ? 12 : (time.hour > 12 ? time.hour - 12 : time.hour);
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = time.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $period';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -198,9 +254,9 @@ class _TopBarState extends State<_TopBar> {
       padding: const EdgeInsets.symmetric(horizontal: 32),
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(bottom: BorderSide(color: Colors.blue.withValues(alpha: 0.1))),
+        border: Border(bottom: BorderSide(color: Colors.blue.withAlpha(25))),
         boxShadow: [
-          BoxShadow(color: Colors.blue.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4)),
+          BoxShadow(color: Colors.blue.withAlpha(12), blurRadius: 10, offset: const Offset(0, 4)),
         ],
       ),
       child: Row(
@@ -210,50 +266,25 @@ class _TopBarState extends State<_TopBar> {
             style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w700, letterSpacing: 1),
           ),
           const Spacer(),
-          ElevatedButton.icon(
-            onPressed: () {
-              setState(() {
-                AppState.isClockedIn = !AppState.isClockedIn;
-                if (AppState.isClockedIn) {
-                  AppState.clockInTime = DateTime.now();
-                } else {
-                  AppState.clockOutTime = DateTime.now();
-                  if (AppState.clockInTime != null) {
-                    final duration = AppState.clockOutTime!.difference(AppState.clockInTime!);
-                    AppState.attendanceLogs.add({
-                      'date': DateTime.now(),
-                      'clockIn': AppState.clockInTime,
-                      'clockOut': AppState.clockOutTime,
-                      'duration': duration,
-                    });
-                  }
-                }
-              });
-              widget.onClockToggle();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(AppState.isClockedIn ? 'Successfully Clocked In' : 'Successfully Clocked Out'),
-                  backgroundColor: AppState.isClockedIn ? Colors.green : Colors.orange,
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
-            icon: Icon(AppState.isClockedIn ? Icons.logout_rounded : Icons.timer_outlined, size: 18),
-            label: Text(AppState.isClockedIn ? 'CLOCK OUT' : 'CLOCK IN'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppState.isClockedIn ? Colors.orange : const Color(0xFF10B981),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              elevation: 0,
-            ),
+          const Text(
+            'System Active',
+            style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 13),
           ),
-          const SizedBox(width: 24),
+          const SizedBox(width: 12),
+          const Icon(Icons.circle, color: Color(0xFF10B981), size: 12),
+          const SizedBox(width: 32),
+          IconButton(
+            icon: const Icon(Icons.logout_rounded, color: Color(0xFFEF4444)),
+            tooltip: 'Logout & Clock Out',
+            onPressed: _logout,
+          ),
+          const SizedBox(width: 16),
           const CircleAvatar(
             radius: 22,
             backgroundColor: Color(0xFF0EA5E9),
             child: CircleAvatar(
               radius: 20,
-              backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=monis'),
+              backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=user1'),
             ),
           ),
         ],
@@ -269,7 +300,7 @@ class _EmployeeStatsGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(child: _StatCard(title: 'Work Hours', value: AppState.calculateTotalWorkHours(), subText: 'Today\'s Total', icon: Icons.access_time_filled_rounded, color: const Color(0xFF0EA5E9))),
+        Expanded(child: _StatCard(title: 'Work Hours', value: AppState.calculateTotalWorkHours(), subText: 'Auto-tracking active', icon: Icons.access_time_filled_rounded, color: const Color(0xFF0EA5E9))),
         const SizedBox(width: 24),
         Expanded(child: _StatCard(title: 'Tasks Done', value: '${AppState.tasks.where((t) => t['status'] == 'Done').length}/${AppState.tasks.length}', subText: 'Completion rate', icon: Icons.task_alt_rounded, color: const Color(0xFF10B981))),
         const SizedBox(width: 24),
@@ -304,7 +335,7 @@ class _StatCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
-          BoxShadow(color: color.withValues(alpha: 0.08), blurRadius: 15, offset: const Offset(0, 8)),
+          BoxShadow(color: color.withAlpha(20), blurRadius: 15, offset: const Offset(0, 8)),
         ],
       ),
       child: Column(
@@ -312,7 +343,7 @@ class _StatCard extends StatelessWidget {
         children: [
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(16)),
+            decoration: BoxDecoration(color: color.withAlpha(25), borderRadius: BorderRadius.circular(16)),
             child: Icon(icon, color: color, size: 26),
           ),
           const SizedBox(height: 24),
@@ -339,7 +370,7 @@ class _MyTasksSection extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(32),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 20, offset: const Offset(0, 10)),
+          BoxShadow(color: Colors.black.withAlpha(5), blurRadius: 20, offset: const Offset(0, 10)),
         ],
       ),
       child: Column(
@@ -429,7 +460,7 @@ class _TaskItem extends StatelessWidget {
             ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+              decoration: BoxDecoration(color: color.withAlpha(25), borderRadius: BorderRadius.circular(8)),
               child: Text(priority, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
             ),
           ],
@@ -453,7 +484,6 @@ class _AttendanceSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     String clockInStr = _formatTime(AppState.clockInTime);
-    String clockOutStr = _formatTime(AppState.clockOutTime);
 
     return Column(
       children: [
@@ -465,28 +495,18 @@ class _AttendanceSection extends StatelessWidget {
           ),
           child: Column(
             children: [
-              Icon(AppState.isClockedIn ? Icons.timer_rounded : Icons.wb_sunny_rounded, color: Colors.amber, size: 40),
               const SizedBox(height: 16),
-              Text(
-                AppState.isClockedIn ? 'Stay Productive!' : 'Have a Great Day!',
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18),
+              const Text(
+                'Work Session Active',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18),
               ),
               const SizedBox(height: 16),
-              _buildTimeRow('Clocked In', clockInStr, Icons.login_rounded, Colors.greenAccent),
-              const SizedBox(height: 8),
-              _buildTimeRow('Clocked Out', clockOutStr, Icons.logout_rounded, Colors.orangeAccent),
+              _buildTimeRow('Started At', clockInStr, Icons.login_rounded, Colors.greenAccent),
               const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {},
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2563EB),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: const Text('View Detailed Logs'),
-                ),
+              const Text(
+                'Timer started automatically on login.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white70, fontSize: 11, fontStyle: FontStyle.italic),
               ),
             ],
           ),
@@ -555,19 +575,19 @@ class _UserCard extends StatelessWidget {
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.15),
+        color: Colors.white.withAlpha(38),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         children: [
-          const CircleAvatar(radius: 18, backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=monis')),
+          const CircleAvatar(radius: 18, backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=user1')),
           const SizedBox(width: 12),
           const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Monis', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                Text('user1', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
                 Text('UI/UX Designer', style: TextStyle(color: Colors.white70, fontSize: 11)),
               ],
             ),

@@ -22,12 +22,12 @@ class ProfilePage extends StatelessWidget {
               backgroundColor: Color(0xFF0EA5E9),
               child: CircleAvatar(
                 radius: 60,
-                backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=monis'),
+                backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=user1'),
               ),
             ),
             const SizedBox(height: 24),
             const Text(
-              'Monis',
+              'user1',
               style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
             ),
             const Text(
@@ -35,7 +35,7 @@ class ProfilePage extends StatelessWidget {
               style: TextStyle(fontSize: 16, color: Color(0xFF0EA5E9), fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 48),
-            _buildProfileInfo('Email', 'monis@skyportal.com', Icons.email_rounded),
+            _buildProfileInfo('Email', 'user1@skyportal.com', Icons.email_rounded),
             _buildProfileInfo('Employee ID', 'SP-2023-042', Icons.badge_rounded),
             _buildProfileInfo('Department', 'Design & Creative', Icons.business_rounded),
             _buildProfileInfo('Location', 'Remote / Dubai', Icons.location_on_rounded),
