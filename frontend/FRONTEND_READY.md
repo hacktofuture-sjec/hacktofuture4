@@ -11,7 +11,7 @@
 - WebSocket (native browser API)
 
 ### File Structure
-```
+```text
 frontend/
 ├── app/
 │   ├── layout.tsx         (Root with fonts)
@@ -64,7 +64,7 @@ npm start
 
 ### Environment
 Create `.env.local`:
-```
+```env
 NEXT_PUBLIC_API_URL=http://localhost:8000
 NEXT_PUBLIC_WS_URL=ws://localhost:8000
 ```

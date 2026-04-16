@@ -11,17 +11,43 @@ interface Props {
 export default function TokenCostPanel({ incidentId }: Props) {
   const [report, setReport] = useState<CostReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
+    setError(null);
     api
       .getCostReport(incidentId)
-      .then(setReport)
-      .finally(() => setLoading(false));
+      .then((data) => {
+        if (!cancelled) {
+          setReport(data);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error("Failed to load token cost report", err);
+          setReport(null);
+          setError("Failed to load token cost report");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [incidentId]);
 
   if (loading) {
     return <Spinner />;
+  }
+
+  if (error) {
+    return <div className="token-cost-panel panel">{error}</div>;
   }
 
   if (!report) {

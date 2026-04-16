@@ -18,26 +18,64 @@ interface Props {
 export default function IncidentDrawer({ incidentId, onClose }: Props) {
   const [incident, setIncident] = useState<IncidentDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<
     "signals" | "diagnosis" | "plan" | "execution" | "timeline" | "cost"
   >("signals");
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
+    setError(null);
     api
       .getIncident(incidentId)
-      .then(setIncident)
-      .finally(() => setLoading(false));
+      .then((data) => {
+        if (!cancelled) {
+          setIncident(data);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error("Failed to load incident details", err);
+          setError("Failed to load incident details");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [incidentId]);
 
   const TABS = ["signals", "diagnosis", "plan", "execution", "timeline", "cost"] as const;
 
+  const refreshIncident = () => {
+    return api
+      .getIncident(incidentId)
+      .then(setIncident)
+      .catch((err) => {
+        console.error("Failed to refresh incident details", err);
+      });
+  };
+
   return (
-    <div className="drawer-overlay" onClick={onClose} aria-modal="true" role="dialog">
+    <div
+      className="drawer-overlay"
+      onClick={onClose}
+      aria-modal="true"
+      role="dialog"
+      aria-labelledby="incident-drawer-title"
+    >
       <aside className="drawer" onClick={(e) => e.stopPropagation()}>
         <div className="drawer-header">
           <div>
-            <h2 className="drawer-title">{incidentId}</h2>
+            <h2 id="incident-drawer-title" className="drawer-title">
+              {incidentId}
+            </h2>
             {incident && (
               <span className="drawer-subtitle">
                 {incident.service} · {incident.namespace} · {incident.failure_class}
@@ -71,6 +109,7 @@ export default function IncidentDrawer({ incidentId, onClose }: Props) {
 
         <div className="drawer-body">
           {loading && <Spinner />}
+          {!loading && error && <div className="panel-empty">{error}</div>}
           {!loading && incident && (
             <>
               {activeTab === "signals" && <SignalPanel snapshot={incident.snapshot} />}
@@ -78,21 +117,21 @@ export default function IncidentDrawer({ incidentId, onClose }: Props) {
                 <DiagnosisPanel
                   diagnosis={incident.diagnosis}
                   incidentId={incidentId}
-                  onRefresh={() => api.getIncident(incidentId).then(setIncident)}
+                  onRefresh={refreshIncident}
                 />
               )}
               {activeTab === "plan" && (
                 <PlannerPanel
                   plan={incident.plan}
                   incidentId={incidentId}
-                  onRefresh={() => api.getIncident(incidentId).then(setIncident)}
+                  onRefresh={refreshIncident}
                 />
               )}
               {activeTab === "execution" && (
                 <ExecutorPanel
                   execution={incident.execution}
                   incidentId={incidentId}
-                  onRefresh={() => api.getIncident(incidentId).then(setIncident)}
+                  onRefresh={refreshIncident}
                 />
               )}
               {activeTab === "timeline" && <TimelinePanel incidentId={incidentId} />}

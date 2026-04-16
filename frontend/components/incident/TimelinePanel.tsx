@@ -11,17 +11,43 @@ interface Props {
 export default function TimelinePanel({ incidentId }: Props) {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
+    setError(null);
     api
       .getTimeline(incidentId)
-      .then((res) => setEvents(res.events))
-      .finally(() => setLoading(false));
+      .then((res) => {
+        if (!cancelled) {
+          setEvents(res.events);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error("Failed to load timeline", err);
+          setError("Failed to load timeline");
+          setEvents([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [incidentId]);
 
   if (loading) {
     return <Spinner />;
+  }
+
+  if (error) {
+    return <div className="timeline-panel panel">{error}</div>;
   }
 
   return (

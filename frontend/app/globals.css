@@ -280,6 +280,11 @@ body {
   animation: spin 1s linear infinite;
 }
 
+.error-text {
+  color: var(--color-failed);
+  font-size: 12px;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

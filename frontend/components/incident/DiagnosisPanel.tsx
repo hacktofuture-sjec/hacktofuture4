@@ -21,11 +21,17 @@ export default function DiagnosisPanel({ diagnosis, incidentId, onRefresh }: Pro
           className="btn-primary"
           onClick={async () => {
             setRunning(true);
-            await api.diagnose(incidentId);
-            onRefresh();
-            setRunning(false);
+            try {
+              await api.diagnose(incidentId);
+              onRefresh();
+            } catch (error) {
+              console.error("Failed to run diagnosis", error);
+            } finally {
+              setRunning(false);
+            }
           }}
           disabled={running}
+          aria-busy={running}
         >
           {running ? <Spinner /> : "Run Diagnosis"}
         </button>

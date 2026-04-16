@@ -11,9 +11,17 @@ import {
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers = new Headers(options?.headers);
+  const method = options?.method?.toUpperCase() ?? "GET";
+  const hasBody = options?.body !== undefined && options?.body !== null;
+
+  if (hasBody && method !== "GET" && method !== "HEAD" && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }));
@@ -25,10 +33,16 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 export const api = {
   healthz: () => apiFetch<{ status: string; version: string }>("/healthz"),
 
-  listIncidents: (params?: { status?: string; limit?: number }) =>
-    apiFetch<{ total: number; incidents: IncidentListItem[] }>(
-      `/incidents/?${new URLSearchParams(params as any)}`
-    ),
+  listIncidents: (params?: { status?: string; limit?: number }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.status !== undefined) searchParams.set("status", params.status);
+    if (params?.limit !== undefined) searchParams.set("limit", String(params.limit));
+
+    const query = searchParams.toString();
+    return apiFetch<{ total: number; incidents: IncidentListItem[] }>(
+      `/incidents/${query ? `?${query}` : ""}`
+    );
+  },
 
   getIncident: (id: string) => apiFetch<IncidentDetail>(`/incidents/${id}`),
 

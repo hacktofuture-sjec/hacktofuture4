@@ -20,11 +20,17 @@ export default function ExecutorPanel({ execution, incidentId, onRefresh }: Prop
           className="btn-primary"
           onClick={async () => {
             setRunning(true);
-            await api.execute(incidentId);
-            onRefresh();
-            setRunning(false);
+            try {
+              await api.execute(incidentId);
+              onRefresh();
+            } catch (error) {
+              console.error("Failed to execute plan", error);
+            } finally {
+              setRunning(false);
+            }
           }}
           disabled={running}
+          aria-busy={running}
         >
           {running ? <Spinner /> : "Run Execute"}
         </button>

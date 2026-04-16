@@ -20,11 +20,17 @@ export default function VerifierPanel({ verification, incidentId, onRefresh }: P
           className="btn-primary"
           onClick={async () => {
             setRunning(true);
-            await api.verify(incidentId);
-            onRefresh();
-            setRunning(false);
+            try {
+              await api.verify(incidentId);
+              onRefresh();
+            } catch (error) {
+              console.error("Failed to run verification", error);
+            } finally {
+              setRunning(false);
+            }
           }}
           disabled={running}
+          aria-busy={running}
         >
           {running ? <Spinner /> : "Run Verify"}
         </button>

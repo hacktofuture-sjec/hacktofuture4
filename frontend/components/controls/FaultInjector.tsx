@@ -10,17 +10,28 @@ export default function FaultInjector({ onInjected }: Props) {
   const [scenarios, setScenarios] = useState<{ scenario_id: string; name: string }[]>([]);
   const [selected, setSelected] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.listScenarios().then(setScenarios);
+    api
+      .listScenarios()
+      .then(setScenarios)
+      .catch((err) => {
+        console.error("Failed to load scenarios", err);
+        setError("Failed to load scenarios");
+      });
   }, []);
 
   const inject = async () => {
     if (!selected) return;
     setLoading(true);
+    setError(null);
     try {
       await api.injectFault(selected);
       onInjected();
+    } catch (err) {
+      console.error("Failed to inject fault", err);
+      setError("Failed to inject fault");
     } finally {
       setLoading(false);
     }
@@ -47,9 +58,11 @@ export default function FaultInjector({ onInjected }: Props) {
         className="btn-inject"
         onClick={inject}
         disabled={loading || !selected}
+        aria-busy={loading}
       >
         {loading ? "Injecting..." : "Inject Fault"}
       </button>
+      {error && <span className="error-text">{error}</span>}
     </div>
   );
 }

@@ -25,11 +25,17 @@ export default function PlannerPanel({ plan, incidentId, onRefresh }: Props) {
           className="btn-primary"
           onClick={async () => {
             setRunning(true);
-            await api.plan(incidentId);
-            onRefresh();
-            setRunning(false);
+            try {
+              await api.plan(incidentId);
+              onRefresh();
+            } catch (error) {
+              console.error("Failed to generate plan", error);
+            } finally {
+              setRunning(false);
+            }
           }}
           disabled={running}
+          aria-busy={running}
         >
           {running ? <Spinner /> : "Generate Plan"}
         </button>

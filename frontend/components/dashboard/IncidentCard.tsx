@@ -17,7 +17,14 @@ export default function IncidentCard({ incident, isSelected, onClick }: Props) {
       onClick={onClick}
       role="listitem"
       tabIndex={0}
-      onKeyDown={(e) => e.key === "Enter" && onClick()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          if (e.key === " ") {
+            e.preventDefault();
+          }
+          onClick();
+        }
+      }}
       aria-selected={isSelected}
     >
       <div className="card-header">

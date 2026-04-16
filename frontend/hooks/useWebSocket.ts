@@ -5,6 +5,12 @@ export function useWebSocket(onMessage: (msg: WSMessage) => void) {
   const ws = useRef<WebSocket | null>(null);
   const [connected, setConnected] = useState(false);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shouldReconnect = useRef(true);
+  const messageHandlerRef = useRef(onMessage);
+
+  useEffect(() => {
+    messageHandlerRef.current = onMessage;
+  }, [onMessage]);
 
   const connect = useCallback(() => {
     const url = (process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000") + "/ws";
@@ -18,23 +24,29 @@ export function useWebSocket(onMessage: (msg: WSMessage) => void) {
     ws.current.onmessage = (e) => {
       try {
         const msg: WSMessage = JSON.parse(e.data);
-        onMessage(msg);
-      } catch {}
+        messageHandlerRef.current(msg);
+      } catch (error) {
+        console.error("Failed to process WebSocket message", error, e.data);
+      }
     };
 
     ws.current.onclose = () => {
       setConnected(false);
-      reconnectTimer.current = setTimeout(connect, 3000);
+      if (shouldReconnect.current) {
+        reconnectTimer.current = setTimeout(connect, 3000);
+      }
     };
 
     ws.current.onerror = () => {
       ws.current?.close();
     };
-  }, [onMessage]);
+  }, []);
 
   useEffect(() => {
+    shouldReconnect.current = true;
     connect();
     return () => {
+      shouldReconnect.current = false;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       ws.current?.close();
     };

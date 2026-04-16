@@ -24,13 +24,23 @@ export default function ApprovalModal({
 
   const submit = async (approved: boolean) => {
     setLoading(true);
-    await api.approve(incidentId, actionIndex, approved, note);
-    setLoading(false);
-    onDone();
+    try {
+      await api.approve(incidentId, actionIndex, approved, note);
+      onDone();
+    } catch (error) {
+      console.error("Failed to submit approval", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true">
+    <div
+      className="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="approval-modal-title"
+    >
       <div className="modal">
         <h3 id="approval-modal-title" className="modal-title">
           {action.risk_level === "high"
@@ -90,6 +100,7 @@ export default function ApprovalModal({
             className="btn-primary"
             onClick={() => submit(true)}
             disabled={loading}
+            aria-busy={loading}
           >
             {loading ? <Spinner /> : "Approve & Execute"}
           </button>

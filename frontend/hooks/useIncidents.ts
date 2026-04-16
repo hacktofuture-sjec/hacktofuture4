@@ -6,13 +6,20 @@ import { api } from "@/lib/api";
 export function useIncidents() {
   const [incidents, setIncidents] = useState<IncidentListItem[]>([]);
 
-  const reload = useCallback(() => {
-    api.listIncidents({ limit: 50 }).then((res) => setIncidents(res.incidents));
+  const reload = useCallback(async () => {
+    try {
+      const res = await api.listIncidents({ limit: 50 });
+      setIncidents(res.incidents);
+    } catch (error) {
+      console.error("Failed to load incidents", error);
+    }
   }, []);
 
   useEffect(() => {
-    reload();
-    const timer = setInterval(reload, 30_000);
+    void reload();
+    const timer = setInterval(() => {
+      void reload();
+    }, 30_000);
     return () => clearInterval(timer);
   }, [reload]);
 
