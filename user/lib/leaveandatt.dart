@@ -96,15 +96,15 @@ class LeaveAndAttPage extends StatelessWidget {
                   const SizedBox(height: 24),
                   const Divider(),
                   const SizedBox(height: 24),
-                  const Text('Recent Sessions Today', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF64748B))),
+                  const Text('Login & Logout History', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF64748B))),
                   const SizedBox(height: 16),
                   if (AppState.attendanceLogs.isEmpty && !AppState.isClockedIn)
-                    const Center(child: Text('No sessions recorded today', style: TextStyle(color: Colors.grey, fontSize: 13)))
+                    const Center(child: Text('No attendance records found today', style: TextStyle(color: Colors.grey, fontSize: 13)))
                   else
                     ...[
                       if (AppState.isClockedIn)
-                         _sessionRow(AppState.clockInTime, null, null),
-                      ...AppState.attendanceLogs.reversed.map((log) => _sessionRow(log['clockIn'], log['clockOut'], log['duration'])),
+                         _attendanceRow(AppState.clockInTime, null),
+                      ...AppState.attendanceLogs.reversed.map((log) => _attendanceRow(log['in'], log['out'])),
                     ],
                 ],
               ),
@@ -117,32 +117,45 @@ class LeaveAndAttPage extends StatelessWidget {
     );
   }
 
-  Widget _sessionRow(DateTime? start, DateTime? end, Duration? duration) {
+  Widget _attendanceRow(DateTime? login, DateTime? logout) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Icon(Icons.history_toggle_off_rounded, size: 18, color: Color(0xFF0EA5E9)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              '${_formatTime(start)} - ${end == null ? "Active" : _formatTime(end)}',
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('LOGIN', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1)),
+              const SizedBox(height: 4),
+              Text(_formatTime(login), style: const TextStyle(color: Color(0xFF1E293B), fontWeight: FontWeight.bold, fontSize: 15)),
+            ],
           ),
-          Text(
-            end == null ? "Calculating..." : _formatDuration(duration),
-            style: TextStyle(
-              color: end == null ? Colors.green : const Color(0xFF64748B),
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
-            ),
+          Container(
+            height: 30,
+            width: 1,
+            color: const Color(0xFFE2E8F0),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              const Text('LOGOUT', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1)),
+              const SizedBox(height: 4),
+              Text(
+                logout == null ? "ACTIVE" : _formatTime(logout),
+                style: TextStyle(
+                  color: logout == null ? const Color(0xFF10B981) : const Color(0xFF1E293B),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
+              ),
+            ],
           ),
         ],
       ),
