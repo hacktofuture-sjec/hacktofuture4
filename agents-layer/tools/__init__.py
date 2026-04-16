@@ -4,6 +4,13 @@ Agent-callable tool functions for Lerna (observability, detection, K8s, Qdrant).
 Add `agents-layer` to `PYTHONPATH`, then: `from tools import prometheus_query, ...`
 """
 
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
+
 from .detection import run_detection_check
 from .kubernetes_read import (
     get_configmap_secret_metadata,

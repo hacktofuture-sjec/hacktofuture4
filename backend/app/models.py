@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
+from lerna_shared.detection import DetectionCheckResponse, DetectionEvidence
 
 
 class BackendStatus(BaseModel):
@@ -37,22 +38,6 @@ class ClusterSummary(BaseModel):
     pods: Dict[str, Any] = {}
     recent_events: List[Dict[str, Any]] = []
     metrics: ClusterMetrics = ClusterMetrics()
-
-
-class DetectionEvidence(BaseModel):
-    signal_type: str
-    source: str
-    severity: str
-    message: str
-    timestamp: Optional[str] = None
-
-
-class DetectionCheckResponse(BaseModel):
-    has_error: bool
-    message: str
-    checked_at: str
-    summary: Dict[str, int]
-    evidence: List[DetectionEvidence]
 
 
 class AgentPromptUpdateRequest(BaseModel):

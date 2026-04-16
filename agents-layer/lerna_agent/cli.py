@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 from typing import Sequence
 
-from .agent import LernaAgent
+from .runtime import execute_incident_workflow, manual_incident_from_message
+from .store import WorkflowStore
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -24,8 +26,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         text = sys.stdin.read().strip()
     if not text:
         parser.error("Provide a message argument or pipe stdin")
-    agent = LernaAgent(model=args.model)
-    print(agent.run(text))
+    incident = manual_incident_from_message(text)
+    store = WorkflowStore()
+    workflow_id = f"cli-{incident.incident_id}"
+    result = asyncio.run(execute_incident_workflow(incident, store, workflow_id=workflow_id, model=args.model))
+    asyncio.run(store.close())
+    print(result["result"])
     return 0
 
 

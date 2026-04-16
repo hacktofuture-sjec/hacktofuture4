@@ -21,13 +21,15 @@ Deploy order:
    - `kubectl apply -f k8s/namespace-lerna.yaml`
    - `kubectl apply -f k8s/redis-deployment.yaml`
    - `kubectl apply -f backend/k8s/backend-rbac.yaml`
+   - `kubectl apply -f agents-layer/k8s/agents-deployment.yaml`
+   - `kubectl apply -f detection-service/k8s/detection-deployment.yaml`
    - `kubectl apply -f backend/k8s/backend-deployment.yaml`
    - `kubectl apply -f dashboard/k8s/dashboard-deployment.yaml`
    - `kubectl apply -f k8s/lerna-ingress.yaml`
 
 Notes:
 
-- Replace image placeholders in `backend/k8s/backend-deployment.yaml` and `dashboard/k8s/dashboard-deployment.yaml`.
+- Replace image placeholders in `backend/k8s/backend-deployment.yaml`, `agents-layer/k8s/agents-deployment.yaml`, `detection-service/k8s/detection-deployment.yaml`, and `dashboard/k8s/dashboard-deployment.yaml`.
 - Ingress routes `/api` to backend and `/` to dashboard, so frontend can access backend without CORS setup.
 
 This repository template will be used for development, tracking progress, and final submission of your project. Ensure that all work is committed here within the allowed hackathon duration.

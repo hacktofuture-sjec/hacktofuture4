@@ -1,0 +1,103 @@
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import logging
+from typing import Any, Dict, Optional
+
+from app.config import settings
+from app.services.agent_client import AgentsClient
+from app.services.cluster_snapshot import ClusterSnapshotService
+from app.services.observability import ObservabilityService
+from app.services.store import DetectionStateStore
+from lerna_shared.detection import build_detection_run_result
+
+logger = logging.getLogger(__name__)
+
+
+class DetectionWorker:
+    def __init__(
+        self,
+        obs_service: ObservabilityService,
+        snapshot_service: ClusterSnapshotService,
+        state_store: DetectionStateStore,
+        agents_client: AgentsClient,
+    ) -> None:
+        self._obs_service = obs_service
+        self._snapshot_service = snapshot_service
+        self._state_store = state_store
+        self._agents_client = agents_client
+        self._task: Optional[asyncio.Task] = None
+        self._last_result: Dict[str, Any] = {"status": "idle"}
+
+    async def start(self) -> None:
+        if self._task:
+            return
+        self._task = asyncio.create_task(self._run(), name="detection-worker")
+
+    async def stop(self) -> None:
+        if not self._task:
+            return
+        self._task.cancel()
+        try:
+            await self._task
+        except asyncio.CancelledError:
+            pass
+        self._task = None
+
+    def status(self) -> Dict[str, Any]:
+        return self._last_result
+
+    async def _run(self) -> None:
+        while True:
+            try:
+                await self._tick()
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.warning("Detection worker tick failed", exc_info=True)
+                self._last_result = {"status": "error", "reason": str(exc)}
+            await asyncio.sleep(settings.poll_interval_seconds)
+
+    async def _tick(self) -> None:
+        await self._process_retries()
+        snapshot = await self._snapshot_service.get_snapshot()
+        if not snapshot.get("available"):
+            self._last_result = {"status": "degraded", "reason": snapshot.get("reason")}
+            return
+
+        loki_raw = await self._obs_service.query_logs(query=settings.log_query, limit=settings.log_limit)
+        result = build_detection_run_result(loki_raw, snapshot)
+        self._last_result = {
+            "status": "ok",
+            "checked_at": result.check.checked_at,
+            "has_error": result.check.has_error,
+            "summary": result.check.summary,
+            "incident_id": result.incident.incident_id if result.incident else None,
+        }
+        if not result.incident:
+            return
+
+        payload = result.incident.model_dump()
+        summary_hash = hashlib.sha1(
+            f"{result.incident.summary}:{result.incident.dominant_signature}".encode("utf-8")
+        ).hexdigest()
+        should_emit = await self._state_store.should_emit(result.incident.fingerprint, summary_hash)
+        if not should_emit:
+            return
+
+        try:
+            response = await self._agents_client.trigger_incident(payload)
+            await self._state_store.mark_emitted(result.incident.fingerprint, summary_hash, response.get("status", "accepted"))
+            self._last_result["workflow_id"] = response.get("workflow_id")
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("Failed to trigger agents workflow", exc_info=True)
+            await self._state_store.mark_emitted(result.incident.fingerprint, summary_hash, "queued")
+            await self._state_store.enqueue_retry(result.incident.incident_id, payload, str(exc))
+
+    async def _process_retries(self) -> None:
+        retries = await self._state_store.due_retries()
+        for item in retries:
+            try:
+                await self._agents_client.trigger_incident(item["payload"])
+                await self._state_store.clear_retry(item["incident_id"])
+            except Exception:  # pylint: disable=broad-except
+                logger.warning("Retry handoff failed for %s", item["incident_id"], exc_info=True)

@@ -16,6 +16,7 @@ class ToolSettings:
         self.prometheus_url = os.getenv("PROMETHEUS_URL", "http://localhost:9090").rstrip("/")
         self.loki_url = os.getenv("LOKI_URL", "http://localhost:3100").rstrip("/")
         self.jaeger_url = os.getenv("JAEGER_URL", "http://localhost:16686").rstrip("/")
+        self.redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         self.qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333").rstrip("/")
         self.qdrant_api_key = os.getenv("QDRANT_API_KEY", "").strip() or None
         self.qdrant_collection = os.getenv("QDRANT_COLLECTION", "incidents").strip()

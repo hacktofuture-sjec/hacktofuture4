@@ -1,6 +1,6 @@
 # Observation Backend (FastAPI)
 
-This service provides the backend adapter between the dashboard and the observation stack.
+This service provides the operator/dashboard backend adapter between the dashboard and the observation stack.
 
 ## Features
 
@@ -9,7 +9,7 @@ This service provides the backend adapter between the dashboard and the observat
   - Loki (`/api/obs/logs`)
   - Jaeger (`/api/obs/traces`)
 - Backend health view (`/api/obs/health`)
-- Detection check (`/api/detection/check`) returning `has_error` + evidence summary
+- Detection debug check (`/api/detection/check`) returning `has_error` + evidence summary
 - Agent prompt APIs (Redis-backed):
   - `GET /api/agents/prompts`
   - `PUT /api/agents/prompts/{agent_id}`
@@ -17,6 +17,7 @@ This service provides the backend adapter between the dashboard and the observat
 - Kubernetes cluster poller for dashboard-friendly summaries:
   - `/api/cluster/summary`
   - `/api/cluster/health`
+- Autonomous incident polling/triggering now lives in the standalone `detection-service`
 
 ## Run locally
 
