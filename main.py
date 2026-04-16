@@ -2295,6 +2295,15 @@ def health_payload() -> dict[str, Any]:
             and os.getenv("LANGFUSE_PUBLIC_KEY", "").strip()
         ),
         "vercel_sandbox_configured": _vercel_sandbox_credentials_present(),
+        "vercel_auth_mode": (
+            "oidc" if os.getenv("VERCEL_OIDC_TOKEN", "").strip()
+            else "token" if (
+                os.getenv("VERCEL_TOKEN", "").strip()
+                and os.getenv("VERCEL_TEAM_ID", "").strip()
+                and os.getenv("VERCEL_PROJECT_ID", "").strip()
+            )
+            else "none"
+        ),
     }
 
 
