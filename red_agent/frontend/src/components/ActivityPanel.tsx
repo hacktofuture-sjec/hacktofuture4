@@ -1,51 +1,77 @@
+import { useState, type CSSProperties } from "react";
 import type { ToolCall } from "@/types/red.types";
 import { ToolCard } from "./ToolCard";
 
-interface ActivityPanelProps {
-  toolCalls: ToolCall[];
-  limit?: number;
-  accent?: string;
-}
+interface ActivityPanelProps { toolCalls: ToolCall[]; }
+type Filter = "all" | "RUNNING" | "DONE" | "FAILED";
 
-export function ActivityPanel({
-  toolCalls,
-  limit = 10,
-  accent = "#f85149",
-}: ActivityPanelProps) {
-  const recent = [...toolCalls].slice(-limit).reverse();
+export function ActivityPanel({ toolCalls }: ActivityPanelProps) {
+  const [filter, setFilter] = useState<Filter>("all");
+  const filtered = filter === "all" ? toolCalls : toolCalls.filter((t) => t.status === filter);
+  const recent = [...filtered].reverse();
 
   return (
-    <section
-      style={{
-        background: "#0d1117",
-        borderRadius: 8,
-        padding: 12,
-        border: `1px solid ${accent}55`,
-        height: "100%",
-        overflowY: "auto",
-      }}
-    >
-      <header
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          marginBottom: 10,
-          paddingBottom: 8,
-          borderBottom: `1px solid ${accent}33`,
-        }}
-      >
-        <h3 style={{ margin: 0, color: accent, fontSize: 14, letterSpacing: 1 }}>
-          CURRENT ACTIVITY
-        </h3>
-        <span style={{ color: "#8b949e", fontSize: 12 }}>
-          {recent.length} tool calls
+    <div style={container}>
+      <div style={header}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ color: "var(--yellow)", fontSize: 13 }}>&#9881;</span>
+          <span style={title}>TOOLS</span>
+        </div>
+        <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-ui)" }}>
+          {toolCalls.length}
         </span>
-      </header>
-      {recent.length === 0 ? (
-        <p style={{ color: "#8b949e", fontSize: 12 }}>No activity yet.</p>
-      ) : (
-        recent.map((call) => <ToolCard key={call.id} tool={call} accent={accent} />)
-      )}
-    </section>
+      </div>
+
+      <div style={filterRow}>
+        {(["all", "RUNNING", "DONE", "FAILED"] as Filter[]).map((f) => (
+          <button key={f} onClick={() => setFilter(f)} style={{
+            ...filterBtn,
+            color: filter === f ? "var(--accent)" : "var(--text-dim)",
+            background: filter === f ? "var(--accent-dim)" : "transparent",
+          }}>
+            {f === "all" ? "ALL" : f}
+          </button>
+        ))}
+      </div>
+
+      <div style={list}>
+        {recent.length === 0 ? (
+          <div style={{ textAlign: "center", paddingTop: 30, fontSize: 10, color: "var(--text-dim)" }}>
+            No tools {filter === "all" ? "executed yet" : `with status ${filter}`}
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {recent.map((c) => <ToolCard key={c.id} tool={c} />)}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
+
+const container: CSSProperties = {
+  display: "flex", flexDirection: "column", height: "100%",
+  background: "var(--bg-primary)", borderRadius: "var(--radius)",
+  border: "1px solid var(--accent-border)", overflow: "hidden",
+};
+const header: CSSProperties = {
+  display: "flex", justifyContent: "space-between", alignItems: "center",
+  padding: "10px 12px", borderBottom: "1px solid var(--accent-border)",
+  background: "var(--bg-secondary)",
+};
+const title: CSSProperties = {
+  fontSize: 11, fontWeight: 700, letterSpacing: 2,
+  fontFamily: "var(--font-display)", color: "var(--text-primary)",
+};
+const filterRow: CSSProperties = {
+  display: "flex", gap: 2, padding: "6px 8px",
+  borderBottom: "1px solid var(--accent-dim)",
+};
+const filterBtn: CSSProperties = {
+  fontSize: 9, fontWeight: 700, fontFamily: "var(--font-display)",
+  padding: "3px 8px", borderRadius: 3, border: "none",
+  cursor: "pointer", letterSpacing: 0.5, transition: "all var(--transition)",
+};
+const list: CSSProperties = {
+  flex: 1, overflowY: "auto", padding: 8,
+};

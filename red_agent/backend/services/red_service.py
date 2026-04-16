@@ -153,6 +153,35 @@ async def recent_logs(limit: int = 100) -> list[LogEntry]:
     return list(_LOG_HISTORY)[-limit:]
 
 
+# ---------- Mission orchestrator wiring ------------------------------------
+
+from red_agent.backend.services.orchestrator import orchestrator
+
+
+async def start_mission(target: str):
+    return await orchestrator.start_mission(target)
+
+
+def get_mission(mission_id: str):
+    return orchestrator.get_mission(mission_id)
+
+
+def list_missions() -> list[dict]:
+    return orchestrator.list_missions()
+
+
+async def pause_mission(mission_id: str) -> bool:
+    return await orchestrator.pause_mission(mission_id)
+
+
+async def resume_mission(mission_id: str) -> bool:
+    return await orchestrator.resume_mission(mission_id)
+
+
+async def abort_mission(mission_id: str) -> bool:
+    return await orchestrator.abort_mission(mission_id)
+
+
 # ---------- Autonomous CrewAI recon agent wiring --------------------------
 
 _logger = logging.getLogger(__name__)

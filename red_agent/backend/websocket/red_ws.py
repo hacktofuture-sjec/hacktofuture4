@@ -46,9 +46,14 @@ async def red_log_stream(ws: WebSocket) -> None:
     """Streams `{type, payload}` envelopes to the Red dashboard.
 
     Envelope types:
-      - `log`        : a LogEntry
-      - `tool_call`  : a ToolCall snapshot
-      - `heartbeat`  : keepalive ping
+      - `log`            : a LogEntry
+      - `tool_call`      : a ToolCall snapshot
+      - `chat_response`  : an agent chat message
+      - `mission_phase`  : current mission phase update
+      - `heartbeat`      : keepalive ping
+
+    Also accepts incoming messages for mission control:
+      - `{type: "mission_control", payload: {action, mission_id}}`
     """
     await manager.connect(ws)
     try:
@@ -59,8 +64,22 @@ async def red_log_stream(ws: WebSocket) -> None:
             await ws.send_json({"type": "log", "payload": entry.model_dump(mode="json")})
 
         while True:
-            await asyncio.sleep(15)
-            await ws.send_json({"type": "heartbeat", "payload": {}})
+            try:
+                data = await asyncio.wait_for(ws.receive_json(), timeout=15)
+                # Handle incoming mission control commands
+                if data.get("type") == "mission_control":
+                    action = data.get("payload", {}).get("action")
+                    mid = data.get("payload", {}).get("mission_id")
+                    if action and mid:
+                        if action == "pause":
+                            await red_service.pause_mission(mid)
+                        elif action == "resume":
+                            await red_service.resume_mission(mid)
+                        elif action == "abort":
+                            await red_service.abort_mission(mid)
+            except asyncio.TimeoutError:
+                # No message received in 15s — send heartbeat
+                await ws.send_json({"type": "heartbeat", "payload": {}})
     except WebSocketDisconnect:
         await manager.disconnect(ws)
     except Exception:

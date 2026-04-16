@@ -81,3 +81,30 @@ class StrategyPlan(BaseModel):
     tool_call: ToolCall
     steps: list[str] = Field(default_factory=list)
     rationale: str | None = None
+
+
+# ── Mission (orchestrator) ──
+
+
+class MissionPhase(str, Enum):
+    IDLE = "IDLE"
+    RECON = "RECON"
+    ANALYZE = "ANALYZE"
+    PLAN = "PLAN"
+    EXPLOIT = "EXPLOIT"
+    REPORT = "REPORT"
+    DONE = "DONE"
+    FAILED = "FAILED"
+    PAUSED = "PAUSED"
+
+
+class MissionStartRequest(BaseModel):
+    target: str = Field(..., examples=["192.168.1.100"])
+
+
+class MissionStatus(BaseModel):
+    id: str
+    target: str
+    phase: MissionPhase = MissionPhase.IDLE
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    error: str | None = None

@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from red_agent.backend.routers import (
+    chat_routes,
     exploit_routes,
     scan_routes,
     strategy_routes,
@@ -42,6 +43,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(chat_routes.router, tags=["chat"])
 app.include_router(scan_routes.router, prefix="/scan", tags=["scan"])
 app.include_router(exploit_routes.router, prefix="/exploit", tags=["exploit"])
 app.include_router(strategy_routes.router, prefix="/strategy", tags=["strategy"])

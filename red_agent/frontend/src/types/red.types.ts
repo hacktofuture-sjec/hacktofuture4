@@ -21,10 +21,49 @@ export interface LogEntry {
 export type WsEnvelope =
   | { type: "tool_call"; payload: ToolCall }
   | { type: "log"; payload: LogEntry }
+  | { type: "chat_response"; payload: ChatMessage }
+  | { type: "mission_phase"; payload: MissionPhaseUpdate }
   | { type: "heartbeat"; payload: Record<string, never> };
 
 export interface ScanRequest {
   target: string;
   ports?: number[];
   options?: Record<string, unknown>;
+}
+
+/* ── Chat ── */
+export interface ChatMessage {
+  id: string;
+  role: "user" | "agent" | "system";
+  content: string;
+  timestamp: string;
+  tool_calls?: ToolCallRef[];
+}
+
+export interface ToolCallRef {
+  tool_id: string;
+  tool_name: string;
+  status: ToolStatus;
+}
+
+export interface ChatRequest {
+  message: string;
+  target?: string;
+}
+
+/* ── Mission ── */
+export type MissionPhaseValue =
+  | "IDLE"
+  | "RECON"
+  | "ANALYZE"
+  | "PLAN"
+  | "EXPLOIT"
+  | "REPORT"
+  | "DONE"
+  | "FAILED"
+  | "PAUSED";
+
+export interface MissionPhaseUpdate {
+  mission_id: string;
+  phase: MissionPhaseValue;
 }
