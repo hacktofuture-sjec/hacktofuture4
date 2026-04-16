@@ -79,9 +79,30 @@ Provide clear steps to run your project:
 git clone <repo-link>
 
 # Install dependencies
-...
+# Backend
+cd backend
+pip install -r requirements.txt
 
-# Run the project
-...
+# Frontend
+cd ..
+flutter pub get
+
+# Run backend
+cd backend
+python app.py
+
+# Run Flutter app (web only)
+cd ..
+flutter run -d chrome
 ```
->>>>>>> d436ee8e676e8ad66ca2d6eba3d806846cbcef81
+
+## Firebase Setup
+
+This project is configured for web only.
+
+1. Create a Firebase project in the Firebase console.
+2. Add a Web app to your Firebase project.
+3. Use the web config values in `lib/firebase_options.dart`.
+4. Run the app with `flutter run -d chrome`.
+
+If you later want Android or iOS support, add native Firebase config files separately.

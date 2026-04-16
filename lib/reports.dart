@@ -108,7 +108,7 @@ class ReportsPage extends StatelessWidget {
           width: 30,
           height: 200 * heightFactor,
           decoration: BoxDecoration(
-            color: color.withOpacity(0.8),
+            color: color.withAlpha(204),
             borderRadius: BorderRadius.circular(2),
           ),
         ),
@@ -152,7 +152,7 @@ class ReportsPage extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         decoration: BoxDecoration(
           border: isSelected ? const Border(left: BorderSide(color: Colors.cyan, width: 3)) : null,
-          color: isSelected ? Colors.cyan.withOpacity(0.05) : Colors.transparent,
+          color: isSelected ? Colors.cyan.withAlpha(13) : Colors.transparent,
         ),
         child: Text(title, style: TextStyle(color: isSelected ? Colors.cyan : Colors.white60)),
       ),

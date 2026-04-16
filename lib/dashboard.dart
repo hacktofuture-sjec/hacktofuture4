@@ -1,10 +1,73 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'user_monitoring.dart';
 import 'reports.dart';
 import 'settings.dart';
+import 'api_service.dart';
+import 'auth_service.dart';
+import 'adminlogin.dart';
 
-class DashboardPage extends StatelessWidget {
+class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
+
+  @override
+  State<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage> {
+  List<Map<String, dynamic>> _events = [];
+  Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchEvents();
+    // Refresh events every 30 seconds
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      _fetchEvents();
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _fetchEvents() async {
+    try {
+      final events = await ApiService.getEvents();
+      if (mounted) {
+        setState(() {
+          _events = events;
+        });
+      }
+    } catch (e) {
+      // Handle error
+    }
+  }
+
+  Future<void> _refreshEvents() async {
+    await _fetchEvents();
+  }
+
+  Future<void> _logout() async {
+    try {
+      await AuthService.signOut();
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const AdminLoginPage()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to logout')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -53,33 +116,24 @@ class DashboardPage extends StatelessWidget {
   }
 
   Widget _buildEventList() {
+    if (_events.isEmpty) {
+      return const Text('No events yet', style: TextStyle(color: Colors.white));
+    }
+
     return Column(
-      children: [
-        _buildEventCard(
-          type: 'THREAT',
-          color: Colors.red,
-          location: 'Karnataka, India',
-          message: 'Brute Force Attempt',
-        ),
-        _buildEventCard(
-          type: 'SUSPICIOUS',
-          color: Colors.orange,
-          location: 'Texas, USA',
-          message: 'Unusual Geographic Access: User_ID 856',
-        ),
-        _buildEventCard(
-          type: 'SECURE',
-          color: Colors.green,
-          location: 'Tamil Nadu, India',
-          message: 'Database Export Finalized',
-        ),
-        _buildEventCard(
-          type: 'SECURE',
-          color: Colors.green,
-          location: 'Karnataka, India',
-          message: 'Successful 2FA Validation',
-        ),
-      ],
+      children: _events.map((event) {
+        final type = event['trust_score'] < 40 ? 'THREAT' : event['trust_score'] < 60 ? 'SUSPICIOUS' : 'SECURE';
+        final color = type == 'THREAT' ? Colors.red : type == 'SUSPICIOUS' ? Colors.orange : Colors.green;
+        final location = event['location'] ?? 'Unknown';
+        final message = 'User ${event['session_id']} logged in from IP ${event['ip']}';
+
+        return _buildEventCard(
+          type: type,
+          color: color,
+          location: location,
+          message: message,
+        );
+      }).toList(),
     );
   }
 
@@ -170,6 +224,28 @@ class DashboardPage extends StatelessWidget {
           const Text('PROFILE', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.bold)),
           const SizedBox(width: 8),
           const Icon(Icons.person_outline, color: Colors.white70, size: 24),
+          const SizedBox(width: 16),
+          TextButton.icon(
+            onPressed: _refreshEvents,
+            icon: const Icon(Icons.refresh, color: Colors.white70, size: 20),
+            label: const Text('REFRESH', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              backgroundColor: Colors.blue.withAlpha(26),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+            ),
+          ),
+          const SizedBox(width: 16),
+          TextButton.icon(
+            onPressed: _logout,
+            icon: const Icon(Icons.logout, color: Colors.white70, size: 20),
+            label: const Text('LOGOUT', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              backgroundColor: Colors.red.withAlpha(26),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+            ),
+          ),
         ],
       ),
     );

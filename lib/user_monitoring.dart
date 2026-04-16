@@ -74,7 +74,7 @@ class UserMonitoringPage extends StatelessWidget {
       ),
       child: Row(
         children: [
-          CircleAvatar(backgroundColor: color.withOpacity(0.1), child: Icon(Icons.person, color: color)),
+          CircleAvatar(backgroundColor: color.withAlpha(26), child: Icon(Icons.person, color: color)),
           const SizedBox(width: 16),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -122,7 +122,7 @@ class UserMonitoringPage extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Colors.cyan,
                     borderRadius: BorderRadius.circular(2),
-                    boxShadow: [BoxShadow(color: Colors.cyan.withOpacity(0.5), blurRadius: 4)],
+                    boxShadow: [BoxShadow(color: Colors.cyan.withAlpha(128), blurRadius: 4)],
                   ),
                 ),
               ),
@@ -170,7 +170,7 @@ class UserMonitoringPage extends StatelessWidget {
         padding: EdgeInsets.symmetric(horizontal: 24, vertical: compact ? 12 : 16),
         decoration: BoxDecoration(
           border: isSelected ? const Border(left: BorderSide(color: Colors.cyan, width: 3)) : null,
-          color: isSelected ? Colors.cyan.withOpacity(0.05) : Colors.transparent,
+          color: isSelected ? Colors.cyan.withAlpha(13) : Colors.transparent,
         ),
         child: Text(
           title,
@@ -188,7 +188,7 @@ class UserMonitoringPage extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.all(12),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(4)),
+      decoration: BoxDecoration(color: Colors.white.withAlpha(13), borderRadius: BorderRadius.circular(4)),
       child: Row(
         children: [
           const CircleAvatar(radius: 16, backgroundColor: Colors.white10, child: Icon(Icons.person, size: 18, color: Colors.white70)),

@@ -103,7 +103,7 @@ class _SettingsPageState extends State<SettingsPage> {
           Switch(
             value: value, 
             onChanged: onChanged, // Now functional
-            activeColor: Colors.cyan,
+            activeThumbColor: Colors.cyan,
           ),
         ],
       ),
@@ -144,7 +144,7 @@ class _SettingsPageState extends State<SettingsPage> {
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         decoration: BoxDecoration(
           border: isSelected ? const Border(left: BorderSide(color: Colors.cyan, width: 3)) : null,
-          color: isSelected ? Colors.cyan.withOpacity(0.05) : Colors.transparent,
+          color: isSelected ? Colors.cyan.withAlpha(13) : Colors.transparent,
         ),
         child: Text(title, style: TextStyle(color: isSelected ? Colors.cyan : Colors.white60)),
       ),

@@ -1,5 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'api_service.dart';
+import 'auth_service.dart';
 import 'dashboard.dart';
+import 'employee_portal.dart';
 
 class AdminLoginPage extends StatefulWidget {
   const AdminLoginPage({super.key});
@@ -9,8 +13,16 @@ class AdminLoginPage extends StatefulWidget {
 }
 
 class _AdminLoginPageState extends State<AdminLoginPage> {
-  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  bool _isLoading = false;
+  String? _statusMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailController.text = 'admin@email.com';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +79,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                                 borderRadius: BorderRadius.circular(8),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.5),
+                                    color: Colors.black.withAlpha(128),
                                     blurRadius: 20,
                                     spreadRadius: 5,
                                   ),
@@ -94,10 +106,10 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                                   ),
                                   const SizedBox(height: 32),
                                   _buildInputField(
-                                    label: 'USERNAME',
-                                    controller: _usernameController,
-                                    icon: Icons.person_outline,
-                                    hint: 'ENTER USERNAME',
+                                    label: 'EMAIL',
+                                    controller: _emailController,
+                                    icon: Icons.email_outlined,
+                                    hint: 'ADMIN EMAIL',
                                   ),
                                   const SizedBox(height: 24),
                                   _buildInputField(
@@ -112,12 +124,112 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                                     width: double.infinity,
                                     height: 50,
                                     child: ElevatedButton(
-                                      onPressed: () {
-                                        Navigator.pushReplacement(
-                                          context,
-                                          MaterialPageRoute(builder: (context) => const DashboardPage()),
-                                        );
-                                      },
+                                      onPressed: _isLoading
+                                          ? null
+                                          : () async {
+                                              final email = _emailController.text.trim();
+                                              final password = _passwordController.text.trim();
+                                              final sessionId = email.isNotEmpty ? email : 'guest_session';
+                                              final scaffoldMessenger = ScaffoldMessenger.of(context);
+                                              final navigator = Navigator.of(context);
+                                              if (email.isEmpty || password.isEmpty) {
+                                                scaffoldMessenger.showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text('Please enter email and password'),
+                                                    backgroundColor: Colors.redAccent,
+                                                  ),
+                                                );
+                                                return;
+                                              }
+
+                                              setState(() {
+                                                _isLoading = true;
+                                                _statusMessage = null;
+                                              });
+
+                                              try {
+                                                final credential = await AuthService.signInWithEmailAndPassword(
+                                                  email: email,
+                                                  password: password,
+                                                );
+
+                                                if (!AuthService.isAdmin(credential.user)) {
+                                                  // For non-admin users, navigate to employee portal
+                                                  if (!mounted) return;
+                                                  navigator.pushReplacement(
+                                                    MaterialPageRoute(builder: (context) => const EmployeePortalPage()),
+                                                  );
+                                                  return;
+                                                }
+
+                                                try {
+                                                  final result = await ApiService.analyzeEvent(
+                                                    sessionId: sessionId,
+                                                    ip: '49.37.10.2',
+                                                    location: 'India',
+                                                    device: 'Android Chrome',
+                                                    event: 'admin_login',
+                                                    keystrokeInterval: 15,
+                                                  );
+
+                                                  if (!mounted) return;
+                                                  setState(() {
+                                                    _statusMessage = 'Backend logged login: ${result['action']} (${result['trust_score']})';
+                                                  });
+                                                } catch (backendError) {
+                                                  if (!mounted) return;
+                                                  setState(() {
+                                                    _statusMessage = 'Authenticated as admin, but backend logging failed.';
+                                                  });
+                                                }
+
+                                                if (!mounted) return;
+                                                navigator.pushReplacement(
+                                                  MaterialPageRoute(builder: (context) => const DashboardPage()),
+                                                );
+                                              } on FirebaseAuthException catch (error) {
+                                                if (!mounted) return;
+                                                String message;
+
+                                                switch (error.code) {
+                                                  case 'user-not-found':
+                                                    message = 'No user found for that email.';
+                                                    break;
+                                                  case 'wrong-password':
+                                                    message = 'Wrong password provided.';
+                                                    break;
+                                                  case 'invalid-email':
+                                                    message = 'Please enter a valid email address.';
+                                                    break;
+                                                  case 'user-disabled':
+                                                    message = 'This user account has been disabled.';
+                                                    break;
+                                                  default:
+                                                    message = error.message ?? 'Authentication failed.';
+                                                }
+
+                                                scaffoldMessenger.showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(message),
+                                                    backgroundColor: Colors.redAccent,
+                                                  ),
+                                                );
+                                              } catch (error) {
+                                                if (!mounted) return;
+                                                scaffoldMessenger.showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(error.toString()),
+                                                    backgroundColor: Colors.redAccent,
+                                                  ),
+                                                );
+                                              } finally {
+                                                if (mounted) {
+                                                  setState(() {
+                                                    _isLoading = false;
+                                                  });
+                                                }
+                                              }
+                                            },
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: const Color(0xFF90E0EF),
                                         foregroundColor: Colors.black87,
@@ -134,6 +246,14 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                                       ),
                                     ),
                                   ),
+                                  if (_statusMessage != null) ...[
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      _statusMessage!,
+                                      style: const TextStyle(color: Colors.cyanAccent, fontSize: 12),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
