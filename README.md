@@ -43,13 +43,83 @@ These users require **real-time, accurate, and explainable deepfake detection sy
 ---
 
 
-## Proposed Solution
+. Here you go 👇
 
-Explain your approach:
+# 🚀 Proposed Solution
 
-- What are you building?
-- How does it solve the problem?
-- What makes your solution unique?
+## 🛠️ What are we building?
+
+We are building an **agentic AI-powered deepfake detection and authenticity verification system**.
+
+The system leverages a **multi-agent architecture**, where intelligent agents collaborate to:
+- Analyze video and audio content  
+- Detect deepfake patterns  
+- Provide real-time authenticity verification  
+- Assist users with clear, explainable insights  
+
+---
+
+## ⚙️ How does it solve the problem?
+
+Our solution introduces an **intelligent, multi-stage pipeline**:
+
+
+Input Video
+│
+├──► Frame Extraction Agent
+│
+├──► Detection Agent (ML Models)
+│
+├──► Audio Analysis Agent
+│
+├──► Verification Agent (Combines Results)
+│
+└──► Cognitive Agent (LLM-based Explanation)
+│
+▼
+Final Decision + Explanation
+
+
+- 🎯 **Real-time Detection**: Processes video frames and audio to identify manipulation  
+- 📱 **Edge Capability**: Runs on-device without relying on cloud connectivity  
+- 🧠 **Agentic Orchestration**: Uses LLM-based agents to dynamically control workflow  
+- 🔍 **Explainability**: Provides human-readable reasoning behind every decision  
+
+---
+
+## ✨ What makes our solution unique?
+
+### 🔹 Agentic AI Architecture
+Unlike traditional systems, our solution uses **multiple intelligent agents** that:
+- Make decisions  
+- Adapt processing strategies  
+- Collaborate dynamically  
+
+---
+
+### 🔹 Multi-Modal Detection
+We combine:
+- 🎥 Visual deepfake detection  
+- 🎧 Audio anomaly detection  
+
+This improves accuracy and reduces false positives.
+
+---
+
+### 🔹 Compression-Aware & Adaptive
+The system intelligently adjusts detection strategies based on:
+- Video quality  
+- Compression level  
+- Device constraints  
+
+---
+
+### 🔹 Cognitive Assistance (LLM-powered)
+Using LLMs, the system provides:
+
+> _"This video is likely manipulated due to facial inconsistencies and audio pitch anomalies."_
+
+Helping users **understand and trust the results**.
 
 ---
 
