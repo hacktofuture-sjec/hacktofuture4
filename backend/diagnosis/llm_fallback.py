@@ -34,7 +34,7 @@ def call_llm_api(
         timeout_seconds: Request timeout
     
     Returns:
-        Parsed diagnosis dict with fields: {root_cause, confidence, reasoning, actions}
+        Parsed diagnosis dict with fields: {root_cause, confidence, reasoning, suggested_actions, source}
         Returns None if API fails or parsing fails (graceful degradation)
     
     Raises:
@@ -152,7 +152,7 @@ def _parse_llm_response(response_data: Dict[str, Any], snapshot: Dict[str, Any])
         snapshot: Original incident snapshot (fallback data source)
     
     Returns:
-        Normalized diagnosis dict: {root_cause, confidence, reasoning, actions}
+        Normalized diagnosis dict: {root_cause, confidence, reasoning, suggested_actions, source}
     
     Raises:
         ValueError: If response format is invalid

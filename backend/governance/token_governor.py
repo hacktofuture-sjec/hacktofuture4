@@ -40,11 +40,15 @@ class TokenGovernor:
         return max(1, len(text) // 4)
 
     def estimate_cost(self, input_tokens: int, output_tokens: int) -> float:
-        """Estimate cost based on token count and model pricing."""
+        """Estimate cost based on token count and model pricing.
+        
+        Returns unrounded cost to preserve precision for budget enforcement.
+        Callers should round only when presenting/logging to users.
+        """
         pricing = self.MODEL_PRICING.get(self.model, self.MODEL_PRICING["gpt-3.5-turbo"])
         input_cost = input_tokens * pricing["input"]
         output_cost = output_tokens * pricing["output"]
-        return round(input_cost + output_cost, 6)
+        return input_cost + output_cost
 
     def can_afford_ai_call(self, estimated_cost: float) -> bool:
         """Check if AI call is within the estimated-cost budget."""
