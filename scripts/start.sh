@@ -1,4 +1,3 @@
-Ok I am Kushal, My work is on Observation layer (Prometheus, Loki, Tempo, K8s Events), signal intelligence, memory | Infra setup and scenario determinism | Remediation execution and recovery proof, I want you to first go through the entire docs to get the context and understand the project, the branch is already created, then I want you to read to README.md to understand what my work is to do, respective to what is written in the README for my task and go through the docs and implement as told by the docs, fixes we shall see later during testing, but follow the respective docs for my tasks as it is, the setup, file creation, everything as it is, do not deviate to any other issue or domain, we will work only my o#!/usr/bin/env bash
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
