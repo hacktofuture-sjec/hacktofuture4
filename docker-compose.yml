@@ -1,0 +1,115 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: pipegenie-mongo
+    restart: unless-stopped
+    ports: ["27017:27017"]
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: pipegenie
+
+  redis:
+    image: redis:7-alpine
+    container_name: pipegenie-redis
+    restart: unless-stopped
+    ports: ["6379:6379"]
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    container_name: pipegenie-etcd
+    restart: unless-stopped
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls=http://0.0.0.0:2379 --data-dir /etcd
+    volumes:
+      - etcd_data:/etcd
+
+  minio:
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    container_name: pipegenie-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    command: minio server /minio_data
+    ports:
+      - "9001:9001"
+      - "9000:9000"
+    volumes:
+      - minio_data:/minio_data
+
+  milvus:
+    image: milvusdb/milvus:v2.4.4
+    container_name: pipegenie-milvus
+    restart: unless-stopped
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    depends_on: [etcd, minio]
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    volumes:
+      - milvus_data:/var/lib/milvus
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pipegenie-backend
+    restart: unless-stopped
+    ports: ["8000:8000"]
+    environment:
+      - MONGODB_URL=mongodb://mongodb:27017
+      - REDIS_URL=redis://redis:6379
+      - MILVUS_HOST=milvus
+      - MILVUS_PORT=19530
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - USE_OLLAMA=true
+      - LLM_MODEL=mistral
+      - OTEL_ENABLED=true
+      - OTEL_SERVICE_NAME=pipegenie-backend
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://host.docker.internal:4318/v1/traces
+      - OTEL_EXPORTER_OTLP_INSECURE=true
+      - OTEL_RESOURCE_ATTRIBUTES=service.namespace=pipegenie,deployment.environment=docker
+    env_file: ./backend/.env
+    depends_on: [mongodb, redis, milvus]
+
+  backend-tests:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.tests
+    container_name: pipegenie-backend-tests
+    profiles: ["test"]
+    command: ["python", "-m", "pytest", "-q", "backend/tests/test_risk_evaluator.py"]
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: pipegenie-ollama
+    restart: unless-stopped
+    ports: ["11434:11434"]
+    volumes:
+      - ollama_data:/root/.ollama
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: pipegenie-frontend
+    restart: unless-stopped
+    ports: ["5173:80"]
+    depends_on: [backend]
+
+volumes:
+  mongo_data:
+  etcd_data:
+  minio_data:
+  milvus_data:
+  ollama_data:

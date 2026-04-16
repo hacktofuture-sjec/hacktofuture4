@@ -1,0 +1,184 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor and IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+env/
+
+# Backend artifacts
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.ruff_cache/
+
+# Node / Vite (frontend)
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build and cache outputs
+dist/
+build/
+.tmp/
+tmp/
+.cache/
+
+# Docker and compose overrides
+*.pid
+*.seed
+docker-compose.override.yml
+
+# SigNoz-specific ignore rules
+/signoz/deploy/docker/environment_tiny/common_test
+/signoz/frontend/.pnp
+/signoz/frontend/i18n-translations-hash.json
+/signoz/**/*.pnp.js
+/signoz/frontend/coverage
+/signoz/frontend/build
+/signoz/frontend/.yarnclean
+/signoz/frontend/.temp_cache
+/signoz/frontend/test-results
+/signoz/frontend/src/constants/env.ts
+
+/signoz/**/build
+/signoz/**/storage
+/signoz/**/locust-scripts/__pycache__/
+/signoz/**/__debug_bin
+
+/signoz/pkg/query-service/signoz.db
+/signoz/pkg/query-service/tests/test-deploy/data/
+/signoz/ee/query-service/signoz.db
+/signoz/ee/query-service/tests/test-deploy/data/
+
+# local data (SigNoz)
+/signoz/**/*.backup
+/signoz/**/*.db
+/signoz/**/*.db-shm
+/signoz/**/*.db-wal
+/signoz/**/db
+/signoz/deploy/docker/clickhouse-setup/data/
+/signoz/deploy/docker-swarm/clickhouse-setup/data/
+/signoz/bin/
+/signoz/.local/
+/signoz/*/query-service/queries.active
+/signoz/ee/query-service/db
+
+# e2e (SigNoz)
+/signoz/e2e/node_modules/
+/signoz/e2e/test-results/
+/signoz/e2e/blob-report/
+/signoz/e2e/.auth
+
+# go (SigNoz)
+/signoz/vendor/
+/signoz/**/main/**
+/signoz/**/__debug_bin**
+
+# git-town (SigNoz)
+/signoz/.git-branches.toml
+
+# ignore user_scripts fetched by init-clickhouse (SigNoz)
+/signoz/deploy/common/clickhouse/user_scripts/
+
+/signoz/queries.active
+
+# tmp (SigNoz)
+/signoz/**/tmp/**
+
+# .devenv tmp files (SigNoz)
+/signoz/.devenv/**/tmp/**
+/signoz/.qodo
+/signoz/.dev
+
+# Additional editor/tooling rules from SigNoz
+/signoz/.zed
+
+# Additional Python ecosystem rules from SigNoz
+/signoz/**/*.so
+/signoz/.Python
+/signoz/develop-eggs/
+/signoz/downloads/
+/signoz/eggs/
+/signoz/.eggs/
+/signoz/lib64/
+/signoz/parts/
+/signoz/sdist/
+/signoz/var/
+/signoz/wheels/
+/signoz/share/python-wheels/
+/signoz/**/*.egg-info/
+/signoz/.installed.cfg
+/signoz/**/*.egg
+/signoz/**/MANIFEST
+/signoz/**/*.manifest
+/signoz/**/*.spec
+/signoz/**/pip-log.txt
+/signoz/**/pip-delete-this-directory.txt
+/signoz/.tox/
+/signoz/.nox/
+/signoz/**/nosetests.xml
+/signoz/**/coverage.xml
+/signoz/**/*.cover
+/signoz/**/*.py,cover
+/signoz/.hypothesis/
+/signoz/**/cover/
+/signoz/**/*.mo
+/signoz/**/*.pot
+/signoz/**/local_settings.py
+/signoz/**/db.sqlite3
+/signoz/**/db.sqlite3-journal
+/signoz/**/instance/
+/signoz/**/.webassets-cache
+/signoz/**/.scrapy
+/signoz/docs/_build/
+/signoz/.pybuilder/
+/signoz/target/
+/signoz/.ipynb_checkpoints
+/signoz/**/profile_default/
+/signoz/**/ipython_config.py
+/signoz/**/celerybeat-schedule
+/signoz/**/celerybeat.pid
+/signoz/**/*.sage.py
+/signoz/ENV/
+/signoz/env.bak/
+/signoz/venv.bak/
+/signoz/.spyderproject
+/signoz/.spyproject
+/signoz/.ropeproject
+/signoz/site
+/signoz/.dmypy.json
+/signoz/**/dmypy.json
+/signoz/.pyre/
+/signoz/.pytype/
+/signoz/**/cython_debug/
+/signoz/**/pyrightconfig.json
