@@ -597,12 +597,44 @@ def _merge_test_into_file(existing: str | None, new_test_code: str) -> str:
 # test did not yet pass. Every run is Langfuse-traced as a span so cost/latency
 # is observable alongside the three Groq generations.
 
-_DEFAULT_SANDBOX_REQUIREMENTS = (
-    "fastapi\n"
-    "httpx\n"
-    "pytest\n"
-    "pydantic\n"
-)
+# The sandbox test harness always needs these, regardless of what the
+# target repo declares. pytest drives the run; httpx is required by
+# fastapi.testclient (the most common shape of generated test).
+_SANDBOX_TEST_HARNESS_REQUIREMENTS = ("pytest", "httpx")
+# Fallback used when the target repo has no requirements.txt at all.
+_DEFAULT_SANDBOX_REQUIREMENTS = "fastapi\npydantic\nrequests\nhttpx\npytest\n"
+
+
+def _merge_requirements(repo_requirements: str | None) -> str:
+    """Combine the target repo's requirements.txt with the test harness deps.
+
+    We never drop the repo's own pins (they describe the real runtime) but
+    we add pytest/httpx if they are missing so the test harness can actually
+    execute. Comments and blank lines are preserved.
+    """
+    if not repo_requirements or not repo_requirements.strip():
+        return _DEFAULT_SANDBOX_REQUIREMENTS
+
+    existing_names: set[str] = set()
+    for raw_line in repo_requirements.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        # Strip any version/extras/markers to get the bare package name.
+        name = re.split(r"[\s=<>!~;\[]", line, maxsplit=1)[0].lower()
+        if name:
+            existing_names.add(name)
+
+    extras: list[str] = []
+    for dep in _SANDBOX_TEST_HARNESS_REQUIREMENTS:
+        if dep.lower() not in existing_names:
+            extras.append(dep)
+
+    merged = repo_requirements.rstrip() + "\n"
+    if extras:
+        merged += "# --- PipelineMedic sandbox test harness ---\n"
+        merged += "\n".join(extras) + "\n"
+    return merged
 
 
 def _vercel_sandbox_credentials_present() -> bool:
@@ -641,6 +673,7 @@ def verify_patch_in_vercel_sandbox(
     test_name: str | None,
     repository: str,
     incident_token: str,
+    repo_requirements: str | None = None,
 ) -> dict[str, Any]:
     """Run the AI-generated fix + regression test in an ephemeral Vercel Sandbox.
 
@@ -716,12 +749,13 @@ def verify_patch_in_vercel_sandbox(
         src_rel = source_path.lstrip("/")
         test_rel = test_path.lstrip("/")
 
+        sandbox_requirements = _merge_requirements(repo_requirements)
         files: list[dict[str, Any]] = [
             WriteFile(path=src_rel, content=source_content.encode("utf-8")),
             WriteFile(path=test_rel, content=test_content.encode("utf-8")),
             WriteFile(
                 path="requirements-sandbox.txt",
-                content=_DEFAULT_SANDBOX_REQUIREMENTS.encode("utf-8"),
+                content=sandbox_requirements.encode("utf-8"),
             ),
         ]
         # pytest resolves `tests/` as a package when __init__.py is present;
@@ -2001,6 +2035,11 @@ def maybe_create_autofix_pr(
             and target_file.endswith(".py")
             and cur_content is not None
         ):
+            # Pull the repo's real runtime deps so the sandbox mirrors CI,
+            # not a hardcoded guess. Falls back gracefully if missing.
+            repo_requirements, _ = _fetch_file(
+                token, owner, repo, "requirements.txt", use_base
+            )
             try:
                 test_path = _derive_test_path(target_file)
                 existing_test, _ = _fetch_file(token, owner, repo, test_path, use_base)
@@ -2027,6 +2066,7 @@ def maybe_create_autofix_pr(
                     test_name=test_name,
                     repository=repo_slug,
                     incident_token=incident_token,
+                    repo_requirements=repo_requirements,
                 )
 
                 # One self-healing retry if the sandbox actually RAN the test
@@ -2074,6 +2114,7 @@ def maybe_create_autofix_pr(
                             test_name=test_name,
                             repository=repo_slug,
                             incident_token=incident_token,
+                            repo_requirements=repo_requirements,
                         )
                         if verification is not None:
                             verification["self_corrected"] = True
