@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-
+import { useAuth } from '../../context/AuthContext';
+import Topbar from '../../components/Topbar/Topbar';
 import './OAuthScreen.css';
 
 const API_BASE = 'http://localhost:8000';
@@ -8,6 +9,7 @@ const API_BASE = 'http://localhost:8000';
 export default function OAuthScreen() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, refetch } = useAuth();
   const [isProcessing, setIsProcessing] = useState(() => {
     const params = new URLSearchParams(location.search);
     return !!(params.get('github_id') && params.get('session_id'));
@@ -23,7 +25,7 @@ export default function OAuthScreen() {
       localStorage.setItem('easyops_auth_token', sessionId);
       localStorage.setItem('easyops_github_id', githubId);
 
-      fetch(`${API_BASE}/api/user/info`, {
+      fetch(`${API_BASE}/api/auth/me`, {
         headers: {
           'Authorization': `Bearer ${sessionId}`,
         },
@@ -32,15 +34,11 @@ export default function OAuthScreen() {
           if (!res.ok) throw new Error('Failed to fetch user context');
           return res.json();
         })
-        .then((data) => {
-          localStorage.setItem('easyops_user_roles', JSON.stringify(data.roles || []));
-          
-          const redirectTo = localStorage.getItem('postAuthRedirect') || '/monitor';
-          localStorage.removeItem('postAuthRedirect');
-          
-          setTimeout(() => {
-            navigate(redirectTo);
-          }, 800);
+        .then(() => {
+          void refetch();
+          const redirectTo = sessionStorage.getItem('postAuthRedirect') || '/monitor';
+          sessionStorage.removeItem('postAuthRedirect');
+          setTimeout(() => navigate(redirectTo), 800);
         })
         .catch((err) => {
           console.error(err);
@@ -48,78 +46,84 @@ export default function OAuthScreen() {
           setIsProcessing(false);
         });
     }
-  }, [location, navigate]);
-
+  }, [location, navigate, refetch]);
 
   return (
     <div className="oauth-page">
       <main className="oauth-page__main">
+        <Topbar title="Integrations" breadcrumb="System Security" />
+        
         <div className="oauth-page__content">
-          
           <div className="oauth-header">
             <div>
-              <h1 className="oauth-header__title">Dashboard Authorization Protocol</h1>
+              <h1 className="oauth-header__title">External Services Protocol</h1>
               <p className="oauth-header__subtitle">
-                SYSTEM VERIFICATION // STATUS: {isProcessing ? 'HANDSHAKE_IN_PROGRESS' : 'AWAITING_UPLINK'}
+                SYSTEM VERIFICATION // {isProcessing ? 'HANDSHAKE_IN_PROGRESS' : 'UPLINK_STABLE'}
               </p>
             </div>
           </div>
 
           {error && (
-            <div className="bg-error-container text-on-error-container p-4 rounded-xl border border-error/20 flex gap-3 items-center">
+            <div className="bg-error-container text-on-error-container p-4 rounded-xl border border-error/20 flex gap-3 items-center mb-6">
               <span className="material-symbols-outlined">error</span>
               <span className="font-bold text-sm tracking-tight">{error}</span>
             </div>
           )}
 
-          <div className="oauth-grid">
-            <div className="oauth-auth-card">
-              <div className="oauth-auth-card__id">UPLINK_INSTRUCTIONS</div>
-              <h2 className="oauth-auth-card__title">
-                Telegram Bot <span className="oauth-auth-card__title-highlight">Integration Bridge</span>
-              </h2>
-              <p className="oauth-auth-card__desc">
-                Follow these precise sequential commands to securely authenticate and link your central dashboard with the EasyOps monitoring agent. We utilize Telegram Webhooks to establish direct, persistent, and secure two-way communication.
-              </p>
-              
-              <div className="oauth-bot-instructions">
-                <div className="oauth-bot-instructions__steps">
-
-                  <div className="oauth-bot-step">
-                    <span className="oauth-bot-step__badge">1</span>
-                    <p className="oauth-bot-step__id">SEARCH_TARGET</p>
-                    <p className="oauth-bot-step__desc">
-                      Open Telegram and search for <br/><strong>@easyops_devops_bot</strong>
-                    </p>
-                  </div>
-                  <div className="oauth-bot-step">
-                    <span className="oauth-bot-step__badge">2</span>
-                    <p className="oauth-bot-step__id">EXECUTE_INIT</p>
-                    <p className="oauth-bot-step__desc">
-                      Send the start command to initialize:<br/>
-                      <strong>/start</strong>
-                    </p>
-                  </div>
-                  <div className="oauth-bot-step">
-                    <span className="oauth-bot-step__badge">3</span>
-                    <p className="oauth-bot-step__id">COMMAND_UPLINK</p>
-                    <p className="oauth-bot-step__desc">
-                      Execute the following command to link your account:<br/>
-                      <strong>/link &lt;github-username&gt;</strong>
-                    </p>
-
-                  </div>
-                  <div className="oauth-bot-step">
-                    <span className="oauth-bot-step__badge">4</span>
-                    <p className="oauth-bot-step__id">DASHBOARD_REDIRECT</p>
-                    <p className="oauth-bot-step__desc">
-                      The bot will authenticate you via GitHub and redirect you automatically back to the active monitoring console!
-                    </p>
-                  </div>
+          <div className="integration-grid">
+            {/* GitHub Integration Card */}
+            <div className="formal-card">
+              <div className="formal-card__badge-row">
+                <span className="formal-card__id">AUTH_NODE_01</span>
+                <span className="formal-card__status formal-card__status--active">Connected</span>
+              </div>
+              <div className="formal-card__main">
+                <div className="formal-card__icon-wrapper bg-primary/10 text-primary">
+                  <span className="material-symbols-outlined text-4xl">hub</span>
+                </div>
+                <div className="formal-card__header">
+                  <h3 className="formal-card__title">GitHub Identity</h3>
+                  <p className="formal-card__desc">Primary source control and agent authorization provider.</p>
                 </div>
               </div>
-              
+              <div className="formal-card__info-box">
+                <div className="info-item">
+                  <span className="info-item__label">UPLINK_IDENTITY</span>
+                  <span className="info-item__value">@{user?.login || 'anonymous'}</span>
+                </div>
+                <div className="info-item">
+                  <span className="info-item__label">ACCESS_LEVEL</span>
+                  <span className="info-item__value">READ_WRITE_HOOKS</span>
+                </div>
+              </div>
+            </div>
 
+            {/* Telegram Integration Card */}
+            <div className="formal-card formal-card--inactive">
+              <div className="formal-card__badge-row">
+                <span className="formal-card__id">NOTIF_NODE_02</span>
+                <span className="formal-card__status formal-card__status--pending">Awaiting Link</span>
+              </div>
+              <div className="formal-card__main">
+                <div className="formal-card__icon-wrapper bg-surface-container-highest text-on-surface-variant">
+                  <span className="material-symbols-outlined text-4xl">send</span>
+                </div>
+                <div className="formal-card__header">
+                  <h3 className="formal-card__title">Telegram Alerts</h3>
+                  <p className="formal-card__desc">Low-latency notifications and autonomous PR recovery hooks.</p>
+                </div>
+              </div>
+
+              <div className="formal-card__instructions">
+                <div className="instruction-step">
+                  <span className="instruction-step__num">01</span>
+                  <span className="instruction-step__text">Invite <b>@easyops_devops_bot</b></span>
+                </div>
+                <div className="instruction-step">
+                  <span className="instruction-step__num">02</span>
+                  <span className="instruction-step__text">Execute <code>/link {user?.login}</code></span>
+                </div>
+              </div>
             </div>
           </div>
         </div>

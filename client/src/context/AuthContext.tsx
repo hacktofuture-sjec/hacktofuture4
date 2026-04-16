@@ -13,6 +13,7 @@ interface AuthContextValue {
   logout: () => Promise<void>;
 }
 
+
 // ── Context ────────────────────────────────────────────────────────────────
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -37,6 +38,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(false);
     }
   }, []);
+
 
   const logout = useCallback(async (): Promise<void> => {
     try {
@@ -67,6 +69,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticated: user !== null,
         refetch,
         logout,
+
       }}
     >
       {children}

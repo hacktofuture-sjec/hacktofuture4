@@ -1,85 +1,131 @@
 @reference "../../styles/globals.css";
 
 .oauth-page {
-  @apply flex h-screen overflow-hidden bg-[var(--color-surface)];
+  @apply flex h-screen overflow-hidden bg-background;
 }
 
 .oauth-page__main {
-  @apply flex-1 overflow-y-auto p-8 lg:p-12;
+  @apply flex-1 relative bg-dot-pattern overflow-y-auto;
 }
 
 .oauth-page__content {
-  @apply max-w-5xl mx-auto space-y-10;
+  @apply px-8 py-12 max-w-6xl mx-auto;
 }
 
 .oauth-header {
-  @apply flex flex-col gap-2 border-b border-outline-variant pb-8;
+  @apply mb-12 flex justify-between items-end border-b border-outline-variant pb-8;
 }
 
 .oauth-header__title {
-  @apply text-4xl font-black tracking-tighter uppercase text-on-surface m-0 italic;
+  @apply text-5xl font-black text-on-surface tracking-tighter m-0 uppercase;
 }
 
 .oauth-header__subtitle {
-  @apply text-primary font-mono text-xs m-0 tracking-[0.3em] uppercase opacity-70;
+  @apply text-xs font-bold tracking-[0.3em] text-primary mt-2 uppercase opacity-80;
 }
 
-.oauth-grid {
-  @apply grid gap-8;
+/* ── Integration Grid ───────────────────────────── */
+
+.integration-grid {
+  @apply grid grid-cols-1 md:grid-cols-2 gap-8;
 }
 
-.oauth-auth-card {
-  @apply bg-surface-container-low border border-outline-variant p-10 relative overflow-hidden rounded-2xl shadow-sm;
+/* ── Formal Card ────────────────────────────────── */
+
+.formal-card {
+  @apply bg-surface-container-low border border-outline-variant rounded-3xl p-8 flex flex-col gap-8 transition-all hover:bg-surface-container-high hover:border-primary/30 relative overflow-hidden;
+  box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.05);
 }
 
-.oauth-auth-card::before {
-  content: '';
-  @apply absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-30;
+.formal-card--inactive {
+  @apply bg-surface-container-lowest border-dashed;
 }
 
-.oauth-auth-card__id {
-  @apply absolute top-0 right-0 p-3 text-[10px] font-mono text-on-surface-variant/20 select-none;
+.formal-card::before {
+  content: "";
+  @apply absolute top-0 left-0 w-1.5 h-full bg-primary/20 transition-all;
 }
 
-.oauth-auth-card__title {
-  @apply text-3xl font-bold mb-6 m-0 text-on-surface tracking-tight;
+.formal-card:hover::before {
+  @apply bg-primary h-full;
 }
 
-.oauth-auth-card__title-highlight {
-  @apply text-primary;
+.formal-card__badge-row {
+  @apply flex justify-between items-center;
 }
 
-.oauth-auth-card__desc {
-  @apply text-on-surface-variant mb-12 leading-relaxed m-0 text-lg font-medium max-w-3xl;
+.formal-card__id {
+  @apply text-[10px] font-black text-on-surface-variant tracking-widest opacity-40 font-mono;
 }
 
-/* ── Steps grid ──────────────────────────────────── */
-
-.oauth-bot-instructions {
-  @apply w-full;
+.formal-card__status {
+  @apply px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border;
 }
 
-.oauth-bot-instructions__steps {
-  @apply grid gap-8;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+.formal-card__status--active {
+  @apply bg-green-500/10 text-green-600 border-green-500/20;
 }
 
-.oauth-bot-step {
-  @apply relative pl-8 py-2 border-l-2 border-outline-variant hover:border-primary/50 transition-colors;
+.formal-card__status--pending {
+  @apply bg-amber-500/10 text-amber-600 border-amber-500/20;
 }
 
-.oauth-bot-step__badge {
-  @apply absolute -left-[13px] top-2 w-6 h-6 bg-primary flex items-center justify-center text-[11px] font-black rounded-full text-white shadow-md;
+.formal-card__main {
+  @apply flex items-start gap-6;
 }
 
-.oauth-bot-step__id {
-  @apply text-[10px] font-mono text-primary mb-3 m-0 tracking-[0.2em] uppercase font-black opacity-80;
+.formal-card__icon-wrapper {
+  @apply w-16 h-16 rounded-2xl flex items-center justify-center shrink-0 border border-outline-variant/10 shadow-inner;
 }
 
-.oauth-bot-step__desc {
-  @apply text-on-surface m-0 text-base leading-relaxed font-medium;
+.formal-card__header {
+  @apply flex flex-col gap-1;
 }
 
-.oauth-bot-step__desc strong {
-  @apply text-on-surface font-black underline decoration-primary/30 underline-offset-4 font-mono;
+.formal-card__title {
+  @apply text-2xl font-black text-on-surface m-0 tracking-tight;
+}
+
+.formal-card__desc {
+  @apply text-sm text-on-surface-variant leading-relaxed m-0;
+}
+
+/* ── Info Box ── */
+
+.formal-card__info-box {
+  @apply bg-background/50 rounded-2xl p-6 border border-outline-variant/50 flex flex-col gap-4;
+}
+
+.info-item {
+  @apply flex justify-between items-center border-b border-outline-variant/30 pb-3 last:border-none last:pb-0;
+}
+
+.info-item__label {
+  @apply text-[10px] font-bold text-on-surface-variant uppercase tracking-widest;
+}
+
+.info-item__value {
+  @apply text-sm font-black text-on-surface tracking-tight;
+}
+
+/* ── Instruction Box ── */
+
+.formal-card__instructions {
+  @apply mt-auto bg-surface-container-highest rounded-2xl p-6 border border-primary/10 flex flex-col gap-3;
+}
+
+.instruction-step {
+  @apply flex items-center gap-4;
+}
+
+.instruction-step__num {
+  @apply w-8 h-8 rounded-lg bg-primary/10 text-primary text-xs font-black flex items-center justify-center border border-primary/20 shrink-0;
+}
+
+.instruction-step__text {
+  @apply text-sm text-on-surface leading-tight font-medium;
+}
+
+.instruction-step__text code {
+  @apply bg-surface-container-lowest px-2 py-0.5 rounded text-primary font-mono text-xs border border-outline-variant;
 }
