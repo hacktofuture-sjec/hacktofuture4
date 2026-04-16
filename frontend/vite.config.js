@@ -3,23 +3,41 @@ import react from '@vitejs/plugin-react'
 
 const hackathonSyncPlugin = () => {
   let attackTriggered = false;
+  let defenseStatus = 'idle'; // idle | pending | killed
+
   return {
     name: 'hackathon-sync',
     configureServer(server) {
-      server.middlewares.use((req, res, next) => {
+      server.middlewares.use(async (req, res, next) => {
+        // Parse JSON body for POST
+        const parseBody = () => new Promise(resolve => {
+          let body = '';
+          req.on('data', chunk => body += chunk.toString());
+          req.on('end', () => resolve(body ? JSON.parse(body) : {}));
+        });
+
         if (req.url === '/aegis-sync/state' && req.method === 'GET') {
           res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ triggered: attackTriggered }));
+          res.end(JSON.stringify({ triggered: attackTriggered, defenseStatus }));
           return;
         }
         if (req.url === '/aegis-sync/attack' && req.method === 'POST') {
           attackTriggered = true;
+          defenseStatus = 'pending';
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ success: true }));
+          return;
+        }
+        if (req.url === '/aegis-sync/defend' && req.method === 'POST') {
+          const body = await parseBody();
+          defenseStatus = body.status || 'killed';
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ success: true }));
           return;
         }
         if (req.url === '/aegis-sync/reset' && req.method === 'POST') {
           attackTriggered = false;
+          defenseStatus = 'idle';
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ success: true }));
           return;

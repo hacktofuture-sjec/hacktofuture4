@@ -278,8 +278,22 @@ export default function App() {
 
   const executeAmbush = () => {
     if (ambushStatus !== 'idle') return
-    setAmbushStatus('pending_auth')
-    setShowBiometricPrompt(true)
+
+    if (autonomyMode === 'Auto') {
+      // Full AI Autonomy: Bypass HITL entirely and execute kill sequence
+      setAmbushStatus('running')
+      handleBiometricDeny() // Reusing the deny logic to trigger the SIGKILL
+    } else if (autonomyMode === 'Watch') {
+      // Passive Watch: Do not block automatically, wait for manual override
+      setIsUnderAttack(true)
+      setAmbushStatus('watch')
+      try { fetch('/aegis-sync/defend', { method: 'POST', body: JSON.stringify({ status: 'pending' }) }) } catch {}
+    } else {
+      // Assist: Standard Human-in-the-Loop 
+      setAmbushStatus('pending_auth')
+      setShowBiometricPrompt(true)
+      try { fetch('/aegis-sync/defend', { method: 'POST', body: JSON.stringify({ status: 'pending' }) }) } catch {}
+    }
   }
 
   // HITL: Deny Access & Isolate
@@ -290,6 +304,7 @@ export default function App() {
     setAmbushStatus('running')
 
     try { fetch('/analytics/trigger_attack', { method: 'POST' }) } catch {}
+    try { fetch('/aegis-sync/defend', { method: 'POST', body: JSON.stringify({ status: 'killed' }) }) } catch {}
 
     setActiveTab('telemetry')
     setTimeout(() => {
@@ -459,7 +474,15 @@ export default function App() {
                 BREACH
               </div>
             )}
-            {ambushStatus === 'idle' ? (
+            {ambushStatus === 'watch' ? (
+              <button
+                onClick={handleBiometricDeny}
+                className="flex items-center gap-2 px-3 py-2 text-[10px] font-black tracking-widest bg-rose-600 border border-rose-500 text-white shadow-[0_0_15px_rgba(225,29,72,0.5)] rounded-lg hover:bg-rose-500 transition-all animate-pulse"
+              >
+                <ShieldAlert className="w-3 h-3" />
+                INTERVENE & BLOCK
+              </button>
+            ) : ambushStatus === 'idle' ? (
               <button
                 onClick={executeAmbush}
                 className="flex items-center gap-2 px-3 py-2 text-[10px] font-black tracking-widest bg-rose-600/10 border border-rose-600/40 text-rose-500 rounded-lg hover:bg-rose-600/20 transition-all"
