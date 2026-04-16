@@ -22,7 +22,8 @@ import os
 import re
 import tempfile
 import uuid
-from datetime import datetime
+import fcntl
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -114,8 +115,8 @@ class VaultStore:
 
         # Set defaults
         entry.setdefault("id", str(uuid.uuid4()))
-        entry.setdefault("created_at", datetime.utcnow().isoformat())
-        entry["updated_at"] = datetime.utcnow().isoformat()
+        entry.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+        entry["updated_at"] = datetime.now(timezone.utc).isoformat()
         entry.setdefault("retrieval_count", 0)
         entry.setdefault("success_count", 0)
         entry.setdefault("reward_score", 0.0)
@@ -175,19 +176,27 @@ class VaultStore:
         """
         import json as _json
         episodes_path = self._root / "episodes.json"
-        # Read existing
-        try:
-            existing: List[Dict[str, Any]] = _json.loads(
-                episodes_path.read_text(encoding="utf-8")
-            ) if episodes_path.exists() else []
-        except (ValueError, OSError):
-            existing = []
+        
+        # We need a dedicated lock file to prevent overlapping appends
+        lock_path = self._root / ".episodes.lock"
+        with open(lock_path, "w") as lock_file:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            try:
+                # Read existing
+                try:
+                    existing: List[Dict[str, Any]] = _json.loads(
+                        episodes_path.read_text(encoding="utf-8")
+                    ) if episodes_path.exists() else []
+                except (ValueError, OSError):
+                    existing = []
 
-        episode.setdefault("timestamp", datetime.utcnow().isoformat())
-        existing.append(episode)
+                episode.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+                existing.append(episode)
 
-        self._atomic_write(episodes_path, existing)
-        log.debug("[vault] episode appended (total=%d)", len(existing))
+                self._atomic_write(episodes_path, existing)
+                log.debug("[vault] episode appended (total=%d)", len(existing))
+            finally:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
     # ── Stats ─────────────────────────────────────────────────────────────────
