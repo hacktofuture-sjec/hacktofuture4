@@ -77,7 +77,7 @@ Mentor insight: In well-documented teams, knowledge hunting is “very quick” 
 3. Retrieval from ingested Confluence-style runbooks \+ GitHub PRs \+ sample Slack \+ simulated ServiceNow incidents  
 4. Multi-agent swarm orchestration (Controller → Swarms)  
 5. **Native** Permission Gate \+ Human approval modal for every action  
-6. Safe mock tool execution (GitHub PR comment/create rollback, Slack post, Jira update)  
+6. Safe planner-only tool execution planning (GitHub PR comment/create rollback, Slack post, Jira update)  
 7. Three-Tier Memory with basic Kairos (deduplication)  
 8. Audit log of every agent step \+ data sources used
 
@@ -95,7 +95,7 @@ Mentor insight: In well-documented teams, knowledge hunting is “very quick” 
 **Key Use Cases (Demo Flows – directly inspired by transcript):**
 
 1. “Explain the high Redis latency incident from last week” (pulls from Confluence runbook \+ GitHub changes \+ simulated incident)  
-2. “Run the standard high-CPU runbook on service X” (retrieves runbook, shows steps, asks for approval before any mock execution)  
+2. “Run the standard high-CPU runbook on service X” (retrieves runbook, shows steps, asks for approval before any planner-only execution)  
 3. “Create a rollback PR for the last deployment, post to Slack, and update Jira” (full human approval flow \+ audit)  
 4. “Summarise tribal knowledge \+ Confluence notes from recent Slack thread about customer XYZ feature flag”  
    ---
@@ -145,17 +145,17 @@ Mentor insight: In well-documented teams, knowledge hunting is “very quick” 
 
 * Three swarms: retrieval\_swarm.py, reasoning\_swarm.py, execution\_swarm.py  
 * LlamaIndex \+ **Milvus** Hybrid retrieval (focus on Confluence \+ GitHub \+ simulated incidents)  
-* Ingest sample data (5–6 markdown runbooks \+ GitHub examples \+ Slack \+ mock ServiceNow incidents)  
-* **Deliverable:** End-to-end query → retrieval → transparent reasoning (mock execution)
+* Ingest sample data (5–6 markdown runbooks \+ GitHub examples \+ Slack \+ simulated ServiceNow incidents)  
+* **Deliverable:** End-to-end query → retrieval → transparent reasoning (planner-only execution)
 
   #### **Phase 3: Tools, Safety & Live Trace (13–20 hours)**
 
-* Tool registry (src/tools/) – GitHub, Slack, Jira mocks  
+* Tool registry (src/tools/) – GitHub, Slack, Jira planner-safe adapters  
 * Full **native** Permission Gate \+ approval queue  
 * FastAPI SSE endpoint (/chat/stream)  
 * Frontend: Chat \+ ReasoningTrace (with citations) \+ ApprovalModal  
 * Human-in-the-loop flow complete  
-* **Deliverable:** Live trace visible \+ safe mock action approval
+* **Deliverable:** Live trace visible \+ safe planner action approval
 
   #### **Phase 4: Polish \+ Kairos \+ Dashboard (20–25 hours)**
 
@@ -187,7 +187,7 @@ Mentor insight: In well-documented teams, knowledge hunting is “very quick” 
 
   ### **9\. Success Criteria (Judges will love these)**
 
-* Live demo shows natural language → visible chain-of-thought \+ source citations → human approval → mock action executed  
+* Live demo shows natural language → visible chain-of-thought \+ source citations → human approval → planner action approved  
 * Clear differentiation table vs HolmesGPT / OpenSRE / Port.io / Rootly (transparency \+ native HITL \+ Milvus-based unification)  
 * **Transparency** is the star: engineers can see exactly which Confluence page, GitHub PR, or incident was used  
 * Memory hygiene via Kairos (even if basic)  

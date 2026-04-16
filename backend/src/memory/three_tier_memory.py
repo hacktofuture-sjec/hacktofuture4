@@ -4,7 +4,10 @@ import json
 from datetime import UTC, datetime
 from dataclasses import dataclass
 import hashlib
+import os
 from pathlib import Path
+import tempfile
+import time
 from typing import Any
 
 
@@ -36,6 +39,23 @@ class ThreeTierMemory:
             "deduped_count": 0,
             "last_run_at": None,
         }
+
+    def _atomic_write_json(self, target: Path, payload: dict[str, Any]) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=target.parent, delete=False) as temp_file:
+            json.dump(payload, temp_file, indent=2)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+            temp_path = Path(temp_file.name)
+        temp_path.replace(target)
+
+    def _read_json_file(self, target: Path) -> dict[str, Any] | None:
+        if not target.exists():
+            return None
+        try:
+            return json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
 
     def summary(self) -> dict[str, Any]:
         documents = self.load_documents()
@@ -116,6 +136,7 @@ class ThreeTierMemory:
         action_details: dict[str, Any] | None = None,
         needs_approval: bool | None = None,
         execution_status: str | None = None,
+        execution_mode: str | None = None,
     ) -> None:
         target = self.transcript_root / f"{trace_id}.json"
         payload = {
@@ -132,7 +153,9 @@ class ThreeTierMemory:
             payload["needs_approval"] = needs_approval
         if execution_status is not None:
             payload["execution_status"] = execution_status
-        target.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        if execution_mode is not None:
+            payload["execution_mode"] = execution_mode
+        self._atomic_write_json(target, payload)
 
     def persist_approval_decision(
         self,
@@ -140,6 +163,7 @@ class ThreeTierMemory:
         approval: dict[str, Any],
         execution_result: dict[str, Any],
         final_status: str,
+        execution_mode: str | None = None,
     ) -> None:
         approval_target = self.approval_root / f"{trace_id}.json"
         payload = {
@@ -148,12 +172,16 @@ class ThreeTierMemory:
             "execution_result": execution_result,
             "final_status": final_status,
         }
-        approval_target.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        if execution_mode is not None:
+            payload["execution_mode"] = execution_mode
+        self._atomic_write_json(approval_target, payload)
 
         transcript = self.get_transcript(trace_id) or {"trace_id": trace_id, "steps": []}
         transcript["approval"] = approval
         transcript["execution_result"] = execution_result
         transcript["final_status"] = final_status
+        if execution_mode is not None:
+            transcript["execution_mode"] = execution_mode
 
         approval_step = {
             "step": "approval",
@@ -168,25 +196,36 @@ class ThreeTierMemory:
         transcript["steps"] = steps
 
         transcript_target = self.transcript_root / f"{trace_id}.json"
-        transcript_target.write_text(json.dumps(transcript, indent=2), encoding="utf-8")
+        self._atomic_write_json(transcript_target, transcript)
 
     def get_approval_decision(self, trace_id: str) -> dict[str, Any] | None:
         target = self.approval_root / f"{trace_id}.json"
-        if not target.exists():
-            return None
-        try:
-            return json.loads(target.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return None
+        return self._read_json_file(target)
 
     def get_transcript(self, trace_id: str) -> dict[str, Any] | None:
         target = self.transcript_root / f"{trace_id}.json"
-        if not target.exists():
-            return None
-        try:
-            return json.loads(target.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return None
+        return self._read_json_file(target)
+
+    def wait_for_transcript(
+        self,
+        trace_id: str,
+        timeout_seconds: float = 0.0,
+        poll_interval_seconds: float = 0.05,
+    ) -> dict[str, Any] | None:
+        if timeout_seconds <= 0:
+            return self.get_transcript(trace_id)
+
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            transcript = self.get_transcript(trace_id)
+            if transcript is not None:
+                return transcript
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+
+            time.sleep(min(poll_interval_seconds, remaining))
 
     def run_dedup_pass(self) -> dict[str, Any]:
         def normalize_text(text: str) -> str:

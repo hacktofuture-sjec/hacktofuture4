@@ -42,7 +42,7 @@ class _FakeGroqLLMClient:
             "suggested_action": suggested_action,
             "action_details": {
                 "intent": "rollback_and_notify" if high_risk else "summarize_and_request_approval",
-                "tool": "github.mock.rollback_pr" if high_risk else "generic.mock.noop",
+                "tool": "planner.rollback_and_notify" if high_risk else "planner.summarize_and_request_approval",
                 "parameters": {},
                 "approval_required": True,
                 "risk_hint": "high" if high_risk else "medium",

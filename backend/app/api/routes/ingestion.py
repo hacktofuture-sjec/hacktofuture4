@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
@@ -22,6 +22,15 @@ class IngestIrisResponse(BaseModel):
     source: str
     case_id: str
     incident_report: IncidentReport
+
+
+class IngestionErrorEnvelope(BaseModel):
+    code: str
+    message: str
+    source: str
+    stage: str
+    retriable: bool
+    target: str | None = None
 
 
 class CreateIrisIncidentRequest(BaseModel):
@@ -74,6 +83,7 @@ class IngestConfluenceResult(BaseModel):
     status: Literal["ingested", "failed"]
     title: str | None = None
     error: str | None = None
+    error_detail: IngestionErrorEnvelope | None = None
 
 
 class IngestConfluenceResponse(BaseModel):
@@ -107,6 +117,7 @@ class IngestGitHubResult(BaseModel):
     title: str | None = None
     url: str | None = None
     error: str | None = None
+    error_detail: IngestionErrorEnvelope | None = None
 
 
 class IngestGitHubResponse(BaseModel):
@@ -139,6 +150,7 @@ class IngestJiraResult(BaseModel):
     summary: str | None = None
     url: str | None = None
     error: str | None = None
+    error_detail: IngestionErrorEnvelope | None = None
 
 
 class IngestJiraResponse(BaseModel):
@@ -186,6 +198,7 @@ class IngestSlackChannelResult(BaseModel):
     status: Literal["ingested", "failed"]
     message_count: int | None = None
     error: str | None = None
+    error_detail: IngestionErrorEnvelope | None = None
 
 
 class IngestSlackChannelsResponse(BaseModel):
@@ -244,6 +257,7 @@ class IngestSlackThreadResult(BaseModel):
     status: Literal["ingested", "failed"]
     message_count: int | None = None
     error: str | None = None
+    error_detail: IngestionErrorEnvelope | None = None
 
 
 class IngestSlackThreadsResponse(BaseModel):
@@ -251,6 +265,30 @@ class IngestSlackThreadsResponse(BaseModel):
     failed_count: int
     source: str
     results: list[IngestSlackThreadResult]
+
+
+class VectorIndexStatusResponse(BaseModel):
+    source: str
+    status: dict[str, Any]
+
+
+def _build_ingestion_error(
+    *,
+    source: str,
+    stage: str,
+    message: str,
+    target: str | None = None,
+    code: str = "ingestion_adapter_error",
+    retriable: bool = True,
+) -> IngestionErrorEnvelope:
+    return IngestionErrorEnvelope(
+        code=code,
+        message=message,
+        source=source,
+        stage=stage,
+        retriable=retriable,
+        target=target,
+    )
 
 
 def _render_slack_messages(messages: list[dict[str, str]]) -> str:
@@ -264,14 +302,56 @@ def _render_slack_messages(messages: list[dict[str, str]]) -> str:
     return "\n".join(rendered_lines)
 
 
+def _sync_vector_index() -> dict[str, Any] | None:
+    retrieval_swarm = getattr(kernel, "retrieval_swarm", None)
+    semantic_service = getattr(retrieval_swarm, "semantic_service", None)
+    if semantic_service is None or not hasattr(semantic_service, "sync_documents"):
+        return None
+
+    documents = kernel.memory.load_documents(force_reload=True)
+    try:
+        return semantic_service.sync_documents(documents)
+    except Exception as exc:
+        return {
+            "indexed": False,
+            "reason": f"vector_sync_failed: {exc}",
+        }
+
+
 @router.post("/ingest/iris", response_model=IngestIrisResponse)
 def ingest_iris(case_id: str) -> IngestIrisResponse:
     try:
         client = IrisClient.from_env()
+    except IrisClientError as exc:
+        detail = _build_ingestion_error(
+            source="iris",
+            stage="init",
+            message=str(exc),
+            target=case_id,
+        )
+        raise HTTPException(status_code=502, detail=detail.model_dump()) from exc
+
+    try:
         case_payload = client.fetch_case(case_id=case_id)
         incident_report = IncidentReport(**case_payload)
-    except (IrisClientError, ValueError) as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except IrisClientError as exc:
+        detail = _build_ingestion_error(
+            source="iris",
+            stage="fetch",
+            message=str(exc),
+            target=case_id,
+        )
+        raise HTTPException(status_code=502, detail=detail.model_dump()) from exc
+    except ValueError as exc:
+        detail = _build_ingestion_error(
+            source="iris",
+            stage="transform",
+            message=str(exc),
+            target=case_id,
+            code="ingestion_payload_invalid",
+            retriable=False,
+        )
+        raise HTTPException(status_code=502, detail=detail.model_dump()) from exc
 
     doc = MemoryDocument(
         title=f"IRIS Case {incident_report.case_id or case_id}",
@@ -280,6 +360,7 @@ def ingest_iris(case_id: str) -> IngestIrisResponse:
         content=json.dumps(incident_report.model_dump(mode="json"), indent=2, ensure_ascii=False),
     )
     kernel.memory.ingest_runtime_document(doc)
+    _sync_vector_index()
 
     return IngestIrisResponse(
         ingested_count=1,
@@ -293,6 +374,16 @@ def ingest_iris(case_id: str) -> IngestIrisResponse:
 def create_iris_incident(payload: CreateIrisIncidentRequest) -> CreateIrisIncidentResponse:
     try:
         client = IrisClient.from_env()
+    except IrisClientError as exc:
+        detail = _build_ingestion_error(
+            source="iris",
+            stage="init",
+            message=str(exc),
+            code="ingestion_adapter_unavailable",
+        )
+        raise HTTPException(status_code=502, detail=detail.model_dump()) from exc
+
+    try:
         case_payload = client.create_incident(
             case_name=payload.case_name,
             case_description=payload.case_description,
@@ -305,8 +396,23 @@ def create_iris_incident(payload: CreateIrisIncidentRequest) -> CreateIrisIncide
             custom_attributes=payload.custom_attributes,
         )
         incident_report = IncidentReport(**case_payload)
-    except (IrisClientError, ValueError) as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except IrisClientError as exc:
+        detail = _build_ingestion_error(
+            source="iris",
+            stage="fetch",
+            message=str(exc),
+            code="ingestion_adapter_request_failed",
+        )
+        raise HTTPException(status_code=502, detail=detail.model_dump()) from exc
+    except ValueError as exc:
+        detail = _build_ingestion_error(
+            source="iris",
+            stage="transform",
+            message=str(exc),
+            code="ingestion_payload_invalid",
+            retriable=False,
+        )
+        raise HTTPException(status_code=502, detail=detail.model_dump()) from exc
 
     case_id = incident_report.case_id or "new"
     doc = MemoryDocument(
@@ -316,6 +422,7 @@ def create_iris_incident(payload: CreateIrisIncidentRequest) -> CreateIrisIncide
         content=json.dumps(incident_report.model_dump(mode="json"), indent=2, ensure_ascii=False),
     )
     kernel.memory.ingest_runtime_document(doc)
+    _sync_vector_index()
 
     return CreateIrisIncidentResponse(
         source="iris",
@@ -329,7 +436,13 @@ def ingest_confluence(payload: IngestConfluenceRequest) -> IngestConfluenceRespo
     try:
         client = ConfluenceClient.from_env()
     except ConfluenceClientError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        detail = _build_ingestion_error(
+            source="confluence",
+            stage="init",
+            message=str(exc),
+            code="ingestion_adapter_unavailable",
+        )
+        raise HTTPException(status_code=502, detail=detail.model_dump()) from exc
 
     results: list[IngestConfluenceResult] = []
     for page_id in payload.page_ids:
@@ -351,16 +464,25 @@ def ingest_confluence(payload: IngestConfluenceRequest) -> IngestConfluenceRespo
                 )
             )
         except Exception as exc:  # Keep batch ingestion resilient to per-page failures.
+            error_detail = _build_ingestion_error(
+                source="confluence",
+                stage="fetch",
+                message=str(exc),
+                target=page_id,
+            )
             results.append(
                 IngestConfluenceResult(
                     page_id=page_id,
                     status="failed",
                     error=str(exc),
+                    error_detail=error_detail,
                 )
             )
 
     ingested_count = len([item for item in results if item.status == "ingested"])
     failed_count = len(results) - ingested_count
+    if ingested_count > 0:
+        _sync_vector_index()
 
     return IngestConfluenceResponse(
         ingested_count=ingested_count,
@@ -375,7 +497,13 @@ def ingest_github(payload: IngestGitHubRequest) -> IngestGitHubResponse:
     try:
         client = GitHubClient.from_env()
     except GitHubClientError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        detail = _build_ingestion_error(
+            source="github",
+            stage="init",
+            message=str(exc),
+            code="ingestion_adapter_unavailable",
+        )
+        raise HTTPException(status_code=502, detail=detail.model_dump()) from exc
 
     unique_refs: list[GitHubIssueRef] = []
     seen: set[tuple[str, int]] = set()
@@ -420,17 +548,27 @@ def ingest_github(payload: IngestGitHubRequest) -> IngestGitHubResponse:
                 )
             )
         except Exception as exc:  # Keep batch ingestion resilient to per-issue failures.
+            target = f"{ref.repository}#{ref.issue_number}"
+            error_detail = _build_ingestion_error(
+                source="github",
+                stage="fetch",
+                message=str(exc),
+                target=target,
+            )
             results.append(
                 IngestGitHubResult(
                     repository=ref.repository,
                     issue_number=ref.issue_number,
                     status="failed",
                     error=str(exc),
+                    error_detail=error_detail,
                 )
             )
 
     ingested_count = len([item for item in results if item.status == "ingested"])
     failed_count = len(results) - ingested_count
+    if ingested_count > 0:
+        _sync_vector_index()
 
     return IngestGitHubResponse(
         ingested_count=ingested_count,
@@ -445,7 +583,13 @@ def ingest_jira(payload: IngestJiraRequest) -> IngestJiraResponse:
     try:
         client = JiraClient.from_env()
     except JiraClientError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        detail = _build_ingestion_error(
+            source="jira",
+            stage="init",
+            message=str(exc),
+            code="ingestion_adapter_unavailable",
+        )
+        raise HTTPException(status_code=502, detail=detail.model_dump()) from exc
 
     results: list[IngestJiraResult] = []
     for issue_key in payload.issue_keys:
@@ -488,16 +632,25 @@ def ingest_jira(payload: IngestJiraRequest) -> IngestJiraResponse:
                 )
             )
         except Exception as exc:  # Keep batch ingestion resilient to per-issue failures.
+            error_detail = _build_ingestion_error(
+                source="jira",
+                stage="fetch",
+                message=str(exc),
+                target=issue_key,
+            )
             results.append(
                 IngestJiraResult(
                     issue_key=issue_key,
                     status="failed",
                     error=str(exc),
+                    error_detail=error_detail,
                 )
             )
 
     ingested_count = len([item for item in results if item.status == "ingested"])
     failed_count = len(results) - ingested_count
+    if ingested_count > 0:
+        _sync_vector_index()
 
     return IngestJiraResponse(
         ingested_count=ingested_count,
@@ -512,7 +665,13 @@ def ingest_slack_channels(payload: IngestSlackChannelsRequest) -> IngestSlackCha
     try:
         client = SlackClient.from_env()
     except SlackClientError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        detail = _build_ingestion_error(
+            source="slack",
+            stage="init",
+            message=str(exc),
+            code="ingestion_adapter_unavailable",
+        )
+        raise HTTPException(status_code=502, detail=detail.model_dump()) from exc
 
     results: list[IngestSlackChannelResult] = []
     for ref in payload.channels:
@@ -544,16 +703,25 @@ def ingest_slack_channels(payload: IngestSlackChannelsRequest) -> IngestSlackCha
                 )
             )
         except Exception as exc:  # Keep batch ingestion resilient to per-channel failures.
+            error_detail = _build_ingestion_error(
+                source="slack",
+                stage="fetch",
+                message=str(exc),
+                target=ref.channel_id,
+            )
             results.append(
                 IngestSlackChannelResult(
                     channel_id=ref.channel_id,
                     status="failed",
                     error=str(exc),
+                    error_detail=error_detail,
                 )
             )
 
     ingested_count = len([item for item in results if item.status == "ingested"])
     failed_count = len(results) - ingested_count
+    if ingested_count > 0:
+        _sync_vector_index()
 
     return IngestSlackChannelsResponse(
         ingested_count=ingested_count,
@@ -568,7 +736,13 @@ def ingest_slack_threads(payload: IngestSlackThreadsRequest) -> IngestSlackThrea
     try:
         client = SlackClient.from_env()
     except SlackClientError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        detail = _build_ingestion_error(
+            source="slack",
+            stage="init",
+            message=str(exc),
+            code="ingestion_adapter_unavailable",
+        )
+        raise HTTPException(status_code=502, detail=detail.model_dump()) from exc
 
     results: list[IngestSlackThreadResult] = []
     for ref in payload.threads:
@@ -606,17 +780,27 @@ def ingest_slack_threads(payload: IngestSlackThreadsRequest) -> IngestSlackThrea
                 )
             )
         except Exception as exc:  # Keep batch ingestion resilient to per-thread failures.
+            target = f"{ref.channel_id}:{ref.thread_ts}"
+            error_detail = _build_ingestion_error(
+                source="slack",
+                stage="fetch",
+                message=str(exc),
+                target=target,
+            )
             results.append(
                 IngestSlackThreadResult(
                     channel_id=ref.channel_id,
                     thread_ts=ref.thread_ts,
                     status="failed",
                     error=str(exc),
+                    error_detail=error_detail,
                 )
             )
 
     ingested_count = len([item for item in results if item.status == "ingested"])
     failed_count = len(results) - ingested_count
+    if ingested_count > 0:
+        _sync_vector_index()
 
     return IngestSlackThreadsResponse(
         ingested_count=ingested_count,
@@ -624,3 +808,28 @@ def ingest_slack_threads(payload: IngestSlackThreadsRequest) -> IngestSlackThrea
         source="slack",
         results=results,
     )
+
+
+@router.get("/vector/status", response_model=VectorIndexStatusResponse)
+def vector_status() -> VectorIndexStatusResponse:
+    retrieval_swarm = getattr(kernel, "retrieval_swarm", None)
+    semantic_service = getattr(retrieval_swarm, "semantic_service", None)
+    if semantic_service is None or not hasattr(semantic_service, "health"):
+        return VectorIndexStatusResponse(
+            source="vector",
+            status={
+                "mode": "keyword",
+                "indexed": False,
+                "reason": "semantic service unavailable",
+            },
+        )
+
+    status = semantic_service.health()
+    status["document_count"] = len(kernel.memory.load_documents(force_reload=False))
+    return VectorIndexStatusResponse(source="vector", status=status)
+
+
+@router.post("/vector/rebuild", response_model=VectorIndexStatusResponse)
+def vector_rebuild() -> VectorIndexStatusResponse:
+    status = _sync_vector_index() or {"indexed": False, "reason": "semantic service unavailable"}
+    return VectorIndexStatusResponse(source="vector", status=status)

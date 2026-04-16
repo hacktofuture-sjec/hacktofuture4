@@ -66,6 +66,7 @@ class RetrievalSwarm:
             "source_count": len(sources),
             "retrieval_method": "keyword",
             "query_tokens": active_query_tokens,
+            "documents": docs,
         }
 
     def _merge_sources(self, primary: list[dict[str, Any]], secondary: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -128,6 +129,7 @@ class RetrievalSwarm:
             query=query,
             max_sources=self.max_sources,
             keyword_sources=keyword_sources,
+            source_documents=keyword_result.get("documents", []),
         )
 
         sources = semantic_result["sources"]
@@ -138,4 +140,5 @@ class RetrievalSwarm:
             "retrieval_method": semantic_result["retrieval_method"],
             "query_tokens": llm_query_expansion["expanded_query_tokens"],
             "llm_query_expansion": llm_query_expansion,
+            "vector_db": semantic_result.get("vector_db", {}),
         }

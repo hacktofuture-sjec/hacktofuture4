@@ -66,6 +66,23 @@
           }
         ]
       }
+    },
+    "vector": {
+      "status_endpoint": "GET /api/vector/status",
+      "rebuild_endpoint": "POST /api/vector/rebuild",
+      "response": {
+        "source": "vector",
+        "status": {
+          "mode": "keyword|semantic|hybrid",
+          "collection": "string",
+          "milvus_host": "string",
+          "milvus_port": "number",
+          "embedding_provider": "string",
+          "indexed": "boolean",
+          "doc_count": "number (optional)",
+          "last_error": "string|null (optional)"
+        }
+      }
     }
   },
   "approval": {
@@ -77,7 +94,8 @@
     },
     "response": {
       "trace_id": "string",
-      "final_status": "executed|rejected",
+      "final_status": "plan_approved|plan_rejected",
+      "execution_mode": "planner_only",
       "approval": {
         "decision": "approve|reject",
         "approver_id": "string",
@@ -88,7 +106,10 @@
         "tool": "string",
         "status": "string",
         "output": "string",
-        "timestamp": "string"
+        "timestamp": "string",
+        "execution_mode": "planner_only",
+        "no_write_policy": "boolean",
+        "plan": "object (optional)"
       }
     }
   },
@@ -106,6 +127,7 @@
       },
       "needs_approval": "boolean",
       "execution_status": "string",
+      "execution_mode": "string (optional)",
       "final_status": "string (optional)",
       "approval": "object (optional)",
       "execution_result": "object (optional)",
@@ -142,6 +164,7 @@
               "string"
             ],
             "llm_query_expansion": "object (optional)",
+            "vector_db": "object (optional)",
             "confidence": "number (optional)",
             "confidence_breakdown": "object (optional)",
             "reasoning_steps": [
@@ -160,6 +183,8 @@
             "risk_level": "string (optional)",
             "requires_human_approval": "boolean (optional)",
             "execution_reasoning": "string (optional)",
+            "execution_mode": "string (optional)",
+            "no_write_policy": "boolean (optional)",
             "provider": "string (optional)",
             "model": "string (optional)",
             "risk_hint": "string (optional)"
@@ -203,6 +228,7 @@
           "string"
         ],
         "llm_query_expansion": "object (optional)",
+        "vector_db": "object (optional)",
         "confidence": "number (optional)",
         "confidence_breakdown": "object (optional)",
         "reasoning_steps": [
@@ -237,6 +263,7 @@
         "dedup_summary": "object",
         "action_details": "object (optional)",
         "execution_status": "string (optional)",
+        "execution_mode": "string (optional)",
         "step_count": "number"
       }
     },

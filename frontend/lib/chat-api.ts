@@ -69,7 +69,8 @@ export type ApprovalDecision = "approve" | "reject";
 
 export type ApprovalResponse = {
   trace_id: string;
-  final_status: "executed" | "rejected";
+  final_status: "plan_approved" | "plan_rejected";
+  execution_mode: "planner_only";
   approval: {
     decision: ApprovalDecision;
     approver_id: string;
@@ -81,6 +82,23 @@ export type ApprovalResponse = {
     status: string;
     output: string;
     timestamp: string;
+    execution_mode: "planner_only";
+    no_write_policy: boolean;
+    plan?: {
+      intent?: string;
+      summary?: string;
+      approval_required?: boolean;
+      risk_hint?: string | null;
+      prechecks?: string[];
+      steps?: Array<{
+        id: number;
+        title: string;
+        system: string;
+        mode: string;
+        operation: string;
+      }>;
+      rollback?: string[];
+    };
   };
 };
 
@@ -103,6 +121,17 @@ export type TraceStep = {
       provider?: string | null;
       model?: string | null;
       expanded_query_tokens?: string[];
+    };
+    vector_db?: {
+      mode?: string;
+      collection?: string;
+      milvus_host?: string;
+      milvus_port?: number;
+      embedding_provider?: string;
+      indexed?: boolean;
+      doc_count?: number;
+      last_error?: string | null;
+      index_state?: Record<string, unknown>;
     };
     confidence?: number;
     confidence_breakdown?: {
@@ -131,6 +160,8 @@ export type TraceStep = {
     risk_level?: string;
     requires_human_approval?: boolean;
     execution_reasoning?: string;
+    execution_mode?: string;
+    no_write_policy?: boolean;
     provider?: string;
     model?: string;
     risk_hint?: string | null;
@@ -156,6 +187,8 @@ export type ChatStreamEvent = {
     dedup_summary?: DedupSummary;
     step_count?: number;
     message?: string;
+    execution_status?: string;
+    execution_mode?: string;
   };
   answer?: string;
   needs_approval?: boolean;
@@ -176,6 +209,7 @@ export type TranscriptResponse = {
   };
   needs_approval?: boolean;
   execution_status?: string;
+  execution_mode?: string;
   final_status?: string;
   approval?: ApprovalResponse["approval"];
   execution_result?: ApprovalResponse["execution_result"];

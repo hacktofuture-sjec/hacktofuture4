@@ -246,6 +246,10 @@ def test_ingest_confluence_batch_reports_partial_failures() -> None:
     assert success["title"] == "Runbook 12345"
     assert failure["status"] == "failed"
     assert "simulated confluence fetch failure" in failure["error"]
+    assert failure["error_detail"]["code"] == "ingestion_adapter_error"
+    assert failure["error_detail"]["source"] == "confluence"
+    assert failure["error_detail"]["stage"] == "fetch"
+    assert failure["error_detail"]["target"] == "broken"
 
     docs = kernel.memory.load_documents(force_reload=True)
     assert any(doc.path == "runtime/confluence/12345.md" for doc in docs)
@@ -296,7 +300,11 @@ def test_create_iris_incident_returns_502_on_upstream_failure() -> None:
         )
 
     assert response.status_code == 502
-    assert "IRIS API unavailable" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert detail["code"] == "ingestion_adapter_unavailable"
+    assert detail["source"] == "iris"
+    assert detail["stage"] == "init"
+    assert "IRIS API unavailable" in detail["message"]
 
 
 def test_ingest_github_batch_adds_runtime_documents() -> None:
@@ -352,6 +360,9 @@ def test_ingest_github_batch_reports_partial_failures() -> None:
     assert success["status"] == "ingested"
     assert failure["status"] == "failed"
     assert "simulated github fetch failure" in failure["error"]
+    assert failure["error_detail"]["source"] == "github"
+    assert failure["error_detail"]["stage"] == "fetch"
+    assert failure["error_detail"]["target"] == "org/repo#404"
 
     docs = kernel.memory.load_documents(force_reload=True)
     assert any(doc.path == "runtime/github/org__repo-101.md" for doc in docs)
@@ -402,6 +413,9 @@ def test_ingest_jira_batch_reports_partial_failures() -> None:
     assert success["status"] == "ingested"
     assert failure["status"] == "failed"
     assert "simulated jira fetch failure" in failure["error"]
+    assert failure["error_detail"]["source"] == "jira"
+    assert failure["error_detail"]["stage"] == "fetch"
+    assert failure["error_detail"]["target"] == "OPS-404"
 
     docs = kernel.memory.load_documents(force_reload=True)
     assert any(doc.path == "runtime/jira/OPS-101.md" for doc in docs)
@@ -456,6 +470,9 @@ def test_ingest_slack_channels_reports_partial_failures() -> None:
     assert success["status"] == "ingested"
     assert failure["status"] == "failed"
     assert "simulated slack channel fetch failure" in failure["error"]
+    assert failure["error_detail"]["source"] == "slack"
+    assert failure["error_detail"]["stage"] == "fetch"
+    assert failure["error_detail"]["target"] == "C-BROKEN"
 
     docs = kernel.memory.load_documents(force_reload=True)
     assert any(doc.path == "runtime/slack/channel-C12345.md" for doc in docs)
@@ -510,8 +527,34 @@ def test_ingest_slack_threads_reports_partial_failures() -> None:
     assert success["status"] == "ingested"
     assert failure["status"] == "failed"
     assert "simulated slack thread fetch failure" in failure["error"]
+    assert failure["error_detail"]["source"] == "slack"
+    assert failure["error_detail"]["stage"] == "fetch"
+    assert failure["error_detail"]["target"] == "C12345:1712345999.999999"
 
     docs = kernel.memory.load_documents(force_reload=True)
     assert any(doc.path == "runtime/slack/thread-C12345-1712345678_123456.md" for doc in docs)
     assert not any(doc.path == "runtime/slack/thread-C12345-1712345999_999999.md" for doc in docs)
     _clear_runtime_documents()
+
+
+def test_vector_status_endpoint_returns_vector_payload() -> None:
+    client = TestClient(app)
+    response = client.get("/api/vector/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "vector"
+    assert isinstance(payload["status"], dict)
+    assert "mode" in payload["status"]
+
+
+def test_vector_rebuild_endpoint_returns_rebuild_status() -> None:
+    _clear_runtime_documents()
+    client = TestClient(app)
+    response = client.post("/api/vector/rebuild")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "vector"
+    assert isinstance(payload["status"], dict)
+    assert "indexed" in payload["status"]

@@ -4,9 +4,10 @@ import asyncio
 import json
 import queue
 import threading
+import time
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -18,6 +19,8 @@ kernel = ControllerKernel()
 memory = ThreeTierMemory()
 STREAM_RETRY_MS = 3000
 STREAM_HEARTBEAT_SECONDS = 2.5
+STREAM_IDLE_TIMEOUT_SECONDS = 20.0
+STREAM_QUEUE_MAXSIZE = 256
 
 
 class IncidentReport(BaseModel):
@@ -146,14 +149,27 @@ async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
     if payload.incident_report is not None:
         query = incident_report_to_query(payload.incident_report)
 
-    event_queue: queue.Queue[dict[str, Any] | None] = queue.Queue()
+    event_queue: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=STREAM_QUEUE_MAXSIZE)
+    stop_event = threading.Event()
+
+    def _queue_put(item: dict[str, Any] | None) -> bool:
+        while not stop_event.is_set():
+            try:
+                event_queue.put(item, timeout=0.1)
+                return True
+            except queue.Full:
+                continue
+        return False
 
     def _worker() -> None:
         try:
             for stream_event in kernel.stream_query_events(query=query, session_id=payload.session_id):
-                event_queue.put(stream_event)
+                if stop_event.is_set():
+                    break
+                if not _queue_put(stream_event):
+                    break
         except Exception as exc:
-            event_queue.put(
+            _queue_put(
                 {
                     "event_type": "trace_error",
                     "trace_id": "trace-unknown",
@@ -163,7 +179,7 @@ async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
                 }
             )
         finally:
-            event_queue.put(None)
+            _queue_put(None)
 
     threading.Thread(target=_worker, daemon=True).start()
 
@@ -172,9 +188,11 @@ async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
         active_trace_id: str | None = None
         terminal_seen = False
         worker_done = False
+        last_progress_at = time.monotonic()
 
         while True:
             if await request.is_disconnected():
+                stop_event.set()
                 break
 
             if worker_done and event_queue.empty():
@@ -185,6 +203,34 @@ async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
             except queue.Empty:
                 if terminal_seen:
                     break
+
+                idle_duration = time.monotonic() - last_progress_at
+                if idle_duration >= STREAM_IDLE_TIMEOUT_SECONDS:
+                    sequence += 1
+                    timeout_trace = active_trace_id or "trace-pending"
+                    timeout_payload = {
+                        "event_type": "trace_error",
+                        "event_id": f"{timeout_trace}:{sequence}",
+                        "trace_id": timeout_trace,
+                        "sequence": sequence,
+                        "timestamp": "",
+                        "status": "failed",
+                        "metadata": {
+                            "idle_timeout_seconds": STREAM_IDLE_TIMEOUT_SECONDS,
+                            "idle_duration_seconds": round(idle_duration, 3),
+                        },
+                        "error_code": "stream_timeout",
+                        "error": "SSE stream timed out waiting for controller events.",
+                    }
+                    stop_event.set()
+                    yield _format_sse(
+                        event="trace_error",
+                        payload=timeout_payload,
+                        event_id=timeout_payload["event_id"],
+                        retry_ms=STREAM_RETRY_MS if sequence == 1 else None,
+                    )
+                    break
+
                 sequence += 1
                 heartbeat_trace = active_trace_id or "trace-pending"
                 heartbeat_payload = {
@@ -196,6 +242,7 @@ async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
                     "status": "in_progress",
                     "metadata": {
                         "message": "stream alive",
+                        "idle_duration_seconds": round(idle_duration, 3),
                     },
                 }
                 yield _format_sse(
@@ -212,6 +259,29 @@ async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
                     break
                 continue
 
+            if not isinstance(queue_item, dict):
+                sequence += 1
+                invalid_trace = active_trace_id or "trace-pending"
+                invalid_payload = {
+                    "event_type": "trace_error",
+                    "event_id": f"{invalid_trace}:{sequence}",
+                    "trace_id": invalid_trace,
+                    "sequence": sequence,
+                    "timestamp": "",
+                    "status": "failed",
+                    "metadata": {},
+                    "error_code": "invalid_stream_event",
+                    "error": "Controller emitted malformed stream event payload.",
+                }
+                stop_event.set()
+                yield _format_sse(
+                    event="trace_error",
+                    payload=invalid_payload,
+                    event_id=invalid_payload["event_id"],
+                    retry_ms=STREAM_RETRY_MS if sequence == 1 else None,
+                )
+                break
+
             trace_id = str(queue_item.get("trace_id") or active_trace_id or "trace-pending")
             active_trace_id = trace_id
             sequence += 1
@@ -225,13 +295,22 @@ async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
 
             if event_type in {"trace_complete", "trace_error"}:
                 terminal_seen = True
+            last_progress_at = time.monotonic()
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/chat/transcript/{trace_id}")
-def get_transcript(trace_id: str) -> dict:
-    transcript = memory.get_transcript(trace_id)
+def get_transcript(trace_id: str, wait_timeout_seconds: float = Query(default=0.0, ge=0.0, le=5.0)) -> dict:
+    transcript = memory.wait_for_transcript(trace_id, timeout_seconds=wait_timeout_seconds)
     if transcript is None:
         raise HTTPException(status_code=404, detail=f"trace {trace_id} not found")
     return transcript

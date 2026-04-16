@@ -62,6 +62,7 @@ make up
 
 - Frontend: http://localhost:3000
 - Backend: http://localhost:8000/health
+- Milvus: localhost:19530
 
 ### Option B: Run separately
 
@@ -87,6 +88,33 @@ uvicorn app.main:app --reload --port 8000
 - Next.js app shell page
 - Shared chat contract at `shared/contracts/chat.contract.json`
 - Sample data folders for Confluence, runbooks, incidents, GitHub, and Slack
+
+## Milvus + Vector DB Setup
+
+UniOps supports three retrieval modes using `RETRIEVAL_MODE`:
+
+- `keyword`: keyword-only retrieval (no vector indexing)
+- `semantic`: Milvus semantic retrieval only (fallback to keyword when unavailable)
+- `hybrid`: semantic-first with keyword backfill
+
+Recommended `.env` values:
+
+```bash
+RETRIEVAL_MODE=hybrid
+MILVUS_HOST=localhost
+MILVUS_PORT=19530
+MILVUS_COLLECTION_NAME=uniops_documents
+EMBEDDING_PROVIDER=deterministic
+EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
+```
+
+Use `EMBEDDING_PROVIDER=deterministic` for local/offline development (default),
+`huggingface` for model-based local embeddings, or `openai` for hosted embeddings.
+
+Vector endpoints:
+
+- `GET /api/vector/status`: current vector DB health/index status
+- `POST /api/vector/rebuild`: force reindex of current memory documents into Milvus
 
 ## Next Build Targets
 

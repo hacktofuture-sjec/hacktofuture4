@@ -92,6 +92,7 @@ export default function Home() {
   const [answer, setAnswer] = useState<string>("");
   const [needsApproval, setNeedsApproval] = useState<boolean>(false);
   const [streamStatus, setStreamStatus] = useState<string>("idle");
+  const [streamEvents, setStreamEvents] = useState<ChatStreamEvent[]>([]);
   const [traceSteps, setTraceSteps] = useState<TraceStep[]>([]);
   const [transcript, setTranscript] = useState<TranscriptResponse | null>(null);
   const [confluenceResult, setConfluenceResult] = useState<IngestConfluenceResponse | null>(null);
@@ -207,6 +208,7 @@ export default function Home() {
     setErrorMessage(null);
     setChatLoading(true);
     setStreamStatus("idle");
+    setStreamEvents([]);
     setTraceSteps([]);
     setTranscript(null);
     setApprovalResult(null);
@@ -253,6 +255,8 @@ export default function Home() {
             if (streamEvent.trace_id && streamEvent.trace_id !== "trace-pending") {
               setTraceId(streamEvent.trace_id);
             }
+
+            setStreamEvents((previous) => [...previous.slice(-99), streamEvent]);
 
             if (streamEvent.event_type === "trace_started") {
               setStreamStatus("streaming");
@@ -457,6 +461,10 @@ export default function Home() {
               <strong>{needsApproval ? "Pending" : transcript?.final_status ?? "Idle"}</strong>
             </li>
             <li>
+              <span>Execution Mode</span>
+              <strong>{approvalResult?.execution_mode ?? transcript?.execution_mode ?? "n/a"}</strong>
+            </li>
+            <li>
               <span>Confluence Ingest</span>
               <strong>
                 {confluenceResult
@@ -474,6 +482,72 @@ export default function Home() {
         <section className="panel trace-panel">
           <h3>Trace Preview</h3>
           <p>Live stream of trace_step events (retrieval, reasoning, execution) with transcript refresh support.</p>
+
+          <h4>SSE Event Timeline</h4>
+          {streamEvents.length === 0 ? (
+            <p className="trace-status">No stream events yet.</p>
+          ) : (
+            <ul className="trace-events">
+              {streamEvents.map((streamEvent) => (
+                <li key={streamEvent.event_id}>
+                  <strong>{streamEvent.event_type}</strong>
+                  <br />
+                  <small>
+                    Seq: {streamEvent.sequence} | Status: {streamEvent.status} | Timestamp:{" "}
+                    {formatTimestamp(streamEvent.timestamp)}
+                  </small>
+
+                  {streamEvent.event_type === "trace_step" && (
+                    <>
+                      <br />
+                      <small>
+                        Step: {streamEvent.step ?? "n/a"} | Agent: {streamEvent.agent ?? "n/a"}
+                      </small>
+                    </>
+                  )}
+
+                  {streamEvent.event_type === "trace_started" && streamEvent.metadata?.dedup_summary && (
+                    <>
+                      <br />
+                      <small>
+                        Dedup: docs {streamEvent.metadata.dedup_summary.documents.scanned} scanned /
+                        {" "}
+                        {streamEvent.metadata.dedup_summary.documents.duplicates} dupes; transcripts{" "}
+                        {streamEvent.metadata.dedup_summary.transcripts.scanned} scanned /{" "}
+                        {streamEvent.metadata.dedup_summary.transcripts.duplicates} dupes
+                      </small>
+                    </>
+                  )}
+
+                  {streamEvent.event_type === "trace_complete" && (
+                    <>
+                      <br />
+                      <small>
+                        Needs Approval: {String(streamEvent.needs_approval ?? false)} | Suggested Action:{" "}
+                        {streamEvent.suggested_action ?? "n/a"}
+                      </small>
+                      <br />
+                      <small>
+                        Execution Status: {streamEvent.metadata?.execution_status ?? "n/a"} | Execution Mode:{" "}
+                        {streamEvent.metadata?.execution_mode ?? "n/a"} | Step Count:{" "}
+                        {streamEvent.metadata?.step_count ?? "n/a"}
+                      </small>
+                    </>
+                  )}
+
+                  {streamEvent.event_type === "trace_error" && (
+                    <>
+                      <br />
+                      <small>
+                        Error ({streamEvent.error_code ?? "unknown"}): {streamEvent.error ?? "unknown"}
+                      </small>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
           {traceSteps.length === 0 ? (
             <div className="trace-lines" aria-hidden="true">
               <span />
@@ -515,20 +589,26 @@ export default function Home() {
                       </small>
                     </>
                   )}
+                  {step.metadata?.vector_db && (
+                    <>
+                      <br />
+                      <small>
+                        Vector DB: mode {step.metadata.vector_db.mode ?? "n/a"}, indexed {String(step.metadata.vector_db.indexed ?? false)}
+                        {step.metadata.vector_db.collection ? `, collection ${step.metadata.vector_db.collection}` : ""}
+                      </small>
+                    </>
+                  )}
                   {typeof step.metadata?.confidence === "number" && (
                     <>
                       <br />
                       <small>Confidence: {step.metadata.confidence.toFixed(3)}</small>
                     </>
                   )}
-                  {typeof step.metadata?.confidence_breakdown?.final_confidence === "number" && (
+                  {step.metadata?.confidence_breakdown && (
                     <>
                       <br />
                       <small>
-                        Confidence Breakdown: base {step.metadata.confidence_breakdown.base_confidence?.toFixed(3) ?? "n/a"},
-                        quality {step.metadata.confidence_breakdown.quality_bonus?.toFixed(3) ?? "n/a"},
-                        penalty {step.metadata.confidence_breakdown.duplicate_penalty?.toFixed(3) ?? "n/a"},
-                        final {step.metadata.confidence_breakdown.final_confidence.toFixed(3)}
+                        Confidence Breakdown: {JSON.stringify(step.metadata.confidence_breakdown)}
                       </small>
                     </>
                   )}
@@ -545,6 +625,17 @@ export default function Home() {
                         Evidence Scores: {step.metadata.evidence_scores
                           .map((score) => `${score.title} (${score.priority_score.toFixed(3)})`)
                           .join(", ")}
+                      </small>
+                    </>
+                  )}
+                  {step.metadata?.action_details && (
+                    <>
+                      <br />
+                      <small>
+                        Action Details: intent {step.metadata.action_details.intent ?? "n/a"}, tool{" "}
+                        {step.metadata.action_details.tool ?? "n/a"}, approval required{" "}
+                        {String(step.metadata.action_details.approval_required ?? false)}
+                        {step.metadata.action_details.risk_hint ? `, risk hint: ${step.metadata.action_details.risk_hint}` : ""}
                       </small>
                     </>
                   )}
@@ -642,6 +733,7 @@ export default function Home() {
               <p className="response-text">
                 Approval submitted: {approvalResult.approval.decision} ({approvalResult.final_status})
               </p>
+              <p className="response-meta">Mode: {approvalResult.execution_mode}</p>
             </div>
           )}
 
@@ -650,6 +742,7 @@ export default function Home() {
               <p className="response-text">
                 Transcript final status: {transcript.final_status ?? "n/a"}
               </p>
+              <p className="response-meta">Execution mode: {transcript.execution_mode ?? "n/a"}</p>
               <p className="response-meta">
                 Suggested action: {transcript.suggested_action ?? "n/a"}
               </p>

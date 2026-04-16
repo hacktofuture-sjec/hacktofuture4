@@ -159,7 +159,7 @@ def test_controller_passes_dedup_summary_to_reasoning_swarm() -> None:
             "suggested_action": "summarize findings and request approval for external actions",
             "action_details": {
                 "intent": "summarize_and_request_approval",
-                "tool": "generic.mock.noop",
+                "tool": "planner.summarize_and_request_approval",
                 "parameters": {},
                 "approval_required": True,
                 "risk_hint": "medium",

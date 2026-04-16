@@ -21,27 +21,25 @@ class _FakeConfluenceClient:
 class _FakeExecutor:
     def execute(self, action: str) -> dict[str, object]:
         return {
-            "tool": "tool.registry.batch",
-            "status": "executed",
-            "output": f"Simulated execution for action: {action}",
+            "tool": "planner.external_action_plan",
+            "status": "plan_generated",
+            "output": f"Generated planner-only execution plan for action: {action}",
             "timestamp": "2026-04-16T00:00:00+00:00",
-            "details": [
-                {
-                    "tool": "github.fetch_issue",
-                    "status": "executed",
-                    "output": "GitHub issue fetched.",
-                },
-                {
-                    "tool": "slack.fetch_channel_messages",
-                    "status": "executed",
-                    "output": "Slack context fetched.",
-                },
-                {
-                    "tool": "jira.fetch_issue",
-                    "status": "executed",
-                    "output": "Jira issue fetched.",
-                },
-            ],
+            "execution_mode": "planner_only",
+            "no_write_policy": True,
+            "plan": {
+                "intent": "rollback_and_notify",
+                "summary": action,
+                "steps": [
+                    {
+                        "id": 1,
+                        "title": "Collect rollback context",
+                        "system": "github",
+                        "mode": "planner_only",
+                        "operation": "review latest deployment and candidate rollback commit",
+                    }
+                ],
+            },
         }
 
 
@@ -129,17 +127,19 @@ def test_e2e_batch_ingest_chat_stream_approve_transcript() -> None:
 
     assert approve_response.status_code == 200
     approve_payload = approve_response.json()
-    assert approve_payload["final_status"] == "executed"
-    assert approve_payload["execution_result"]["status"] == "executed"
+    assert approve_payload["final_status"] == "plan_approved"
+    assert approve_payload["execution_mode"] == "planner_only"
+    assert approve_payload["execution_result"]["status"] == "plan_generated"
 
     transcript_response = client.get(f"/api/chat/transcript/{trace_id}")
     assert transcript_response.status_code == 200
     transcript_payload = transcript_response.json()
 
     assert transcript_payload["trace_id"] == trace_id
-    assert transcript_payload["final_status"] == "executed"
+    assert transcript_payload["final_status"] == "plan_approved"
+    assert transcript_payload["execution_mode"] == "planner_only"
     assert transcript_payload["approval"]["decision"] == "approve"
-    assert transcript_payload["execution_result"]["status"] == "executed"
+    assert transcript_payload["execution_result"]["status"] == "plan_generated"
     assert [step["step"] for step in transcript_payload["steps"]] == [
         "retrieval",
         "reasoning",

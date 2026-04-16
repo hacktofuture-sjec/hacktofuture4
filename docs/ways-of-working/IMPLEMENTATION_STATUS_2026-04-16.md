@@ -1,6 +1,6 @@
-# UniOps Implementation Status (2026-04-16)
+# UniOps Implementation Status (Updated 2026-04-17)
 
-This document captures the as-built state of UniOps as of 2026-04-16.
+This document captures the as-built state after Slice 4 reliability hardening and Slice 5 documentation cleanup.
 
 ## 0) Current Project Status Snapshot
 
@@ -11,8 +11,10 @@ Legend:
 
 Status:
 - [x] Backend APIs and approval flow
-- [~] Frontend integration completeness
-- [x] SSE completion (live POST stream with heartbeat and terminal events)
+- [x] Frontend integration completeness for chat, trace timeline, ingestion, and approval actions
+- [x] SSE completion with reconnect-safe behavior, heartbeat events, and idle timeout termination
+- [x] Ingestion error envelope consistency across endpoint-level and per-item failures
+- [x] Transcript readiness hardening (atomic writes + wait-based reads)
 - [x] Groq-first backend rollout across retrieval, reasoning, and execution swarms
 
 ## 1) What Is Implemented End-to-End
@@ -26,6 +28,13 @@ Status:
 - Ingestion endpoints:
   - `POST /api/ingest/iris?case_id=<id>`
   - `POST /api/ingest/confluence` with body `{ "page_ids": ["..."] }`
+  - `POST /api/ingest/github`
+  - `POST /api/ingest/jira`
+  - `POST /api/ingest/slack/channels`
+  - `POST /api/ingest/slack/threads`
+- Vector endpoints:
+  - `GET /api/vector/status`
+  - `POST /api/vector/rebuild`
 - Approval endpoint:
   - `POST /api/approvals/{trace_id}`
 
@@ -36,14 +45,16 @@ Status:
 4. Execution swarm performs Groq-based action normalization/risk rationale (when enabled), then classifies risk with native permission gate.
 5. If high or uncertain risk, status is `pending_approval`.
 6. Approval API applies `approve` or `reject` decision.
-7. Transcript and audit artifacts are updated with final outcome.
+7. Transcript and audit artifacts are updated with final outcome (`plan_approved` or `plan_rejected`) under planner-only execution policy.
 
 ### Memory and Audit
 - Three-tier memory currently supports:
   - Static source loading from `data/{confluence,runbooks,incidents,github,slack}`
-  - Runtime ingestion merge for IRIS and Confluence docs
+  - Runtime ingestion merge for IRIS/Confluence/GitHub/Jira/Slack docs
   - Dedup pass and summary metadata
   - Transcript persistence with action details and approval status fields
+  - Atomic JSON persistence for transcript and approval artifacts
+  - Wait-based transcript reads to reduce read-after-write races
   - Approval audit persistence under `backend/.uniops/approvals/`
 
 ### SSE Status
@@ -51,6 +62,7 @@ Status:
 - Stream lifecycle events implemented: `trace_started`, `trace_step`, `trace_heartbeat`, `trace_complete`, and `trace_error`.
 - Event envelopes include ordered sequencing and observability context: `event_id`, `trace_id`, `sequence`, and `status`.
 - Step metadata now includes timing fields (`started_at`, `finished_at`, `duration_ms`) in addition to reasoning/execution metadata.
+- Stream hardening includes bounded queue handling, disconnect stop signaling, idle timeout termination (`stream_timeout`), malformed-event guard (`invalid_stream_event`), and explicit SSE anti-buffering headers.
 
 ## 2) Key Files Added/Updated
 
@@ -120,24 +132,33 @@ Rule: when `incident_report` is present, backend derives canonical query context
 
 ### Approval API response (implemented)
 - `trace_id`
-- `final_status` (`executed` or `rejected`)
+- `final_status` (`plan_approved` or `plan_rejected`)
 - `approval` object
 - `execution_result` object
 
-### Confluence ingestion contract (implemented)
+### Ingestion contract (implemented)
 - Request body:
-  - `page_ids: string[]` (deduplicated, non-empty)
+  - source-specific IDs/refs (deduplicated, non-empty)
 - Response:
   - `ingested_count`
   - `failed_count`
   - `source`
-  - `results[]` with per-page `page_id`, `status`, optional `title`, optional `error`
+  - `results[]` with per-item `status`, optional `error`, and structured `error_detail` envelope (`code`, `message`, `source`, `stage`, `retriable`, `target`)
 
 ## 4) Test and Verification Evidence
 
 ### Confirmed passing in current environment
-- `backend/.venv/Scripts/python -m pytest -q`
-  - Result: `31 passed in 1.90s`
+- Reliability-focused regression suite:
+  - `tests/test_chat_orchestration.py`
+  - `tests/test_chat_iris_input.py`
+  - `tests/test_chat_stream.py`
+  - `tests/test_approvals.py`
+  - `tests/test_ingestion.py`
+  - `tests/test_memory_dedup.py`
+  - Result: `36 passed`
+- Additional post-merge full backend run on 2026-04-17:
+  - `backend/.venv/bin/python -m pytest -q`
+  - Result: `52 passed`
 
 ### Frontend validation
 - `frontend npm run build`
@@ -165,19 +186,15 @@ Rule: when `incident_report` is present, backend derives canonical query context
 ## 5) Frontend Status
 
 ### Implemented
-- Next.js shell UI and design system scaffolding in `frontend/app/page.tsx` and `frontend/app/globals.css`
-- Backend API utility in `frontend/lib/chat-api.ts`
-- Trace panel rendering for confidence, confidence breakdown, reasoning steps, evidence scores, and source-level scores
-
-### Pending for full UX completion
-- Full approval modal wiring for `POST /api/approvals/{trace_id}`
-- Ingestion action wiring for IRIS and Confluence from UI
-- End-to-end trace and approval lifecycle rendering from UI state
+- Next.js interactive UI in `frontend/app/page.tsx` and `frontend/app/globals.css`
+- Backend API utility and SSE event parsing in `frontend/lib/chat-api.ts`
+- Trace timeline rendering for real streamed events and metadata
+- Ingestion controls for supported sources and transcript refresh flow
+- Approval interaction wiring for planner-only decision flow
 
 ## 6) Known Gaps (Next Work Items)
 
-1. Implement live external adapters (GitHub/Slack/Jira) in teammate-owned workstream; current path remains mock execution.
-2. Complete frontend approval and ingestion interaction flow hardening and UX polish.
-3. Add stronger retry/error envelope strategy for external adapter calls and provider timeouts.
-4. Add optional scheduled sync mode (currently manual ingestion trigger only).
-5. Runtime-ingested documents are intentionally non-persistent for this slice and must be re-ingested after restart.
+1. Keep external execution policy planner-only until explicit approval for real write operations is granted.
+2. Add adapter retry/backoff policy tuning for flaky provider network conditions.
+3. Add optional scheduled sync mode (currently manual ingestion trigger only).
+4. Runtime-ingested documents are intentionally non-persistent for this slice and must be re-ingested after restart.

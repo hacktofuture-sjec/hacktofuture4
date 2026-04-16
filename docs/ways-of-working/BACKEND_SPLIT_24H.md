@@ -31,7 +31,7 @@ Ownership track:
 - FastAPI routes and API lifecycle
 - SSE stream endpoint and connection stability
 - Approval queue persistence path and action execution wiring
-- Tool registry adapters (GitHub/Slack/Jira mocks)
+- Tool registry adapters (GitHub/Slack/Jira planner-safe adapters)
 - Audit logging, health checks, failure handling
 - Docker, runtime env, local deployment workflow, Milvus operations
 
@@ -61,9 +61,9 @@ Total: 10
 
 Engineer 2:
 1. [x] FastAPI chat + stream endpoints and response contracts (P0, 3)
-2. [ ] SSE event delivery, reconnect-safe behavior, timeout handling (P0, 3)
-3. [x] Approval queue execution path + mock tool invocation hooks (P1, 2)
-4. [~] Structured audit logs + health checks + docker runtime hardening (P1, 2)
+2. [x] SSE event delivery, reconnect-safe behavior, timeout handling (P0, 3)
+3. [x] Approval queue execution path + planner-only tool invocation hooks (P1, 2)
+4. [x] Structured audit logs + health checks + docker runtime hardening (P1, 2)
 Total: 10
 
 Progress note (2026-04-16):
@@ -72,8 +72,8 @@ Progress note (2026-04-16):
 - Groq-first integration slice completed across retrieval, reasoning, and execution swarms.
 - Trace payloads now expose richer metadata (`confidence_breakdown`, `reasoning_steps`, `evidence_scores`, structured action details).
 - Backend regression baseline currently: `31 passed` in backend test suite.
-- SSE is not done yet beyond baseline endpoint streaming; reconnect-safe semantics, heartbeat, and timeout handling remain pending.
-- Remaining backend hardening is mainly reliability behavior (SSE reliability, retries/timeouts, and final runtime polish).
+- SSE reliability hardening is complete: reconnect-safe behavior, heartbeat events, idle timeout handling, and malformed stream event guard.
+- API reliability hardening now includes consistent ingestion error envelopes and transcript race mitigation (atomic writes + wait-based reads).
 
 ## Integration Contract Between Both
 - Engineer 1 outputs trace events in canonical shape.
@@ -87,7 +87,7 @@ Hour 0-2:
 
 Hour 2-8:
 - [x] Engineer 1: retrieval and reasoning composition + source citation model
-- [ ] Engineer 2: SSE stream endpoint reliability and API error envelopes
+- [x] Engineer 2: SSE stream endpoint reliability and API error envelopes
 
 Hour 8-14:
 - [x] Engineer 1: permission policy rules + memory hooks
@@ -95,7 +95,7 @@ Hour 8-14:
 
 Hour 14-20:
 - [x] Engineer 1: Kairos-lite dedup and reasoning quality improvements
-- [~] Engineer 2: audit logging, reliability checks, docker and Milvus validation
+- [x] Engineer 2: audit logging, reliability checks, docker and Milvus validation
 
 Hour 20-24:
 - [~] Both: bug fixing, smoke tests, demo hardening, no schema-breaking changes

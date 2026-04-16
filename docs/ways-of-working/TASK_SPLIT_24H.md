@@ -15,12 +15,12 @@ Legend:
 - [x] Engineer B: FastAPI setup, /health, /api/chat stub
 
 ## Hour 2-8
-- [ ] Engineer A: SSE client, reasoning timeline UI, source citation cards
-- [~] Engineer B: Controller + retrieval/reasoning/execution swarm stubs, SSE endpoint baseline only
+- [x] Engineer A: SSE client, reasoning timeline UI, source citation cards
+- [x] Engineer B: Controller + retrieval/reasoning/execution swarm stubs, SSE reliability hardening
 
 ## Hour 8-14
-- [ ] Engineer A: Approval modal and action queue UI
-- [x] Engineer B: Native permission gate and mock tool registry
+- [x] Engineer A: Approval modal and action queue UI
+- [x] Engineer B: Native permission gate and planner-safe tool registry
 
 ## Hour 14-20
 - [~] Engineer A: Polish UX, loading/error states, responsive layout
@@ -44,6 +44,6 @@ Legend:
 - Shared contract has ingestion and approval schemas implemented.
 - Shared contract now includes additive action and trace metadata fields for Groq-backed reasoning/execution transparency.
 - Approval tests are passing in current backend environment (`tests/test_approvals.py`).
-- Backend suite currently passes with Groq integration slices (`31 passed`).
-- SSE is not done yet beyond baseline endpoint streaming.
-- Main remaining product gaps are SSE completion and frontend completion for ingestion and HITL approval UX wiring.
+- Backend reliability-focused suite now passes (`36 passed`).
+- SSE reliability completion is done (reconnect-safe behavior, heartbeat, timeout, malformed event guard).
+- Ingestion error envelopes and transcript race/readiness hardening are complete.

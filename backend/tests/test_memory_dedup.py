@@ -1,5 +1,7 @@
 import json
 from pathlib import Path
+import threading
+import time
 
 from src.memory.three_tier_memory import ThreeTierMemory
 
@@ -82,3 +84,24 @@ def test_run_dedup_pass_is_idempotent_and_deterministic(tmp_path: Path) -> None:
     assert summary["documents"]["scanned"] == 2
     assert summary["transcripts"]["scanned"] == 2
     assert summary["duplication_ratio"] == 0.5
+
+
+def test_wait_for_transcript_returns_when_transcript_appears(tmp_path: Path) -> None:
+    memory = _build_memory(tmp_path)
+
+    def _persist_later() -> None:
+        time.sleep(0.03)
+        memory.persist_transcript(trace_id="trace-delayed", steps=[{"step": "retrieval"}])
+
+    worker = threading.Thread(target=_persist_later, daemon=True)
+    worker.start()
+
+    transcript = memory.wait_for_transcript(
+        trace_id="trace-delayed",
+        timeout_seconds=0.3,
+        poll_interval_seconds=0.01,
+    )
+
+    worker.join(timeout=0.3)
+    assert transcript is not None
+    assert transcript["trace_id"] == "trace-delayed"

@@ -39,7 +39,7 @@ def _create_high_risk_trace(client: TestClient) -> str:
     return completion["trace_id"]
 
 
-def test_approve_trace_executes_mock_tool_and_persists_audit() -> None:
+def test_approve_trace_generates_execution_plan_and_persists_audit() -> None:
     client = TestClient(app)
     trace_id = _create_high_risk_trace(client)
 
@@ -55,14 +55,18 @@ def test_approve_trace_executes_mock_tool_and_persists_audit() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["trace_id"] == trace_id
-    assert payload["final_status"] == "executed"
+    assert payload["final_status"] == "plan_approved"
+    assert payload["execution_mode"] == "planner_only"
     assert payload["approval"]["decision"] == "approve"
-    assert payload["execution_result"]["status"] == "executed"
+    assert payload["execution_result"]["status"] == "plan_generated"
+    assert payload["execution_result"]["execution_mode"] == "planner_only"
+    assert payload["execution_result"]["no_write_policy"] is True
 
     transcript = client.get(f"/api/chat/transcript/{trace_id}")
     assert transcript.status_code == 200
     transcript_payload = transcript.json()
-    assert transcript_payload["final_status"] == "executed"
+    assert transcript_payload["final_status"] == "plan_approved"
+    assert transcript_payload["execution_mode"] == "planner_only"
     assert transcript_payload["approval"]["approver_id"] == "sre-lead"
 
 
@@ -81,11 +85,12 @@ def test_reject_trace_does_not_execute_tool_and_marks_rejected() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["final_status"] == "rejected"
-    assert payload["execution_result"]["status"] == "rejected"
+    assert payload["final_status"] == "plan_rejected"
+    assert payload["execution_mode"] == "planner_only"
+    assert payload["execution_result"]["status"] == "plan_rejected"
 
     transcript = client.get(f"/api/chat/transcript/{trace_id}")
     assert transcript.status_code == 200
     transcript_payload = transcript.json()
-    assert transcript_payload["final_status"] == "rejected"
+    assert transcript_payload["final_status"] == "plan_rejected"
     assert transcript_payload["approval"]["decision"] == "reject"

@@ -1,4 +1,5 @@
 import json
+import time
 
 from fastapi.testclient import TestClient
 
@@ -140,3 +141,76 @@ def test_transcript_endpoint_returns_404_for_unknown_trace() -> None:
     client = TestClient(app)
     response = client.get("/api/chat/transcript/trace-not-found")
     assert response.status_code == 404
+
+
+def test_transcript_endpoint_can_wait_for_ready_transcript(monkeypatch) -> None:
+    client = TestClient(app)
+
+    def _wait_for_transcript(trace_id: str, timeout_seconds: float):
+        assert trace_id == "trace-delayed"
+        assert timeout_seconds == 0.2
+        return {"trace_id": trace_id, "steps": [{"step": "retrieval"}]}
+
+    monkeypatch.setattr(chat_route.memory, "wait_for_transcript", _wait_for_transcript)
+
+    response = client.get("/api/chat/transcript/trace-delayed", params={"wait_timeout_seconds": 0.2})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["trace_id"] == "trace-delayed"
+
+
+def test_transcript_endpoint_wait_timeout_still_returns_404(monkeypatch) -> None:
+    client = TestClient(app)
+
+    def _wait_for_transcript(trace_id: str, timeout_seconds: float):
+        assert trace_id == "trace-missing"
+        assert timeout_seconds == 0.1
+        return None
+
+    monkeypatch.setattr(chat_route.memory, "wait_for_transcript", _wait_for_transcript)
+
+    response = client.get("/api/chat/transcript/trace-missing", params={"wait_timeout_seconds": 0.1})
+    assert response.status_code == 404
+
+
+def test_stream_response_sets_sse_headers() -> None:
+    client = TestClient(app)
+    with client.stream(
+        "POST",
+        "/api/chat",
+        json={"message": "quick health check", "session_id": "sess-stream-headers"},
+    ) as response:
+        assert response.status_code == 200
+        assert response.headers.get("content-type", "").startswith("text/event-stream")
+        assert response.headers.get("cache-control") == "no-cache"
+        assert response.headers.get("connection") == "keep-alive"
+
+
+def test_chat_stream_times_out_when_controller_stalls(monkeypatch) -> None:
+    class _StalledKernel:
+        def stream_query_events(self, query: str, session_id: str):
+            yield {
+                "event_type": "trace_started",
+                "trace_id": "trace-stalled",
+                "status": "started",
+                "metadata": {},
+            }
+            time.sleep(0.2)
+            while True:
+                time.sleep(0.2)
+
+    client = TestClient(app)
+    monkeypatch.setattr(chat_route, "kernel", _StalledKernel())
+    monkeypatch.setattr(chat_route, "STREAM_HEARTBEAT_SECONDS", 0.02)
+    monkeypatch.setattr(chat_route, "STREAM_IDLE_TIMEOUT_SECONDS", 0.08)
+
+    events = _collect_sse_events(client, "simulate stalled stream", "sess-stream-timeout")
+    lifecycle_events = [item["event"] for item in events]
+
+    assert "trace_started" in lifecycle_events
+    assert "trace_heartbeat" in lifecycle_events
+    assert "trace_error" in lifecycle_events
+
+    timeout_payload = next(item["payload"] for item in events if item["event"] == "trace_error")
+    assert timeout_payload.get("error_code") == "stream_timeout"
+    assert timeout_payload.get("status") == "failed"

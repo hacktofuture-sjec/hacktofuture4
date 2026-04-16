@@ -9,27 +9,30 @@ Use this implementation snapshot first:
 
 - DFIR-IRIS local stack install workflow is in place (`make iris-install`, `make iris-up`, `make iris-admin-password`).
 - Backend supports:
-  - chat + transcript + SSE stream (baseline endpoint; reliability completion pending)
+  - chat + transcript + SSE stream (reliability hardened: reconnect-safe behavior, heartbeat, timeout, and terminal errors)
   - IRIS and Confluence ingestion endpoints
-  - approval decision endpoint with mock tool execution and audit persistence
+  - GitHub/Jira/Slack ingestion endpoints
+  - approval decision endpoint with planner-only plan generation and audit persistence
+  - vector status and rebuild endpoints
 - Groq integration slices completed:
   - shared Groq provider wiring across retrieval/reasoning/execution
-  - strict provider failure behavior (chat returns 503 on provider errors)
+  - strict provider failure behavior (chat stream emits terminal `trace_error` SSE events)
   - structured `action_details` in transcript
   - rich trace metadata (`confidence_breakdown`, `reasoning_steps`, `evidence_scores`)
+- Slice 4 hardening completed:
+  - 4.1 SSE reliability hardening
+  - 4.2 unified ingestion error envelope (`error_detail`)
+  - 4.3 transcript readiness/race hardening (atomic writes + wait-based reads)
 - Shared contract includes ingestion and approval schemas.
-- Backend full suite currently passes (`31 passed`).
+- Reliability-focused backend suite now passes (`36 passed`), with earlier full backend validation at `52 passed`.
 
 ## Where To Continue Next
 
-1. SSE completion (reconnect-safe behavior, heartbeat events, timeout handling).
-2. Live external adapter workstream (GitHub/Slack/Jira) beyond current mock-safe execution.
-3. Frontend completion for approval and ingestion UX hardening.
-4. Full golden-flow test pass and capture of verification evidence.
-5. Optional hardening:
-   - retries/timeouts for adapter calls
-   - richer approval-state UI
-   - stronger audit/report formatting
+1. Adapter retry/backoff policy hardening for live API instability windows.
+2. Additional UI polish for approval-state clarity and richer failure rendering.
+3. Optional scheduled ingestion sync mode.
+4. Real external write execution enablement only if policy is explicitly relaxed from planner-only.
+5. Consolidate dated docs into a new status snapshot file to reduce drift.
 
 ## Files To Open First
 

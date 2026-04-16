@@ -167,6 +167,7 @@ class ControllerKernel:
                     "retrieval_method": retrieval.get("retrieval_method", "keyword"),
                     "query_tokens": retrieval.get("query_tokens", []),
                     "llm_query_expansion": retrieval.get("llm_query_expansion"),
+                    "vector_db": retrieval.get("vector_db"),
                 },
                 started_at=retrieval_started,
                 finished_at=retrieval_finished,
@@ -241,6 +242,8 @@ class ControllerKernel:
                     "risk_level": execution.get("risk_level"),
                     "requires_human_approval": execution.get("requires_human_approval"),
                     "execution_reasoning": execution.get("execution_reasoning"),
+                    "execution_mode": execution.get("execution_mode"),
+                    "no_write_policy": execution.get("no_write_policy"),
                     "provider": execution.get("provider"),
                     "model": execution.get("model"),
                     "risk_hint": execution.get("risk_hint"),
@@ -267,6 +270,7 @@ class ControllerKernel:
                 action_details=reasoning.get("action_details"),
                 needs_approval=execution["requires_human_approval"],
                 execution_status=execution["status"],
+                execution_mode=execution.get("execution_mode"),
             )
 
             yield {
@@ -280,6 +284,7 @@ class ControllerKernel:
                     "dedup_summary": dedup_summary,
                     "action_details": reasoning.get("action_details"),
                     "execution_status": execution.get("status"),
+                    "execution_mode": execution.get("execution_mode"),
                     "step_count": len(trace_payload),
                 },
             }
@@ -293,6 +298,7 @@ class ControllerKernel:
                 action_details=(reasoning or {}).get("action_details"),
                 needs_approval=(execution or {}).get("requires_human_approval"),
                 execution_status="failed",
+                execution_mode=(execution or {}).get("execution_mode"),
             )
             yield {
                 "event_type": "trace_error",
@@ -315,6 +321,7 @@ class ControllerKernel:
                 action_details=(reasoning or {}).get("action_details"),
                 needs_approval=(execution or {}).get("requires_human_approval"),
                 execution_status="failed",
+                execution_mode=(execution or {}).get("execution_mode"),
             )
             yield {
                 "event_type": "trace_error",
@@ -357,6 +364,7 @@ class ControllerKernel:
                     "retrieval_method": retrieval.get("retrieval_method", "keyword"),
                     "query_tokens": retrieval.get("query_tokens", []),
                     "llm_query_expansion": retrieval.get("llm_query_expansion"),
+                    "vector_db": retrieval.get("vector_db"),
                 },
             )
         )
@@ -399,6 +407,8 @@ class ControllerKernel:
                     "risk_level": execution.get("risk_level"),
                     "requires_human_approval": execution.get("requires_human_approval"),
                     "execution_reasoning": execution.get("execution_reasoning"),
+                    "execution_mode": execution.get("execution_mode"),
+                    "no_write_policy": execution.get("no_write_policy"),
                     "provider": execution.get("provider"),
                     "model": execution.get("model"),
                     "risk_hint": execution.get("risk_hint"),
@@ -415,6 +425,7 @@ class ControllerKernel:
             action_details=reasoning.get("action_details"),
             needs_approval=execution["requires_human_approval"],
             execution_status=execution["status"],
+            execution_mode=execution.get("execution_mode"),
         )
 
         return ControllerResult(

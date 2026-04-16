@@ -34,7 +34,7 @@ class IrisClient:
     @classmethod
     def from_env(cls) -> "IrisClient":
         base_url = os.getenv("IRIS_BASE_URL", "").strip()
-        api_key = os.getenv("IRIS_API_KEY", "").strip() or os.getenv("IRIS_API_TOKEN", "").strip()
+        api_key = os.getenv("IRIS_API_KEY", "").strip()
         verify_ssl_env = os.getenv("IRIS_VERIFY_SSL", "true").strip().lower()
         verify_ssl = verify_ssl_env not in {"0", "false", "no"}
 

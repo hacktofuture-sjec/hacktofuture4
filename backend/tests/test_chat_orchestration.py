@@ -18,7 +18,7 @@ class _FakeGroqLLMClient:
             "suggested_action": "create rollback PR and notify Slack and Jira",
             "action_details": {
                 "intent": "rollback_and_notify",
-                "tool": "github.mock.rollback_pr",
+                "tool": "planner.rollback_and_notify",
                 "parameters": {},
                 "approval_required": True,
                 "risk_hint": "high",

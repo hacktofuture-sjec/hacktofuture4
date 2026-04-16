@@ -144,7 +144,7 @@ class ReasoningSwarm:
         if "rollback" in normalized or "revert" in normalized or "pr" in normalized:
             return {
                 "intent": "rollback_and_notify",
-                "tool": "github.mock.rollback_pr",
+                "tool": "planner.rollback_and_notify",
                 "parameters": {
                     "notify_channels": ["slack", "jira"],
                 },
@@ -155,7 +155,7 @@ class ReasoningSwarm:
         if "diagnostic" in normalized or "read-only" in normalized:
             return {
                 "intent": "run_diagnostic",
-                "tool": "generic.mock.noop",
+                "tool": "planner.run_diagnostic",
                 "parameters": {
                     "mode": "read-only",
                 },
@@ -166,7 +166,7 @@ class ReasoningSwarm:
         if "collect additional" in normalized:
             return {
                 "intent": "collect_context",
-                "tool": "generic.mock.noop",
+                "tool": "planner.collect_context",
                 "parameters": {},
                 "approval_required": True,
                 "risk_hint": "medium",
@@ -174,7 +174,7 @@ class ReasoningSwarm:
 
         return {
             "intent": "summarize_and_request_approval",
-            "tool": "generic.mock.noop",
+            "tool": "planner.summarize_and_request_approval",
             "parameters": {},
             "approval_required": True,
             "risk_hint": "medium",

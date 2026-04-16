@@ -4,7 +4,6 @@
 - `feat/frontend-<task>`
 - `feat/backend-core-<task>`
 - `feat/backend-systems-<task>`
-- `feat/backend-<task>` (legacy fallback)
 - `chore/shared-<task>`
 
 ## Rules
@@ -12,7 +11,7 @@
 2. Engineer A only opens `feat/frontend-*` unless working on a shared lock.
 3. Backend Engineer 1 (core intelligence) uses `feat/backend-core-*`.
 4. Backend Engineer 2 (systems and production) uses `feat/backend-systems-*`.
-5. `feat/backend-*` is legacy and only enforces broad backend/frontend boundaries.
+5. Use the explicit backend lanes (`feat/backend-core-*` and `feat/backend-systems-*`) for ownership clarity.
 6. Shared changes must be isolated in `chore/shared-*`.
 7. Keep PRs small: target under 250 lines changed where possible.
 

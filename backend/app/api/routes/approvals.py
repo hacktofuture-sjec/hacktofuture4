@@ -7,10 +7,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.api.routes.chat import memory
-from src.tools.executor import MockToolExecutor
+from src.tools.executor import PlanningToolExecutor
 
 router = APIRouter()
-executor = MockToolExecutor()
+executor = PlanningToolExecutor()
 
 
 class ApprovalDecisionRequest(BaseModel):
@@ -22,13 +22,14 @@ class ApprovalDecisionRequest(BaseModel):
 class ApprovalDecisionResponse(BaseModel):
     trace_id: str
     final_status: str
+    execution_mode: str
     approval: dict
     execution_result: dict
 
 
 @router.post("/approvals/{trace_id}", response_model=ApprovalDecisionResponse)
 def submit_approval(trace_id: str, payload: ApprovalDecisionRequest) -> ApprovalDecisionResponse:
-    transcript = memory.get_transcript(trace_id)
+    transcript = memory.wait_for_transcript(trace_id, timeout_seconds=0.75)
     if transcript is None:
         raise HTTPException(status_code=404, detail=f"trace {trace_id} not found")
 
@@ -49,26 +50,35 @@ def submit_approval(trace_id: str, payload: ApprovalDecisionRequest) -> Approval
 
     if payload.decision == "reject":
         execution_result = {
-            "tool": "none",
-            "status": "rejected",
-            "output": "Action was rejected by approver. No execution performed.",
+            "tool": "planner.external_action_plan",
+            "status": "plan_rejected",
+            "output": "Execution plan was rejected by approver. No external write operations were performed.",
             "timestamp": datetime.now(UTC).isoformat(),
+            "execution_mode": "planner_only",
+            "no_write_policy": True,
         }
-        final_status = "rejected"
+        final_status = "plan_rejected"
     else:
-        execution_result = executor.execute(suggested_action, action_details=action_details)
-        final_status = "executed"
+        try:
+            execution_result = executor.execute(suggested_action, action_details=action_details)
+        except TypeError:
+            execution_result = executor.execute(suggested_action)
+        final_status = "plan_approved"
+
+    execution_mode = str(execution_result.get("execution_mode") or "planner_only")
 
     memory.persist_approval_decision(
         trace_id=trace_id,
         approval=approval,
         execution_result=execution_result,
         final_status=final_status,
+        execution_mode=execution_mode,
     )
 
     return ApprovalDecisionResponse(
         trace_id=trace_id,
         final_status=final_status,
+        execution_mode=execution_mode,
         approval=approval,
         execution_result=execution_result,
     )

@@ -26,8 +26,8 @@ class ConfluenceClient:
 
     @classmethod
     def from_env(cls) -> "ConfluenceClient":
-        base_url = os.getenv("CONFLUENCE_BASE_URL", "").strip() or os.getenv("CLOUDFLUENCE_BASE_URL", "").strip()
-        api_token = os.getenv("CONFLUENCE_API_TOKEN", "").strip() or os.getenv("CLOUDFLUENCE_API_TOKEN", "").strip()
+        base_url = os.getenv("CONFLUENCE_BASE_URL", "").strip()
+        api_token = os.getenv("CONFLUENCE_API_TOKEN", "").strip()
         email = os.getenv("CONFLUENCE_EMAIL", "").strip()
 
         if not base_url:
