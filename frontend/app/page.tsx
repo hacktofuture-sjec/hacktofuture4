@@ -1,107 +1,84 @@
-"use client";
-
-import { FormEvent, useState } from "react";
-
-import { useChat } from "../lib/useChat";
-import { useTraceStream } from "../lib/useTraceStream";
-
-export default function HomePage() {
-  const [message, setMessage] = useState("");
-  const [answer, setAnswer] = useState<string | null>(null);
-  const [traceId, setTraceId] = useState<string | null>(null);
-  const [needsApproval, setNeedsApproval] = useState(false);
-
-  const { sendMessage, loading, error } = useChat();
-  const { steps, isStreaming, streamError } = useTraceStream(traceId);
-
-  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    if (!message.trim()) {
-      return;
-    }
-
-    const result = await sendMessage(message.trim());
-    if (!result) {
-      return;
-    }
-
-    setAnswer(result.answer);
-    setTraceId(result.trace_id);
-    setNeedsApproval(result.needs_approval);
-    setMessage("");
-  };
+export default function Home() {
+  const navItems = ["Overview", "Trace", "Approvals", "Runbooks"];
 
   return (
-    <main className="page">
-      <section className="card">
-        <h1>UniOps Live Trace</h1>
-        <p className="subtitle">Ask an operational question and inspect controller trace steps in real time.</p>
+    <div className="app-shell">
+      <header className="top-nav">
+        <div className="brand-wrap">
+          <h1 className="brand-name title-highlight">
+            UniOps
+          </h1>
+        </div>
+        <nav className="nav-links" aria-label="Primary">
+          {navItems.map((item) => (
+            <button key={item} type="button" className="nav-link">
+              {item}
+            </button>
+          ))}
+        </nav>
+      </header>
 
-        <form className="chat-form" onSubmit={onSubmit}>
-          <label htmlFor="chat-message">Message</label>
-          <div className="chat-controls">
-            <input
-              id="chat-message"
-              type="text"
-              value={message}
-              onChange={(event) => setMessage(event.target.value)}
-              placeholder="Explain Redis latency from last week"
-              disabled={loading}
-            />
-            <button type="submit" disabled={loading || !message.trim()}>
-              {loading ? "Sending..." : "Send"}
+      <main className="dashboard-grid">
+        <section className="panel hero-panel">
+          <p className="kicker">Ops Copilot Workspace</p>
+          <h2 className="hero-title">
+            Observe, reason, and act with <span className="title-highlight">human control</span>
+          </h2>
+          <p className="hero-copy">
+            UniOps unifies runbooks, incident notes, and change history into one auditable
+            flow. This shell is ready for chat wiring and live trace streaming.
+          </p>
+          <div className="hero-actions">
+            <button type="button" className="btn btn-primary">
+              Start Incident Session
+            </button>
+            <button type="button" className="btn btn-ghost">
+              View Trace Timeline
             </button>
           </div>
-        </form>
+        </section>
 
-        {error ? <p className="error">{error}</p> : null}
-        {streamError ? <p className="error">{streamError}</p> : null}
+        <section className="panel status-panel">
+          <h3>System Snapshot</h3>
+          <ul className="status-list">
+            <li>
+              <span>Chat Endpoint</span>
+              <strong>Ready</strong>
+            </li>
+            <li>
+              <span>Trace Stream</span>
+              <strong>Stub (501)</strong>
+            </li>
+            <li>
+              <span>Approval Queue</span>
+              <strong>UI Pending</strong>
+            </li>
+          </ul>
+        </section>
 
-        {answer ? (
-          <div className="answer-panel">
-            <h2>Answer</h2>
-            <p>{answer}</p>
-            <div className={needsApproval ? "approval approval-pending" : "approval approval-safe"}>
-              {needsApproval ? "Approval required for follow-up action." : "No approval required."}
-            </div>
-            {traceId ? <p className="trace-id">Trace ID: {traceId}</p> : null}
+        <section className="panel trace-panel">
+          <h3>Trace Preview</h3>
+          <p>Waiting for live SSE events. Backend contract is already aligned for `trace_step`.</p>
+          <div className="trace-lines" aria-hidden="true">
+            <span />
+            <span />
+            <span />
           </div>
-        ) : null}
+        </section>
 
-        <div className="trace-panel">
-          <div className="trace-header">
-            <h2>Live Trace</h2>
-            <span>{isStreaming ? "Streaming" : "Idle"}</span>
+        <section className="panel runbook-panel">
+          <h3>Runbook Quick Actions</h3>
+          <div className="chip-row">
+            <span className="chip">High CPU Service X</span>
+            <span className="chip">Redis Latency</span>
+            <span className="chip">Rollback Deploy</span>
           </div>
-
-          {steps.length === 0 ? (
-            <p className="trace-empty">No trace steps yet.</p>
-          ) : (
-            <ul className="trace-list">
-              {steps.map((step, index) => (
-                <li key={`${step.step}-${index}`}>
-                  <div className="trace-meta">
-                    <strong>{step.step}</strong>
-                    <span>{step.agent}</span>
-                  </div>
-                  <p>{step.observation}</p>
-                  {step.sources.length > 0 ? (
-                    <ul className="source-list">
-                      {step.sources.map((source) => (
-                        <li key={`${source.path}-${source.title}`}>
-                          <span>{source.title}</span>
-                          <small>{source.path}</small>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
-    </main>
+          <p>
+            Action execution remains human-gated. This panel will connect to approval modal
+            and tool actions in the next phase.
+          </p>
+        </section>
+      </main>
+    </div>
   );
 }
