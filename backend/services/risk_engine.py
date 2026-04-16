@@ -4,8 +4,9 @@ from services.firestore_service import is_new_ip
 def calculate_risk_score(ip, location=None, device=None, event=None, session_id=None, keystroke_interval=None):
     score = 100
 
-    if not location:
-        location = get_location(ip)
+    from services.ip_service import get_location
+    from services.frequency_service import check_request_frequency
+    from services.firestore_service import is_new_ip   
     if location != "India":
         score -= 30
 

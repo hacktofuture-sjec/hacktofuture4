@@ -1,7 +1,7 @@
 from flask import Flask
 from flask_cors import CORS
 from routes.session_routes import session_bp
-
+print("RUNNING FROM:", __file__)
 app = Flask(__name__)
 CORS(app)
 

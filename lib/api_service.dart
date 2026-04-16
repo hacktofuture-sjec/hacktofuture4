@@ -3,8 +3,7 @@ import 'package:http/http.dart' as http;
 
 class ApiService {
   static const List<String> backendBaseUrls = [
-    'http://10.0.2.2:5000',
-    'http://127.0.0.1:5000',
+    'https://kissing-foothold-upheaval.ngrok-free.dev',
   ];
 
   static Future<Map<String, dynamic>> analyzeEvent({

@@ -38,7 +38,6 @@ class _EmployeePortalPageState extends State<EmployeePortalPage> {
       try {
         await ApiService.analyzeEvent(
           sessionId: u.email ?? 'unknown',
-          ip: '49.37.10.2', // TODO: replace with real IP detection
           location: 'India',
           device: 'Android Chrome',
           event: 'employee_login',

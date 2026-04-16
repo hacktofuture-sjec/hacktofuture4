@@ -6,6 +6,7 @@ session_bp = Blueprint('session', __name__)
 
 @session_bp.route('/analyze', methods=['POST'])
 def analyze():
+    print("ANALYZE ENDPOINT HIT")
     data = request.json
 
     # Extract fields
@@ -14,6 +15,7 @@ def analyze():
     # Optional: if behind proxy, take first IP
     if ip and ',' in ip:
         ip = ip.split(',')[0].strip()
+    print("IP:", ip)
     location = data.get("location")
     device = data.get("device")
     event = data.get("event")
@@ -40,6 +42,8 @@ def analyze():
     # ✅ ADD THIS (CRITICAL FIX)
     data['trust_score'] = score
     data['action'] = action
+    data['ip'] = ip
+    print("DATA STORED:", data)
 
     # Store event WITH score
     store_event(data)
