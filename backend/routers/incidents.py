@@ -69,7 +69,7 @@ def plan_incident(incident_id: str, payload: dict[str, Any] | None = None) -> di
         context=context,
     )
 
-    actions = [action.model_dump() for action in plan_output.actions]
+    actions = [action.model_dump(mode="json") for action in plan_output.actions]
     incident["diagnosis"] = diagnosis
     incident["plan_json"] = {"actions": actions}
     incident["planned_at"] = datetime.now(timezone.utc).isoformat()
@@ -94,7 +94,11 @@ def simulate_incident_action(incident_id: str, payload: dict[str, Any] | None = 
         raise HTTPException(status_code=400, detail="No plan available. Run /plan first.")
 
     body = payload or {}
-    action_index = int(body.get("action_index", 0))
+    try:
+        action_index = int(body.get("action_index", 0))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="action_index must be a valid integer") from exc
+
     actions = incident["plan_json"]["actions"]
 
     if action_index < 0 or action_index >= len(actions):

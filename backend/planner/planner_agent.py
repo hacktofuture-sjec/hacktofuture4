@@ -22,14 +22,20 @@ class PlannerAgent:
 
         planner_actions: list[PlannerAction] = []
         for action in actions:
-            simulation = simulate_action(action, snapshot)
             risk_level = self._to_risk_level(action.get("risk", "medium"))
 
             approval_required = bool(action.get("approval_required", False))
             if risk_level == RiskLevel.HIGH:
                 approval_required = True
-            if simulation.dependency_impact.value == "broad":
+
+            simulated_action = dict(action)
+            simulated_action["approval_required"] = approval_required
+            simulation = simulate_action(simulated_action, snapshot)
+
+            if simulation.dependency_impact.value == "broad" and not approval_required:
                 approval_required = True
+                simulated_action["approval_required"] = True
+                simulation = simulate_action(simulated_action, snapshot)
 
             planner_actions.append(
                 PlannerAction(
