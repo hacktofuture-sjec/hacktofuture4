@@ -1,0 +1,3 @@
+# Never bake local secrets into images (agents/backend builds use repo root as context).
+.env
+**/.env

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 from lerna_shared.detection import AgentTriggerResponse, DetectionIncident
 
@@ -49,14 +52,29 @@ async def execute_incident_workflow(
         "result": None,
     }
     await store.save_workflow(workflow_id, workflow)
+    logger.info(
+        "Agents: workflow %s running for incident %s (%s/%s)",
+        workflow_id,
+        incident.incident_id,
+        incident.namespace,
+        incident.service,
+    )
     try:
         agent = LernaAgent(model=model)
         result = await asyncio.to_thread(agent.run, _incident_prompt(incident))
         workflow["status"] = "completed"
         workflow["result"] = result
+        logger.info("Agents: workflow %s completed (incident %s)", workflow_id, incident.incident_id)
     except Exception as exc:  # pylint: disable=broad-except
         workflow["status"] = "failed"
         workflow["result"] = str(exc)
+        logger.warning(
+            "Agents: workflow %s failed for incident %s: %s",
+            workflow_id,
+            incident.incident_id,
+            exc,
+            exc_info=True,
+        )
     workflow["finished_at"] = datetime.now(tz=timezone.utc).isoformat()
     await store.save_workflow(workflow_id, workflow)
     return workflow
@@ -68,6 +86,12 @@ async def accept_incident(
 ) -> AgentTriggerResponse:
     existing = await store.get_workflow_for_incident(incident.incident_id)
     if existing:
+        logger.info(
+            "Agents: duplicate incident %s — existing workflow %s status=%s",
+            incident.incident_id,
+            existing["workflow_id"],
+            existing["status"],
+        )
         return AgentTriggerResponse(
             accepted=True,
             workflow_id=existing["workflow_id"],
@@ -86,6 +110,12 @@ async def accept_incident(
     }
     await store.bind_incident(incident.incident_id, workflow_id)
     await store.save_workflow(workflow_id, initial)
+    logger.info(
+        "Agents: accepted incident %s workflow=%s class=%s",
+        incident.incident_id,
+        workflow_id,
+        incident.incident_class,
+    )
     asyncio.create_task(execute_incident_workflow(incident, store, workflow_id=workflow_id))
     return AgentTriggerResponse(accepted=True, workflow_id=workflow_id, status="accepted")
 

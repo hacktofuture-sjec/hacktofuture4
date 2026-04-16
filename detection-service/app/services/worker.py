@@ -61,7 +61,9 @@ class DetectionWorker:
         await self._process_retries()
         snapshot = await self._snapshot_service.get_snapshot()
         if not snapshot.get("available"):
-            self._last_result = {"status": "degraded", "reason": snapshot.get("reason")}
+            reason = snapshot.get("reason")
+            logger.warning("Detection: cluster snapshot unavailable (%s)", reason)
+            self._last_result = {"status": "degraded", "reason": reason}
             return
 
         loki_raw = await self._obs_service.query_logs(query=settings.log_query, limit=settings.log_limit)
@@ -76,18 +78,40 @@ class DetectionWorker:
         if not result.incident:
             return
 
+        inc = result.incident
+        logger.info(
+            "Detection: incident found id=%s class=%s service=%s namespace=%s severity=%s errors=%s",
+            inc.incident_id,
+            inc.incident_class,
+            inc.service,
+            inc.namespace,
+            inc.severity,
+            result.check.summary.get("error_count"),
+        )
+
         payload = result.incident.model_dump()
         summary_hash = hashlib.sha1(
             f"{result.incident.summary}:{result.incident.dominant_signature}".encode("utf-8")
         ).hexdigest()
         should_emit = await self._state_store.should_emit(result.incident.fingerprint, summary_hash)
         if not should_emit:
+            logger.info(
+                "Detection: skipping emit (dedupe) fingerprint=%s incident_id=%s",
+                result.incident.fingerprint,
+                result.incident.incident_id,
+            )
             return
 
         try:
             response = await self._agents_client.trigger_incident(payload)
             await self._state_store.mark_emitted(result.incident.fingerprint, summary_hash, response.get("status", "accepted"))
             self._last_result["workflow_id"] = response.get("workflow_id")
+            logger.info(
+                "Detection: sent to agents incident_id=%s workflow_id=%s status=%s",
+                result.incident.incident_id,
+                response.get("workflow_id"),
+                response.get("status"),
+            )
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning("Failed to trigger agents workflow", exc_info=True)
             await self._state_store.mark_emitted(result.incident.fingerprint, summary_hash, "queued")

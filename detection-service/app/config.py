@@ -15,7 +15,8 @@ class Settings:
         self.k8s_namespace_scope = os.getenv("K8S_NAMESPACE_SCOPE", "").strip()
         self.poll_interval_seconds = int(os.getenv("DETECTION_POLL_INTERVAL_SECONDS", "15"))
         self.poll_timeout_seconds = int(os.getenv("DETECTION_POLL_TIMEOUT_SECONDS", "20"))
-        self.log_query = os.getenv("DETECTION_LOG_QUERY", "{}")
+        # Empty `{}` is rejected by Loki with 400 in typical configs; use a broad valid selector.
+        self.log_query = os.getenv("DETECTION_LOG_QUERY", '{namespace=~".+"}')
         self.log_limit = int(os.getenv("DETECTION_LOG_LIMIT", "150"))
         self.dedupe_ttl_seconds = int(os.getenv("DETECTION_DEDUPE_TTL_SECONDS", "300"))
         self.retry_delay_seconds = int(os.getenv("DETECTION_RETRY_DELAY_SECONDS", "30"))

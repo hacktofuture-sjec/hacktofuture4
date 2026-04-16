@@ -1,8 +1,11 @@
+# Demo faulty workloads for the detection service when scoped to namespace `default`
+# (see detection-service K8S_NAMESPACE_SCOPE / DETECTION_LOG_QUERY).
+# Apply: kubectl apply -f k8s/detection-demo-errors.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: detection-demo-crashloop
-  namespace: lerna
+  namespace: default
 spec:
   replicas: 1
   selector:
@@ -21,14 +24,14 @@ spec:
             - /bin/sh
             - -c
             - |
-              echo "Intentional detection demo: forcing a crash"
+              echo "failed: intentional detection demo crash"
               exit 1
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: detection-demo-unready
-  namespace: lerna
+  namespace: default
 spec:
   replicas: 1
   selector:
@@ -58,7 +61,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: detection-demo-unready
-  namespace: lerna
+  namespace: default
 spec:
   selector:
     app: detection-demo-unready

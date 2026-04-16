@@ -95,13 +95,23 @@ def normalize_signals(
 
     for event in cluster_snapshot.get("recent_events", []):
         event_type = (event.get("type") or "").lower()
-        severity = "warning" if event_type == "warning" else "info"
+        msg = event.get("message") or event.get("reason") or "Kubernetes event"
+        # Same keyword rules as log lines so e.g. "Back-off restarting failed container" counts as error.
+        text_sev = severity_from_text(msg)
+        if text_sev == "error":
+            severity: str = "error"
+        elif text_sev == "warning":
+            severity = "warning"
+        elif event_type == "warning":
+            severity = "warning"
+        else:
+            severity = "info"
         output.append(
             DetectionEvidence(
                 signal_type="event",
                 source=event.get("object") or event.get("namespace") or "k8s-event",
                 severity=severity,
-                message=event.get("message") or event.get("reason") or "Kubernetes event",
+                message=msg,
                 timestamp=event.get("last_timestamp"),
                 namespace=event.get("namespace") or cluster_snapshot.get("namespace_scope"),
             )

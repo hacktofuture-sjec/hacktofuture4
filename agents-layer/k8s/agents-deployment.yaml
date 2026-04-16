@@ -13,12 +13,20 @@ spec:
       labels:
         app: lerna-agents
     spec:
+      # Same SA as backend/detection: ClusterRole lerna-backend-cluster-read (pods, events, etc.)
+      serviceAccountName: lerna-backend
       containers:
         - name: agents
           image: lerna-agents:latest
           imagePullPolicy: Never
           ports:
             - containerPort: 8000
+          # Create once: kubectl create secret generic lerna-agents-secrets -n lerna --from-env-file=path/to/.env
+          # (same keys as agents-layer/.env, e.g. OPENROUTER_API_KEY). optional: true keeps pod up if secret missing.
+          envFrom:
+            - secretRef:
+                name: lerna-agents-secrets
+                optional: true
           env:
             - name: PROMETHEUS_URL
               value: http://prometheus.observability.svc.cluster.local:9090
@@ -27,9 +35,9 @@ spec:
             - name: JAEGER_URL
               value: http://jaeger.observability.svc.cluster.local:16686
             - name: REDIS_URL
-              value: redis://redis.lerna.svc.cluster.local:6379/0
+              value: redis://redis:6379/0
             - name: QDRANT_URL
-              value: http://qdrant.lerna.svc.cluster.local:6333
+              value: http://qdrant:6333
 ---
 apiVersion: v1
 kind: Service

@@ -28,13 +28,19 @@ spec:
             - name: JAEGER_URL
               value: http://jaeger.observability.svc.cluster.local:16686
             - name: REDIS_URL
-              value: redis://redis.lerna.svc.cluster.local:6379/0
+              value: redis://redis:6379/0
             - name: AGENTS_SERVICE_URL
-              value: http://lerna-agents.lerna.svc.cluster.local:8000
+              value: http://lerna-agents:8000
             - name: DETECTION_POLL_INTERVAL_SECONDS
               value: "15"
             - name: DETECTION_DEDUPE_TTL_SECONDS
               value: "300"
+            # Limit Loki scan + cluster snapshot to the namespace where testapp / demo microservices run (kind: usually `default`).
+            # For Lerna-only clusters, use `lerna` or `{namespace=~".+"}` instead.
+            - name: K8S_NAMESPACE_SCOPE
+              value: "default"
+            - name: DETECTION_LOG_QUERY
+              value: '{namespace="default"}'
 ---
 apiVersion: v1
 kind: Service

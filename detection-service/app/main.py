@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -9,6 +11,14 @@ from app.services.cluster_snapshot import ClusterSnapshotService
 from app.services.observability import ObservabilityService
 from app.services.store import DetectionStateStore
 from app.services.worker import DetectionWorker
+
+_pkg_log = logging.getLogger("app")
+_pkg_log.setLevel(logging.INFO)
+if not _pkg_log.handlers:
+    _h = logging.StreamHandler(sys.stderr)
+    _h.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    _pkg_log.addHandler(_h)
+    _pkg_log.propagate = False
 
 obs_service = ObservabilityService()
 snapshot_service = ClusterSnapshotService()
