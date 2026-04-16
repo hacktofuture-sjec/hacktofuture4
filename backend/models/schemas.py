@@ -76,6 +76,7 @@ class DiagnosisPayload(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     diagnosis_mode: DiagnosisMode
     fingerprint_matched: bool
+    suggested_actions: list[str] = Field(default_factory=list)
     estimated_token_cost: float = 0.0
     actual_token_cost: float = 0.0
     affected_services: list[str]

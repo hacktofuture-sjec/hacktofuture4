@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -6,6 +7,9 @@ PID_DIR="$ROOT_DIR/.run"
 mkdir -p "$PID_DIR"
 
 command -v uv >/dev/null || { echo "ERROR: uv not found. Install from https://docs.astral.sh/uv/getting-started/"; exit 1; }
+
+# Best-effort cleanup of stale processes from prior runs.
+bash "$ROOT_DIR/scripts/stop.sh" >/dev/null 2>&1 || true
 
 find_frontend_port() {
   local port
@@ -18,20 +22,19 @@ find_frontend_port() {
   return 1
 }
 
-if ! curl -sf http://localhost:9090/-/healthy >/dev/null; then
+if ! curl -sf http://localhost:9090/-/healthy >/dev/null \
+  || ! curl -sf http://localhost:3100/ready >/dev/null \
+  || ! curl -sf http://localhost:3200/ready >/dev/null; then
   bash "$ROOT_DIR/scripts/port_forward.sh"
 fi
 
 cd "$ROOT_DIR/backend"
 
-# Create or update venv with Python 3.12 via uv
-if [ -d venv ]; then
-  echo "Removing existing venv..."
-  rm -rf venv
+# Create venv if missing
+if [ ! -d venv ]; then
+  echo "Creating venv with Python 3.12..."
+  uv venv --python 3.12 venv
 fi
-
-echo "Creating venv with Python 3.12..."
-uv venv --python 3.12 venv
 
 source venv/bin/activate
 
@@ -46,7 +49,8 @@ if [ ! -f data/t3ps2.db ]; then
   python init_db.py
 fi
 
-uvicorn main:app --reload --host 0.0.0.0 --port 8000 &
+# Run the same entrypoint used in manual local runs.
+python main.py &
 BACKEND_PID=$!
 cd "$ROOT_DIR"
 
@@ -61,7 +65,8 @@ for _ in {1..20}; do
 done
 
 if [ "$backend_ready" != "true" ]; then
-  echo "WARN: backend health check did not respond in time; continuing startup."
+  echo "ERROR: backend failed health check; check logs and retry."
+  exit 1
 fi
 
 curl --max-time 5 -sf -X POST http://localhost:8000/admin/load-scenarios >/dev/null || true

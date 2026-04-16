@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 from agents.monitor_agent import MonitorAgent
-from diagnosis.feature_extractor import extract_features
-from diagnosis.llm_fallback import call_llm_api, should_use_llm_fallback
+from diagnosis.diagnose_agent import DiagnoseAgent
 from diagnosis.rule_engine import match_fingerprint
 from governance.token_governor import TokenGovernor
+from models.schemas import EventRecord, IncidentScope, IncidentSnapshot, LogSignature, MetricSummary, TraceSummary
 from planner.planner_agent import PlannerAgent
 from planner.policy_ranker import lookup_policy
 
@@ -38,50 +37,73 @@ def _coerce_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         "events": snapshot.get("events", snapshot.get("event_reason", [])),
         "logs_summary": snapshot.get("logs_summary", snapshot.get("log_signatures", [])),
         "trace": snapshot.get("trace", {}),
+        "trace_summary": snapshot.get("trace_summary"),
     }
 
 
-def _build_evidence(snapshot: dict[str, Any], fingerprint: Optional[dict[str, Any]]) -> list[str]:
-    evidence: list[str] = []
+def _as_percent(value: Any, default: str = "0%") -> str:
+    if value is None:
+        return default
+    text = str(value).strip()
+    if not text:
+        return default
+    if text.endswith("%"):
+        return text
+    try:
+        return f"{int(float(text))}%"
+    except Exception:
+        return default
 
-    for event in snapshot.get("events", [])[:3]:
-        if isinstance(event, dict):
-            reason = str(event.get("reason", "")).strip()
-            message = str(event.get("message", "")).strip()
-            if reason:
-                evidence.append(f"event:{reason}")
-            if message:
-                evidence.append(f"event_msg:{message[:140]}")
-        elif str(event).strip():
-            evidence.append(f"event:{str(event).strip()[:140]}")
 
-    for log in snapshot.get("logs_summary", [])[:3]:
-        if isinstance(log, dict):
-            signature = str(log.get("signature", "")).strip()
-            count = int(log.get("count", 0) or 0)
-            if signature:
-                evidence.append(f"log:{signature[:140]} (x{count})")
-        elif str(log).strip():
-            evidence.append(f"log:{str(log).strip()[:140]}")
+def _as_latency(value: Any, default: str = "1.0x") -> str:
+    if value is None:
+        return default
+    text = str(value).strip()
+    if not text:
+        return default
+    if text.endswith("x"):
+        return text
+    try:
+        return f"{float(text):.1f}x"
+    except Exception:
+        return default
 
-    trace = snapshot.get("trace") or {}
+
+def _snapshot_to_model(snapshot: dict[str, Any]) -> IncidentSnapshot:
+    normalized = _coerce_snapshot(snapshot)
+    metrics = normalized.get("metrics", {})
+    events = normalized.get("events", []) or []
+    logs_summary = normalized.get("logs_summary", []) or []
+    trace = normalized.get("trace_summary") or normalized.get("trace")
+    scope = normalized.get("scope") or snapshot.get("scope") or {"namespace": "default", "deployment": str(snapshot.get("service", "unknown"))}
+
+    event_models = [EventRecord.model_validate(event) if isinstance(event, dict) else EventRecord(reason=str(event)) for event in events]
+    log_models = [LogSignature.model_validate(signature) if isinstance(signature, dict) else LogSignature(signature=str(signature), count=1) for signature in logs_summary]
+    trace_model = None
     if isinstance(trace, dict):
-        hot_span = str(trace.get("hot_span", "")).strip()
-        if hot_span:
-            evidence.append(f"trace_hot_span:{hot_span[:140]}")
+        required_trace_keys = {"suspected_path", "hot_span", "p95_ms"}
+        if required_trace_keys.issubset(trace.keys()):
+            trace_model = TraceSummary.model_validate(trace)
 
-    if fingerprint:
-        evidence.append(f"fingerprint:{fingerprint.get('fingerprint_id')}")
-
-    # Preserve insertion order while dropping duplicates.
-    seen = set()
-    deduped: list[str] = []
-    for item in evidence:
-        if item in seen:
-            continue
-        seen.add(item)
-        deduped.append(item)
-    return deduped[:8]
+    return IncidentSnapshot(
+        incident_id=str(normalized.get("incident_id") or snapshot.get("incident_id") or "monitor-snapshot"),
+        alert=str(normalized.get("alert") or snapshot.get("alert") or f"{normalized.get('failure_class', 'unknown')} detected"),
+        service=str(normalized.get("service") or snapshot.get("service") or "unknown"),
+        pod=str(normalized.get("pod") or snapshot.get("pod") or "unknown"),
+        metrics=MetricSummary(
+            cpu=_as_percent(metrics.get("cpu") or metrics.get("cpu_pct")),
+            memory=_as_percent(metrics.get("memory") or metrics.get("memory_pct")),
+            restarts=int(metrics.get("restarts") or metrics.get("restart_count") or 0),
+            latency_delta=_as_latency(metrics.get("latency_delta") or metrics.get("latency_delta_x") or metrics.get("latency_p95_seconds")),
+        ),
+        events=event_models,
+        logs_summary=log_models,
+        trace_summary=trace_model,
+        scope=IncidentScope.model_validate(scope),
+        monitor_confidence=float(normalized.get("monitor_confidence") or snapshot.get("monitor_confidence") or 0.0),
+        failure_class=normalized.get("failure_class") or snapshot.get("failure_class") or "unknown",
+        dependency_graph_summary=str(normalized.get("dependency_graph_summary") or snapshot.get("dependency_graph_summary") or f"{snapshot.get('service', 'unknown')} -> dependencies"),
+    )
 
 
 def collect_monitor_snapshot(monitor_agent: Optional[MonitorAgent] = None) -> dict[str, Any]:
@@ -100,80 +122,24 @@ def diagnose_snapshot(
 ) -> dict[str, Any]:
     """Run rule-based diagnosis first and fall back to the LLM when allowed."""
     tg = token_governor or GLOBAL_TOKEN_GOVERNOR
-    normalized = _coerce_snapshot(snapshot)
+    del llm_api_url, llm_model
 
-    fingerprint = match_fingerprint(normalized)
-    features = extract_features(normalized)
+    snapshot_model = _snapshot_to_model(snapshot)
+    agent = DiagnoseAgent(tg, None)
+    diagnosis = agent.run(snapshot_model).model_dump(mode="json")
 
-    rule_confidence = float(fingerprint.get("confidence", 0.0)) if fingerprint else 0.0
-    use_llm = should_use_llm_fallback(
-        rule_confidence=rule_confidence,
-        budget_allows=True,
-        confidence_threshold=tg.budget.rule_confidence_threshold,
-        token_governor=tg,
+    # Compatibility fields for legacy API consumers and planner policy lookup.
+    fingerprint = match_fingerprint(snapshot_model)
+    if fingerprint:
+        diagnosis.setdefault("fingerprint_id", str(fingerprint.get("fingerprint_id")))
+        diagnosis.setdefault("recommended_fix", str(fingerprint.get("recommended_fix", "")))
+
+    diagnosis.setdefault(
+        "source",
+        "llm_fallback" if diagnosis.get("diagnosis_mode") == "ai" else "rule",
     )
-
-    llm_result: Optional[dict[str, Any]] = None
-    if use_llm:
-        llm_result = call_llm_api(
-            incident_snapshot=normalized,
-            model=llm_model,
-            api_url=llm_api_url,
-        )
-        if llm_result is not None:
-            estimated_input = tg.estimate_tokens(json.dumps(normalized, default=str))
-            estimated_output = tg.estimate_tokens(json.dumps(llm_result, default=str))
-            estimated_cost = tg.estimate_cost(estimated_input, estimated_output)
-            tg.record_ai_call(
-                estimated_tokens=estimated_input,
-                actual_tokens=estimated_input + estimated_output,
-                estimated_cost=estimated_cost,
-                actual_cost=estimated_cost,
-            )
-
-    if llm_result is not None:
-        evidence = _build_evidence(normalized, fingerprint)
-        return {
-            "source": "llm_fallback",
-            "root_cause": llm_result.get("root_cause", "unknown"),
-            "confidence": float(llm_result.get("confidence", 0.0)),
-            "reasoning": llm_result.get("reasoning", "AI-based diagnosis"),
-            "suggested_actions": llm_result.get("suggested_actions", []),
-            "fingerprint_id": fingerprint.get("fingerprint_id") if fingerprint else None,
-            "recommended_fix": fingerprint.get("recommended_fix") if fingerprint else None,
-            "evidence": evidence,
-            "features": features,
-            "diagnosed_at": _utc_now(),
-        }
-
-    if fingerprint is not None:
-        root_cause = str(fingerprint.get("name", "unknown")).replace("_", " ")
-        evidence = _build_evidence(normalized, fingerprint)
-        return {
-            "source": "rule",
-            "root_cause": root_cause,
-            "confidence": float(fingerprint.get("confidence", 0.0)),
-            "reasoning": f"Matched fingerprint {fingerprint['fingerprint_id']}",
-            "suggested_actions": [fingerprint.get("recommended_fix", "investigate service")],
-            "fingerprint_id": fingerprint["fingerprint_id"],
-            "recommended_fix": fingerprint.get("recommended_fix"),
-            "evidence": evidence,
-            "features": features,
-            "diagnosed_at": _utc_now(),
-        }
-
-    return {
-        "source": "rule",
-        "root_cause": "unknown",
-        "confidence": 0.0,
-        "reasoning": "No fingerprint matched and LLM fallback unavailable",
-        "suggested_actions": ["collect more telemetry and inspect pod logs"],
-        "fingerprint_id": None,
-        "recommended_fix": None,
-        "evidence": _build_evidence(normalized, None),
-        "features": features,
-        "diagnosed_at": _utc_now(),
-    }
+    diagnosis.setdefault("diagnosed_at", _utc_now())
+    return diagnosis
 
 
 def plan_diagnosis(diagnosis: dict[str, Any], context: Optional[dict[str, Any]] = None) -> dict[str, Any]:
@@ -194,7 +160,7 @@ def plan_diagnosis(diagnosis: dict[str, Any], context: Optional[dict[str, Any]] 
     planner_source = "policy_catalog" if lookup_policy(str(fingerprint_id), ctx) else "fallback"
     serialized_actions = []
     for action in planner_output.actions:
-        payload = action.model_dump()
+        payload = action.model_dump(mode="json")
         if "command" not in payload:
             payload["command"] = payload.get("action", "")
         serialized_actions.append(payload)

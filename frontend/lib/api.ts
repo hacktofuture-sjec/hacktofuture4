@@ -74,7 +74,7 @@ export const api = {
   injectFault: (scenario_id: string) =>
     apiFetch<{ incident_id: string; status: string }>("/inject-fault", {
       method: "POST",
-      body: JSON.stringify({ scenario_id, force: true }),
+      body: JSON.stringify({ scenario_id }),
     }),
 
   listScenarios: () =>

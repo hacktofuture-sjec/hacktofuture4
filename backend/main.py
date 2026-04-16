@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import httpx
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,19 +18,8 @@ from realtime.hub import BROADCASTER
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title=settings.app_name, version=settings.app_version)
-
-    cors_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
-    @app.on_event("startup")
-    async def startup() -> None:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
         init_db()
 
         async with httpx.AsyncClient(timeout=3.0) as client:
@@ -48,12 +39,22 @@ def create_app() -> FastAPI:
                 except Exception:
                     print(f"WARN: {name} not reachable at {url}")
 
-        # Start the always-on monitor loop after dependencies are initialized.
         await LIVE_MONITOR_AGENT.start()
+        try:
+            yield
+        finally:
+            await LIVE_MONITOR_AGENT.stop()
 
-    @app.on_event("shutdown")
-    async def shutdown() -> None:
-        await LIVE_MONITOR_AGENT.stop()
+    app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
+
+    cors_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
@@ -78,3 +79,25 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    debug_enabled = settings.environment.lower() == "development"
+
+    if debug_enabled:
+        uvicorn.run(
+            "main:app",
+            host=settings.host,
+            port=settings.port,
+            reload=True,
+            log_level="debug",
+        )
+    else:
+        uvicorn.run(
+            app,
+            host=settings.host,
+            port=settings.port,
+            log_level="info",
+        )

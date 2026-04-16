@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -60,6 +61,23 @@ class LiveMonitorAgent:
                 await self._evaluate_scenario(scenario)
             except Exception as exc:
                 print(f"WARN: monitor cycle failed for {scenario.get('scenario_id')}: {exc}")
+
+    async def run_scenario_once(self, scenario_id: str) -> bool:
+        target = str(scenario_id or "")
+        if not target:
+            return False
+
+        scenarios = self._load_scenarios()
+        for scenario in scenarios:
+            if str(scenario.get("scenario_id", "")) != target:
+                continue
+            try:
+                await self._evaluate_scenario(scenario)
+            except Exception as exc:
+                print(f"WARN: monitor targeted cycle failed for {target}: {exc}")
+            return True
+
+        return False
 
     async def _run_loop(self) -> None:
         while True:
@@ -370,21 +388,15 @@ class LiveMonitorAgent:
         if scenario_id == "oom-kill-001":
             if any(keyword in event_blob for keyword in ["oomkilled", "out of memory", "killing"]):
                 return True
-            if self.k8s_events.v1 is not None:
-                try:
-                    deployment_obj = self.k8s_events.v1.read_namespaced_deployment(name=deployment, namespace=namespace)
-                    containers = getattr(getattr(deployment_obj, "spec", None), "template", None)
-                    containers = getattr(getattr(containers, "spec", None), "containers", None) or []
-                    for container in containers:
-                        resources = getattr(container, "resources", None)
-                        limits = getattr(resources, "limits", None) or {}
-                        requests = getattr(resources, "requests", None) or {}
-                        memory_limit = str(limits.get("memory", "")).lower()
-                        memory_request = str(requests.get("memory", "")).lower()
-                        if memory_limit in {"30mi", "16mi"} or memory_request in {"16mi"}:
-                            return True
-                except Exception:
-                    pass
+            try:
+                memory_limit, memory_request, _ = self._read_deployment_probe_and_memory(
+                    namespace=namespace,
+                    deployment=deployment,
+                )
+                if memory_limit in {"30mi", "16mi"} or memory_request in {"16mi"}:
+                    return True
+            except Exception:
+                pass
             return False
 
         if scenario_id == "cpu-spike-001":
@@ -392,39 +404,102 @@ class LiveMonitorAgent:
                 return True
             if "cpu-stress" in event_blob or "cpu-stress" in logs_blob:
                 return True
-            if self.k8s_events.v1 is not None:
-                try:
-                    pods = self.k8s_events.v1.list_namespaced_pod(namespace=namespace)
-                    for pod in pods.items:
-                        pod_name = str(getattr(getattr(pod, "metadata", None), "name", "") or "")
-                        if pod_name == "cpu-stress":
-                            return True
-                except Exception:
-                    pass
+            try:
+                if self._pod_exists(namespace=namespace, pod_name="cpu-stress"):
+                    return True
+            except Exception:
+                pass
             return False
 
         if scenario_id == "db-latency-001":
             if any(keyword in event_blob for keyword in ["unhealthy", "readiness probe failed", "timeout", "connection"]):
                 return True
-            if self.k8s_events.v1 is not None:
-                try:
-                    deployment_obj = self.k8s_events.v1.read_namespaced_deployment(name=deployment, namespace=namespace)
-                    containers = getattr(getattr(deployment_obj, "spec", None), "template", None)
-                    containers = getattr(getattr(containers, "spec", None), "containers", None) or []
-                    for container in containers:
-                        readiness = getattr(container, "readiness_probe", None)
-                        http_get = getattr(readiness, "http_get", None)
-                        path = str(getattr(http_get, "path", "") or "")
-                        if path == "/this-does-not-exist":
-                            return True
-                except Exception:
-                    pass
+            try:
+                _, _, readiness_path = self._read_deployment_probe_and_memory(
+                    namespace=namespace,
+                    deployment=deployment,
+                )
+                if readiness_path == "/this-does-not-exist":
+                    return True
+            except Exception:
+                pass
             return False
 
         if scenario_id == "crash-loop-001":
             return any(keyword in event_blob for keyword in ["imagepullbackoff", "errimagepull", "back-off", "crashloopbackoff"])
 
         return False
+
+    def _pod_exists(self, *, namespace: str, pod_name: str) -> bool:
+        if self.k8s_events.v1 is not None:
+            try:
+                pods = self.k8s_events.v1.list_namespaced_pod(namespace=namespace)
+                for pod in pods.items:
+                    name = str(getattr(getattr(pod, "metadata", None), "name", "") or "")
+                    if name == pod_name:
+                        return True
+            except Exception:
+                pass
+
+        try:
+            probe = subprocess.run(
+                ["kubectl", "get", "pod", pod_name, "-n", namespace, "-o", "name"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return probe.returncode == 0 and bool((probe.stdout or "").strip())
+        except Exception:
+            return False
+
+    def _read_deployment_probe_and_memory(self, *, namespace: str, deployment: str) -> tuple[str, str, str]:
+        memory_limit = ""
+        memory_request = ""
+        readiness_path = ""
+
+        if self.k8s_events.v1 is not None:
+            try:
+                deployment_obj = self.k8s_events.v1.read_namespaced_deployment(name=deployment, namespace=namespace)
+                containers = getattr(getattr(deployment_obj, "spec", None), "template", None)
+                containers = getattr(getattr(containers, "spec", None), "containers", None) or []
+                for container in containers:
+                    resources = getattr(container, "resources", None)
+                    limits = getattr(resources, "limits", None) or {}
+                    requests = getattr(resources, "requests", None) or {}
+                    memory_limit = str(limits.get("memory", "") or "").strip().lower()
+                    memory_request = str(requests.get("memory", "") or "").strip().lower()
+                    readiness = getattr(container, "readiness_probe", None)
+                    http_get = getattr(readiness, "http_get", None)
+                    readiness_path = str(getattr(http_get, "path", "") or "").strip()
+                    if memory_limit or memory_request or readiness_path:
+                        return memory_limit, memory_request, readiness_path
+            except Exception:
+                pass
+
+        try:
+            cmd = [
+                "kubectl",
+                "get",
+                "deployment",
+                deployment,
+                "-n",
+                namespace,
+                "-o",
+                "jsonpath={.spec.template.spec.containers[0].resources.limits.memory}|{.spec.template.spec.containers[0].resources.requests.memory}|{.spec.template.spec.containers[0].readinessProbe.httpGet.path}",
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                text = (result.stdout or "").strip()
+                parts = text.split("|", 2)
+                while len(parts) < 3:
+                    parts.append("")
+                memory_limit = str(parts[0] or "").strip().lower()
+                memory_request = str(parts[1] or "").strip().lower()
+                readiness_path = str(parts[2] or "").strip()
+        except Exception:
+            pass
+
+        return memory_limit, memory_request, readiness_path
 
     @staticmethod
     def _to_diagnosis_snapshot(incident: dict[str, Any]) -> dict[str, Any]:

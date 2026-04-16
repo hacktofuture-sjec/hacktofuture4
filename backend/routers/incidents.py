@@ -6,12 +6,14 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from agents.phase3_orchestrator import collect_monitor_snapshot, diagnose_snapshot
+from agents.live_monitor_agent import LIVE_MONITOR_AGENT
 from agents.executor_agent import ExecutorAgent
 from executor.action_runner import ActionRunner
 from executor.vcluster_manager import VClusterManager
 from planner.plan_simulator import simulate_action
 from planner.planner_agent import PlannerAgent
 from verifier.recovery_checker import RecoveryChecker
+from db import get_db
 from incident.store import INCIDENTS
 from realtime.hub import BROADCASTER
 
@@ -75,6 +77,35 @@ def _coerce_percent(value: Any, *, required: bool) -> str:
         raise HTTPException(status_code=400, detail="metric values must be valid percentages") from exc
 
 
+def _incident_snapshot_payload(incident: dict[str, Any]) -> dict[str, Any]:
+    snapshot = incident.get("snapshot", {}) or {}
+    metrics = snapshot.get("metrics", {}) if isinstance(snapshot, dict) else {}
+    scope = snapshot.get("scope", {}) if isinstance(snapshot, dict) else {}
+
+    return {
+        "incident_id": incident.get("incident_id", "monitor-snapshot"),
+        "alert": snapshot.get("alert", f"{incident.get('failure_class', 'unknown')} detected"),
+        "service": incident.get("service", snapshot.get("service", "unknown")),
+        "pod": incident.get("pod", snapshot.get("pod", "unknown")),
+        "metrics": {
+            "memory_pct": metrics.get("memory", metrics.get("memory_pct", 0)),
+            "cpu_pct": metrics.get("cpu", metrics.get("cpu_pct", 0)),
+            "restart_count": metrics.get("restarts", metrics.get("restart_count", 0)),
+            "latency_delta": metrics.get("latency_delta", metrics.get("latency_delta_x", 1.0)),
+        },
+        "events": snapshot.get("events", []),
+        "logs_summary": snapshot.get("logs_summary", []),
+        "trace_summary": snapshot.get("trace_summary") or snapshot.get("trace"),
+        "scope": scope or incident.get("scope", {"namespace": "default", "deployment": incident.get("service", "unknown")}),
+        "monitor_confidence": snapshot.get("monitor_confidence", incident.get("monitor_confidence", 0.0)),
+        "failure_class": snapshot.get("failure_class", incident.get("failure_class", "unknown")),
+        "dependency_graph_summary": snapshot.get(
+            "dependency_graph_summary",
+            incident.get("dependency_graph_summary", f"{incident.get('service', 'unknown')} -> dependencies"),
+        ),
+    }
+
+
 def _build_verifier_snapshot(incident: dict[str, Any], payload: dict[str, Any]) -> Any:
     request_metrics = payload.get("metrics")
     if request_metrics is not None:
@@ -125,6 +156,38 @@ def _build_verifier_snapshot(incident: dict[str, Any], payload: dict[str, Any]) 
 def list_incidents() -> list[dict]:
     """Return all in-memory incidents for the demo API."""
     return INCIDENTS
+
+
+@router.post("/admin/clear-incidents")
+async def clear_incidents() -> dict[str, Any]:
+    """Clear all incidents from in-memory and sqlite stores for a clean dashboard."""
+    try:
+        await LIVE_MONITOR_AGENT.stop()
+    except Exception:
+        pass
+
+    cleared = len(INCIDENTS)
+    INCIDENTS.clear()
+
+    db = get_db()
+    try:
+        db.execute("DELETE FROM incidents")
+        db.execute("DELETE FROM incident_plans")
+        db.execute("DELETE FROM executions")
+        db.commit()
+    finally:
+        db.close()
+
+    await BROADCASTER.broadcast(
+        {
+            "type": "incident_resolved",
+            "incident_id": "all",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "note": "all incidents cleared",
+        }
+    )
+
+    return {"status": "ok", "cleared": cleared, "monitor_paused": True}
 
 
 @router.get("/{incident_id}")
@@ -248,6 +311,28 @@ def get_incident_timeline(incident_id: str) -> dict[str, Any]:
     return {"incident_id": incident_id, "events": events}
 
 
+@router.post("/{incident_id}/diagnose")
+def diagnose_incident(incident_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Run DiagnoseAgent on the stored IncidentSnapshot and persist the result."""
+    incident = _find_incident(incident_id)
+
+    # Ensure snapshot exists
+    if "snapshot" not in incident or not incident["snapshot"]:
+        raise HTTPException(status_code=400, detail="No snapshot found for this incident")
+
+    snapshot = incident["snapshot"]
+    diagnosis = diagnose_snapshot(snapshot)
+    incident["diagnosis"] = diagnosis
+    incident["diagnosed_at"] = datetime.now(timezone.utc).isoformat()
+    incident["status"] = "diagnosing"
+
+    return {
+        "incident_id": incident_id,
+        "status": incident["status"],
+        "diagnosis": diagnosis,
+    }
+
+
 @router.post("/{incident_id}/plan")
 async def plan_incident(incident_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """Generate and persist a plan for the incident using the planner agent."""
@@ -265,8 +350,9 @@ async def plan_incident(incident_id: str, payload: dict[str, Any] | None = None)
     # Persist planner context used for downstream simulation calls.
     incident["dependency_graph_summary"] = context["dependency_graph_summary"]
 
-    snapshot = body.get("snapshot") or collect_monitor_snapshot()
-    diagnosis = body.get("diagnosis") or diagnose_snapshot(snapshot)
+    # Prefer stored diagnosis if available (from /diagnose endpoint), otherwise generate fresh
+    snapshot = incident.get("snapshot") or body.get("snapshot") or collect_monitor_snapshot()
+    diagnosis = incident.get("diagnosis") or body.get("diagnosis") or diagnose_snapshot(snapshot)
     incident["snapshot"] = snapshot
 
     plan_output = planner_agent.run(

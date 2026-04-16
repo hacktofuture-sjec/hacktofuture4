@@ -21,14 +21,23 @@ class MonitorAgent:
         }
         events: list[dict] = []
         signatures: list[dict] = []
-        trace = None
+        trace_summary = None
 
-        # Keep both nested and flat keys while Phase 3 is integrated.
+        # Keep both documented nested shape and legacy flat keys for compatibility.
         return {
+            "incident_id": "monitor-snapshot",
+            "alert": "monitor snapshot captured",
+            "service": "unknown",
+            "pod": "unknown",
             "metrics": metrics,
             "events": events,
             "logs_summary": signatures,
-            "trace": trace,
+            "trace_summary": trace_summary,
+            "scope": {"namespace": "default", "deployment": "unknown"},
+            "monitor_confidence": 0.0,
+            "failure_class": "unknown",
+            "dependency_graph_summary": "unknown -> dependencies",
+            "trace": trace_summary,
             "memory_pct": metrics["memory_pct"],
             "cpu_pct": metrics["cpu_pct"],
             "restart_count": metrics["restart_count"],

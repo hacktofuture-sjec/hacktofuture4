@@ -39,10 +39,11 @@ async def inject_fault(body: FaultInjectionRequest) -> FaultInjectionResponse:
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail={"error": "fault_injection_failed", "reason": str(exc)})
 
-    # Keep incident creation monitor-driven, but nudge an immediate detection cycle
-    # so the user does not need to wait for the next poll interval.
+    # Keep incident creation monitor-driven, but nudge an immediate targeted
+    # detection pass for the selected scenario so the user sees the expected
+    # incident without waiting for the next poll interval.
     try:
-        asyncio.create_task(LIVE_MONITOR_AGENT.run_cycle_once())
+        asyncio.create_task(LIVE_MONITOR_AGENT.run_scenario_once(body.scenario_id))
     except Exception:
         pass
 

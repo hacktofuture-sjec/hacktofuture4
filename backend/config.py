@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+
+from dotenv import load_dotenv
+
+
+load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
 
 
 def _as_bool(value: str, default: bool = False) -> bool:
@@ -86,7 +92,10 @@ def get_settings() -> Settings:
         vcluster_namespace=os.getenv("VCLUSTER_NAMESPACE", "vcluster-sandboxes"),
         sandbox_validate_window_seconds=_as_int(os.getenv("SANDBOX_VALIDATE_WINDOW_SECONDS"), 90),
         max_retries_remediation=_as_int(os.getenv("MAX_RETRIES_REMEDIATION"), 1),
-        cors_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000"),
+        cors_origins=os.getenv(
+            "CORS_ORIGINS",
+            "http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001",
+        ),
         host=os.getenv("HOST", "0.0.0.0"),
         port=_as_int(os.getenv("PORT"), 8000),
     )
