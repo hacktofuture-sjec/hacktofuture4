@@ -1,7 +1,7 @@
 from services.firestore_service import is_new_ip
 from services.firestore_service import is_new_ip
 
-def calculate_risk_score(ip, location=None, device=None, event=None, session_id=None, keystroke_interval=None):
+def calculate_risk_score(ip, location=None, device=None, event=None, session_id=None, keystroke_interval=None, behavior_risk=None, interaction_data=None):
     score = 100
 
     from services.ip_service import get_location
@@ -22,6 +22,15 @@ def calculate_risk_score(ip, location=None, device=None, event=None, session_id=
     if keystroke_interval:
         if keystroke_interval < 50:
             score -= 25
+
+    # NEW: integrate behavior risk
+    if behavior_risk:
+        score -= behavior_risk
+
+    # NEW: Check for excessive UI interactions
+    if interaction_data and isinstance(interaction_data, dict):
+        if interaction_data.get('excessive_interaction', False):
+            score -= 20  # Reduce score by 20 for excessive interactions
 
     # Check if IP has been used before for this session
     if is_new_ip(session_id, ip):

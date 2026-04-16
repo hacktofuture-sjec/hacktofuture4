@@ -139,13 +139,13 @@ class _MyTaskPageState extends State<MyTaskPage> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: _selectedPriority,
+              initialValue: _selectedPriority,
               items: ['High', 'Medium', 'Low'].map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
               onChanged: (val) => _selectedPriority = val!,
               decoration: const InputDecoration(labelText: 'Priority'),
             ),
             DropdownButtonFormField<String>(
-              value: _selectedStatus,
+              initialValue: _selectedStatus,
               items: ['To Do', 'In Progress', 'Done'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
               onChanged: (val) => _selectedStatus = val!,
               decoration: const InputDecoration(labelText: 'Status'),

@@ -3,6 +3,8 @@ import requests
 from flask import Blueprint, request, jsonify
 from services.firestore_service import store_event, get_events
 from services.ip_service import get_location
+from services.keystroke_service import add_keystroke
+from services.risk_engine import calculate_risk_score  # ✅ NEW
 
 session_bp = Blueprint('session', __name__)
 
@@ -32,12 +34,30 @@ def handle_session():
     email = data.get("email")
     device = data.get("device", "unknown")
     event = data.get("event", "admin_login")
-    keystroke_interval = data.get("keystroke_interval", 0)
+    dwell = data.get("dwell")
+    flight = data.get("flight")
+    interaction_data = data.get("interaction_data")  # NEW: Get interaction data
 
     ip = resolve_client_ip()
     location = get_location(ip)
 
     session_id = str(uuid.uuid4())
+
+    keystroke_result = None
+    if dwell is not None and flight is not None:
+        keystroke_result = add_keystroke(session_id, dwell, flight)
+
+    # ✅ NEW: calculate risk with interaction data
+    risk_score = calculate_risk_score(
+        ip=ip,
+        location=location,
+        device=device,
+        event=event,
+        session_id=session_id,
+        behavior_risk=keystroke_result["behavior_risk"] if keystroke_result else 0,
+        interaction_data=interaction_data  # NEW: Pass interaction data
+    )
+
     event_data = {
         "session_id": session_id,
         "email": email,
@@ -45,13 +65,25 @@ def handle_session():
         "event": event,
         "ip": ip,
         "location": location,
-        "keystroke_interval": keystroke_interval,
+        "trust_score": risk_score,  # ✅ NEW
     }
+
+    if keystroke_result:
+        event_data["behavior_risk"] = keystroke_result["behavior_risk"]
+        event_data["cumulative_risk"] = keystroke_result["cumulative_risk"]
+
+    # NEW: Store interaction data if present
+    if interaction_data:
+        event_data["interaction_data"] = interaction_data
 
     store_event(event_data)
     return jsonify({"message": "Session stored", "session_id": session_id}), 200
 
 @session_bp.route('/events', methods=['GET'])
 def get_events_route():
-    events = get_events()
-    return jsonify(events)
+    try:
+        events = get_events()
+        return jsonify(events)
+    except Exception as e:
+        print("Error in /events route:", e)
+        return jsonify([]), 200

@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'Mytask.dart';
 import 'Profile.dart';
 import 'leaveandatt.dart';
@@ -10,8 +12,20 @@ class AppState {
   static DateTime? clockOutTime;
   static List<Map<String, dynamic>> attendanceLogs = [];
   static List<Map<String, dynamic>> tasks = [
-    {'title': 'Update SkyPortal UI Components', 'deadline': 'Today, 5:00 PM', 'priority': 'High', 'color': Colors.redAccent, 'status': 'To Do'},
-    {'title': 'Team Sync - Sprint Review', 'deadline': 'Tomorrow, 10:00 AM', 'priority': 'Medium', 'color': Colors.blueAccent, 'status': 'In Progress'},
+    {
+      'title': 'Update SkyPortal UI Components',
+      'deadline': 'Today, 5:00 PM',
+      'priority': 'High',
+      'color': Colors.redAccent,
+      'status': 'To Do',
+    },
+    {
+      'title': 'Team Sync - Sprint Review',
+      'deadline': 'Tomorrow, 10:00 AM',
+      'priority': 'Medium',
+      'color': Colors.blueAccent,
+      'status': 'In Progress',
+    },
   ];
 
   static String calculateTotalWorkHours() {
@@ -25,12 +39,123 @@ class AppState {
     if (isClockedIn && clockInTime != null) {
       total += DateTime.now().difference(clockInTime!);
     }
-    
+
     int hours = total.inHours;
     int minutes = total.inMinutes.remainder(60);
     return '${hours}h ${minutes}m';
   }
 }
+
+// Interaction tracking for risk assessment
+class InteractionTracker {
+  static int tabSwitches = 0;
+  static int buttonClicks = 0;
+  static int keystrokes = 0;
+  static int totalInteractions = 0;
+  static DateTime? sessionStart;
+  static List<DateTime> interactionTimestamps = [];
+  static List<Map<String, dynamic>> liveEvents = [];
+
+  static void startSession() {
+    sessionStart = DateTime.now();
+    tabSwitches = 0;
+    buttonClicks = 0;
+    keystrokes = 0;
+    totalInteractions = 0;
+    interactionTimestamps = [];
+    liveEvents = [];
+  }
+
+  static void trackTabSwitch() {
+    tabSwitches++;
+    totalInteractions++;
+    interactionTimestamps.add(DateTime.now());
+    _tryRecordBurstEvent(isKeystroke: false);
+  }
+
+  static void trackButtonClick() {
+    buttonClicks++;
+    totalInteractions++;
+    interactionTimestamps.add(DateTime.now());
+    _tryRecordBurstEvent(isKeystroke: false);
+  }
+
+  static void trackKeystroke() {
+    keystrokes++;
+    totalInteractions++;
+    interactionTimestamps.add(DateTime.now());
+    _tryRecordBurstEvent(isKeystroke: true);
+  }
+
+  static void recordLiveEvent(String message) {
+    liveEvents.insert(0, {'message': message, 'time': DateTime.now()});
+    if (liveEvents.length > 6) liveEvents.removeLast();
+  }
+
+  static int recentInteractionCount({
+    Duration window = const Duration(seconds: 10),
+  }) {
+    final now = DateTime.now();
+    interactionTimestamps = interactionTimestamps
+        .where((t) => now.difference(t) <= window)
+        .toList();
+    return interactionTimestamps.length;
+  }
+
+  static bool hasHighInteractionBurst() {
+    return recentInteractionCount() > 10;
+  }
+
+  static void _tryRecordBurstEvent({bool isKeystroke = false}) {
+    if (hasHighInteractionBurst()) {
+      final burstCount = recentInteractionCount();
+      final lastMessage = liveEvents.isNotEmpty ? liveEvents.first['message'] : '';
+      final newMessage = isKeystroke
+          ? 'Live keystroke burst: $burstCount interactions in 10 seconds.'
+          : 'High interaction burst: $burstCount interactions in 10 seconds.';
+      if (lastMessage != newMessage) {
+        recordLiveEvent(newMessage);
+      }
+    }
+  }
+
+  static bool isExcessiveInteraction() {
+    if (sessionStart == null) return false;
+
+    final sessionDuration = DateTime.now().difference(sessionStart!).inMinutes;
+    if (sessionDuration < 1) return false; // Need at least 1 minute of data
+
+    final total = tabSwitches + buttonClicks + keystrokes;
+    final interactionsPerMinute = total / sessionDuration;
+
+    // Consider excessive if more than 50 interactions per minute
+    return interactionsPerMinute > 50;
+  }
+
+  static Map<String, dynamic> getInteractionData() {
+    final sessionDuration = sessionStart != null
+        ? DateTime.now().difference(sessionStart!).inMinutes
+        : 0;
+    return {
+      'tab_switches': tabSwitches,
+      'button_clicks': buttonClicks,
+      'keystrokes': keystrokes,
+      'total_interactions': totalInteractions,
+      'high_interaction_in_10s': hasHighInteractionBurst(),
+      'session_duration_minutes': sessionDuration,
+      'excessive_interaction': isExcessiveInteraction(),
+      'interactions_per_minute': sessionDuration > 0
+          ? (tabSwitches + buttonClicks + keystrokes) / sessionDuration
+          : 0,
+      'latest_live_event': liveEvents.isNotEmpty
+          ? liveEvents.first['message']
+          : null,
+    };
+  }
+}
+
+const String backendBaseUrl =
+    'http://127.0.0.1:5000'; // Use 10.0.2.2 on Android emulator if needed.
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -43,16 +168,60 @@ class _DashboardPageState extends State<DashboardPage> {
   void _refresh() => setState(() {});
 
   @override
+  void initState() {
+    super.initState();
+    if (InteractionTracker.sessionStart == null) {
+      InteractionTracker.startSession();
+    }
+  }
+
+  Future<void> _sendInteractionData() async {
+    final interactionData = InteractionTracker.getInteractionData();
+
+    try {
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl/session'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': 'monis@skyportal.com', // Current user email
+          'device': 'user_dashboard',
+          'event': 'user_interaction_update',
+          'keystroke_interval': 0,
+          'interaction_data': interactionData,
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        print('Failed to send interaction data: ${response.body}');
+      }
+    } catch (e) {
+      print('Error sending interaction data: $e');
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF0F9FF),
       body: Row(
         children: [
-          _Sidebar(onNavigate: _refresh),
+          _Sidebar(
+            onNavigate: _refresh,
+            onTabSwitch: () {
+              InteractionTracker.trackTabSwitch();
+              _sendInteractionData();
+            },
+          ),
           Expanded(
             child: Column(
               children: [
-                _TopBar(onClockToggle: _refresh),
+                _TopBar(
+                  onClockToggle: _refresh,
+                  onButtonClick: () {
+                    InteractionTracker.trackButtonClick();
+                    _sendInteractionData();
+                  },
+                ),
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.all(32),
@@ -74,7 +243,11 @@ class _DashboardPageState extends State<DashboardPage> {
                             SizedBox(height: 8),
                             Text(
                               'SkyPortal Employee Hub • Monday, Oct 23',
-                              style: TextStyle(color: Color(0xFF0EA5E9), fontSize: 16, fontWeight: FontWeight.w500),
+                              style: TextStyle(
+                                color: Color(0xFF0EA5E9),
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ],
                         ),
@@ -84,9 +257,21 @@ class _DashboardPageState extends State<DashboardPage> {
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(flex: 2, child: _MyTasksSection(onViewAll: _refresh)),
+                            Expanded(
+                              flex: 2,
+                              child: _MyTasksSection(
+                                onViewAll: _refresh,
+                                onButtonClick: () {
+                                  InteractionTracker.trackButtonClick();
+                                  _sendInteractionData();
+                                },
+                              ),
+                            ),
                             const SizedBox(width: 32),
-                            const Expanded(flex: 1, child: _AttendanceSection()),
+                            const Expanded(
+                              flex: 1,
+                              child: _AttendanceSection(),
+                            ),
                           ],
                         ),
                       ],
@@ -104,7 +289,8 @@ class _DashboardPageState extends State<DashboardPage> {
 
 class _Sidebar extends StatelessWidget {
   final VoidCallback onNavigate;
-  const _Sidebar({required this.onNavigate});
+  final VoidCallback onTabSwitch;
+  const _Sidebar({required this.onNavigate, required this.onTabSwitch});
 
   @override
   Widget build(BuildContext context) {
@@ -123,7 +309,11 @@ class _Sidebar extends StatelessWidget {
           const Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.auto_awesome_mosaic_rounded, color: Colors.white, size: 32),
+              Icon(
+                Icons.auto_awesome_mosaic_rounded,
+                color: Colors.white,
+                size: 32,
+              ),
               SizedBox(width: 12),
               Text(
                 'SKYPORTAL',
@@ -137,11 +327,37 @@ class _Sidebar extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 64),
-          _buildSidebarItem(context, Icons.home_rounded, 'My Dashboard', isSelected: true, destination: const DashboardPage()),
-          _buildSidebarItem(context, Icons.assignment_rounded, 'My Tasks', destination: const MyTaskPage()),
-          _buildSidebarItem(context, Icons.groups_rounded, 'Team Hub', destination: null),
-          _buildSidebarItem(context, Icons.event_note_rounded, 'Leave & Attendance', destination: const LeaveAndAttPage()),
-          _buildSidebarItem(context, Icons.badge_rounded, 'My Profile', destination: const ProfilePage()),
+          _buildSidebarItem(
+            context,
+            Icons.home_rounded,
+            'My Dashboard',
+            isSelected: true,
+            destination: const DashboardPage(),
+          ),
+          _buildSidebarItem(
+            context,
+            Icons.assignment_rounded,
+            'My Tasks',
+            destination: const MyTaskPage(),
+          ),
+          _buildSidebarItem(
+            context,
+            Icons.groups_rounded,
+            'Team Hub',
+            destination: null,
+          ),
+          _buildSidebarItem(
+            context,
+            Icons.event_note_rounded,
+            'Leave & Attendance',
+            destination: const LeaveAndAttPage(),
+          ),
+          _buildSidebarItem(
+            context,
+            Icons.badge_rounded,
+            'My Profile',
+            destination: const ProfilePage(),
+          ),
           const Spacer(),
           const _UserCard(),
         ],
@@ -149,23 +365,39 @@ class _Sidebar extends StatelessWidget {
     );
   }
 
-  Widget _buildSidebarItem(BuildContext context, IconData icon, String title, {bool isSelected = false, Widget? destination}) {
+  Widget _buildSidebarItem(
+    BuildContext context,
+    IconData icon,
+    String title, {
+    bool isSelected = false,
+    Widget? destination,
+  }) {
     return InkWell(
       onTap: () {
         if (destination != null && !isSelected) {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => destination)).then((_) => onNavigate());
+          onTabSwitch(); // Track tab switch
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => destination),
+          ).then((_) => onNavigate());
         }
       },
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.white.withValues(alpha: 0.2) : Colors.transparent,
+          color: isSelected
+              ? Colors.white.withValues(alpha: 0.2)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
           children: [
-            Icon(icon, color: isSelected ? Colors.white : Colors.white70, size: 22),
+            Icon(
+              icon,
+              color: isSelected ? Colors.white : Colors.white70,
+              size: 22,
+            ),
             const SizedBox(width: 16),
             Text(
               title,
@@ -184,7 +416,8 @@ class _Sidebar extends StatelessWidget {
 
 class _TopBar extends StatefulWidget {
   final VoidCallback onClockToggle;
-  const _TopBar({required this.onClockToggle});
+  final VoidCallback onButtonClick;
+  const _TopBar({required this.onClockToggle, required this.onButtonClick});
 
   @override
   State<_TopBar> createState() => _TopBarState();
@@ -198,20 +431,31 @@ class _TopBarState extends State<_TopBar> {
       padding: const EdgeInsets.symmetric(horizontal: 32),
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(bottom: BorderSide(color: Colors.blue.withValues(alpha: 0.1))),
+        border: Border(
+          bottom: BorderSide(color: Colors.blue.withValues(alpha: 0.1)),
+        ),
         boxShadow: [
-          BoxShadow(color: Colors.blue.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4)),
+          BoxShadow(
+            color: Colors.blue.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: Row(
         children: [
           const Text(
             'Employee Portal',
-            style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w700, letterSpacing: 1),
+            style: TextStyle(
+              color: Color(0xFF64748B),
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1,
+            ),
           ),
           const Spacer(),
           ElevatedButton.icon(
             onPressed: () {
+              widget.onButtonClick(); // Track button click
               setState(() {
                 AppState.isClockedIn = !AppState.isClockedIn;
                 if (AppState.isClockedIn) {
@@ -219,7 +463,9 @@ class _TopBarState extends State<_TopBar> {
                 } else {
                   AppState.clockOutTime = DateTime.now();
                   if (AppState.clockInTime != null) {
-                    final duration = AppState.clockOutTime!.difference(AppState.clockInTime!);
+                    final duration = AppState.clockOutTime!.difference(
+                      AppState.clockInTime!,
+                    );
                     AppState.attendanceLogs.add({
                       'date': DateTime.now(),
                       'clockIn': AppState.clockInTime,
@@ -232,18 +478,33 @@ class _TopBarState extends State<_TopBar> {
               widget.onClockToggle();
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text(AppState.isClockedIn ? 'Successfully Clocked In' : 'Successfully Clocked Out'),
-                  backgroundColor: AppState.isClockedIn ? Colors.green : Colors.orange,
+                  content: Text(
+                    AppState.isClockedIn
+                        ? 'Successfully Clocked In'
+                        : 'Successfully Clocked Out',
+                  ),
+                  backgroundColor: AppState.isClockedIn
+                      ? Colors.green
+                      : Colors.orange,
                   behavior: SnackBarBehavior.floating,
                 ),
               );
             },
-            icon: Icon(AppState.isClockedIn ? Icons.logout_rounded : Icons.timer_outlined, size: 18),
+            icon: Icon(
+              AppState.isClockedIn
+                  ? Icons.logout_rounded
+                  : Icons.timer_outlined,
+              size: 18,
+            ),
             label: Text(AppState.isClockedIn ? 'CLOCK OUT' : 'CLOCK IN'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppState.isClockedIn ? Colors.orange : const Color(0xFF10B981),
+              backgroundColor: AppState.isClockedIn
+                  ? Colors.orange
+                  : const Color(0xFF10B981),
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               elevation: 0,
             ),
           ),
@@ -253,7 +514,9 @@ class _TopBarState extends State<_TopBar> {
             backgroundColor: Color(0xFF0EA5E9),
             child: CircleAvatar(
               radius: 20,
-              backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=monis'),
+              backgroundImage: NetworkImage(
+                'https://i.pravatar.cc/150?u=monis',
+              ),
             ),
           ),
         ],
@@ -269,13 +532,46 @@ class _EmployeeStatsGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(child: _StatCard(title: 'Work Hours', value: AppState.calculateTotalWorkHours(), subText: 'Today\'s Total', icon: Icons.access_time_filled_rounded, color: const Color(0xFF0EA5E9))),
+        Expanded(
+          child: _StatCard(
+            title: 'Work Hours',
+            value: AppState.calculateTotalWorkHours(),
+            subText: 'Today\'s Total',
+            icon: Icons.access_time_filled_rounded,
+            color: const Color(0xFF0EA5E9),
+          ),
+        ),
         const SizedBox(width: 24),
-        Expanded(child: _StatCard(title: 'Tasks Done', value: '${AppState.tasks.where((t) => t['status'] == 'Done').length}/${AppState.tasks.length}', subText: 'Completion rate', icon: Icons.task_alt_rounded, color: const Color(0xFF10B981))),
+        Expanded(
+          child: _StatCard(
+            title: 'Tasks Done',
+            value:
+                '${AppState.tasks.where((t) => t['status'] == 'Done').length}/${AppState.tasks.length}',
+            subText: 'Completion rate',
+            icon: Icons.task_alt_rounded,
+            color: const Color(0xFF10B981),
+          ),
+        ),
         const SizedBox(width: 24),
-        const Expanded(child: _StatCard(title: 'Team Ranking', value: '#4', subText: 'Top Performer', icon: Icons.emoji_events_rounded, color: Color(0xFFF59E0B))),
+        const Expanded(
+          child: _StatCard(
+            title: 'Team Ranking',
+            value: '#4',
+            subText: 'Top Performer',
+            icon: Icons.emoji_events_rounded,
+            color: Color(0xFFF59E0B),
+          ),
+        ),
         const SizedBox(width: 24),
-        const Expanded(child: _StatCard(title: 'Leave Bal.', value: '14 Days', subText: 'Annual Leave', icon: Icons.beach_access_rounded, color: Color(0xFF6366F1))),
+        const Expanded(
+          child: _StatCard(
+            title: 'Leave Bal.',
+            value: '14 Days',
+            subText: 'Annual Leave',
+            icon: Icons.beach_access_rounded,
+            color: Color(0xFF6366F1),
+          ),
+        ),
       ],
     );
   }
@@ -304,7 +600,11 @@ class _StatCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
-          BoxShadow(color: color.withValues(alpha: 0.08), blurRadius: 15, offset: const Offset(0, 8)),
+          BoxShadow(
+            color: color.withValues(alpha: 0.08),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
         ],
       ),
       child: Column(
@@ -312,15 +612,39 @@ class _StatCard extends StatelessWidget {
         children: [
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(16)),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: Icon(icon, color: color, size: 26),
           ),
           const SizedBox(height: 24),
-          Text(title, style: const TextStyle(color: Color(0xFF64748B), fontSize: 14, fontWeight: FontWeight.w600)),
+          Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(height: 4),
-          Text(value, style: const TextStyle(color: Color(0xFF0F172A), fontSize: 26, fontWeight: FontWeight.w900)),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 26,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
           const SizedBox(height: 4),
-          Text(subText, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+          Text(
+            subText,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
@@ -329,7 +653,8 @@ class _StatCard extends StatelessWidget {
 
 class _MyTasksSection extends StatelessWidget {
   final VoidCallback onViewAll;
-  const _MyTasksSection({required this.onViewAll});
+  final VoidCallback onButtonClick;
+  const _MyTasksSection({required this.onViewAll, required this.onButtonClick});
 
   @override
   Widget build(BuildContext context) {
@@ -339,7 +664,11 @@ class _MyTasksSection extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(32),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 20, offset: const Offset(0, 10)),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
         ],
       ),
       child: Column(
@@ -350,14 +679,28 @@ class _MyTasksSection extends StatelessWidget {
             children: [
               const Row(
                 children: [
-                  Icon(Icons.playlist_add_check_rounded, color: Color(0xFF0EA5E9)),
+                  Icon(
+                    Icons.playlist_add_check_rounded,
+                    color: Color(0xFF0EA5E9),
+                  ),
                   SizedBox(width: 12),
-                  Text('My Tasks', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                  Text(
+                    'My Tasks',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
                 ],
               ),
               TextButton(
                 onPressed: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (context) => const MyTaskPage())).then((_) => onViewAll());
+                  onButtonClick(); // Track button click
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const MyTaskPage()),
+                  ).then((_) => onViewAll());
                 },
                 child: const Text('View All'),
               ),
@@ -365,15 +708,24 @@ class _MyTasksSection extends StatelessWidget {
           ),
           const SizedBox(height: 32),
           if (AppState.tasks.isEmpty)
-             const Center(child: Text('No tasks added yet.', style: TextStyle(color: Colors.grey)))
+            const Center(
+              child: Text(
+                'No tasks added yet.',
+                style: TextStyle(color: Colors.grey),
+              ),
+            )
           else
-            ...AppState.tasks.take(3).map((task) => _TaskItem(
-              title: task['title'],
-              deadline: task['deadline'],
-              priority: task['priority'],
-              color: task['color'],
-              isDone: task['status'] == 'Done',
-            )),
+            ...AppState.tasks
+                .take(3)
+                .map(
+                  (task) => _TaskItem(
+                    title: task['title'],
+                    deadline: task['deadline'],
+                    priority: task['priority'],
+                    color: task['color'],
+                    isDone: task['status'] == 'Done',
+                  ),
+                ),
         ],
       ),
     );
@@ -408,7 +760,12 @@ class _TaskItem extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(isDone ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded, color: isDone ? Colors.green : Colors.grey),
+            Icon(
+              isDone
+                  ? Icons.check_circle_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              color: isDone ? Colors.green : Colors.grey,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -423,14 +780,31 @@ class _TaskItem extends StatelessWidget {
                       decoration: isDone ? TextDecoration.lineThrough : null,
                     ),
                   ),
-                  Text(deadline, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13, fontWeight: FontWeight.w500)),
+                  Text(
+                    deadline,
+                    style: const TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ],
               ),
             ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-              child: Text(priority, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                priority,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ],
         ),
@@ -444,7 +818,9 @@ class _AttendanceSection extends StatelessWidget {
 
   String _formatTime(DateTime? time) {
     if (time == null) return '--:--';
-    final hour = time.hour == 0 ? 12 : (time.hour > 12 ? time.hour - 12 : time.hour);
+    final hour = time.hour == 0
+        ? 12
+        : (time.hour > 12 ? time.hour - 12 : time.hour);
     final minute = time.minute.toString().padLeft(2, '0');
     final period = time.hour >= 12 ? 'PM' : 'AM';
     return '$hour:$minute $period';
@@ -465,16 +841,36 @@ class _AttendanceSection extends StatelessWidget {
           ),
           child: Column(
             children: [
-              Icon(AppState.isClockedIn ? Icons.timer_rounded : Icons.wb_sunny_rounded, color: Colors.amber, size: 40),
+              Icon(
+                AppState.isClockedIn
+                    ? Icons.timer_rounded
+                    : Icons.wb_sunny_rounded,
+                color: Colors.amber,
+                size: 40,
+              ),
               const SizedBox(height: 16),
               Text(
                 AppState.isClockedIn ? 'Stay Productive!' : 'Have a Great Day!',
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
+                ),
               ),
               const SizedBox(height: 16),
-              _buildTimeRow('Clocked In', clockInStr, Icons.login_rounded, Colors.greenAccent),
+              _buildTimeRow(
+                'Clocked In',
+                clockInStr,
+                Icons.login_rounded,
+                Colors.greenAccent,
+              ),
               const SizedBox(height: 8),
-              _buildTimeRow('Clocked Out', clockOutStr, Icons.logout_rounded, Colors.orangeAccent),
+              _buildTimeRow(
+                'Clocked Out',
+                clockOutStr,
+                Icons.logout_rounded,
+                Colors.orangeAccent,
+              ),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
@@ -483,7 +879,9 @@ class _AttendanceSection extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2563EB),
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   child: const Text('View Detailed Logs'),
                 ),
@@ -502,7 +900,10 @@ class _AttendanceSection extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Personal Schedule', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const Text(
+                'Personal Schedule',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
               const SizedBox(height: 16),
               _buildScheduleItem('Team Standup', '10:30 AM', Colors.blue),
               _buildScheduleItem('Project Review', '02:00 PM', Colors.purple),
@@ -514,7 +915,12 @@ class _AttendanceSection extends StatelessWidget {
     );
   }
 
-  Widget _buildTimeRow(String label, String time, IconData icon, Color iconColor) {
+  Widget _buildTimeRow(
+    String label,
+    String time,
+    IconData icon,
+    Color iconColor,
+  ) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -522,10 +928,20 @@ class _AttendanceSection extends StatelessWidget {
           children: [
             Icon(icon, color: iconColor, size: 16),
             const SizedBox(width: 8),
-            Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
           ],
         ),
-        Text(time, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+        Text(
+          time,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
       ],
     );
   }
@@ -535,11 +951,24 @@ class _AttendanceSection extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
-          Container(width: 4, height: 16, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
+          Container(
+            width: 4,
+            height: 16,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
           const SizedBox(width: 12),
-          Text(name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          Text(
+            name,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          ),
           const Spacer(),
-          Text(time, style: const TextStyle(color: Colors.black45, fontSize: 11)),
+          Text(
+            time,
+            style: const TextStyle(color: Colors.black45, fontSize: 11),
+          ),
         ],
       ),
     );
@@ -560,15 +989,28 @@ class _UserCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const CircleAvatar(radius: 18, backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=monis')),
+          const CircleAvatar(
+            radius: 18,
+            backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=monis'),
+          ),
           const SizedBox(width: 12),
           const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Monis', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                Text('UI/UX Designer', style: TextStyle(color: Colors.white70, fontSize: 11)),
+                Text(
+                  'Monis',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  'UI/UX Designer',
+                  style: TextStyle(color: Colors.white70, fontSize: 11),
+                ),
               ],
             ),
           ),

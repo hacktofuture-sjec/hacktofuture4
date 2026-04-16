@@ -44,21 +44,25 @@ def get_events():
         print("Skipping events fetch, Firestore is not initialized.")
         return []
 
-    docs = (
-        _db.collection("events")
-        .order_by("created_at", direction=firestore.Query.DESCENDING)
-        .stream()
-    )
-    events = []
+    try:
+        docs = (
+            _db.collection("events")
+            .order_by("created_at", direction=firestore.Query.DESCENDING)
+            .stream()
+        )
+        events = []
 
-    for doc in docs:
-        event = doc.to_dict()
-        event["trust_score"] = event.get("trust_score", 0)
-        event["action"] = event.get("action", "UNKNOWN")
-        event["id"] = doc.id
-        events.append(event)
+        for doc in docs:
+            event = doc.to_dict()
+            event["trust_score"] = event.get("trust_score", 0)
+            event["action"] = event.get("action", "UNKNOWN")
+            event["id"] = doc.id
+            events.append(event)
 
-    return events
+        return events
+    except Exception as e:
+        print("Failed to fetch events from Firestore:", e)
+        return []
 
 
 def is_new_ip(session_id, ip):
