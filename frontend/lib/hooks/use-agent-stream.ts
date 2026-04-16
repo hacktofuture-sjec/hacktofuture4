@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api-client";
-import type { AgentLog } from "@/lib/types";
+import type { AgentLog, SandboxResult } from "@/lib/types";
 
 interface StreamState {
   logs: AgentLog[];
+  sandboxResult: SandboxResult | null;
   done: boolean;
   error: string | null;
 }
@@ -13,12 +14,13 @@ interface StreamState {
 export function useAgentStream(incidentId: string | null) {
   const [state, setState] = useState<StreamState>({
     logs: [],
+    sandboxResult: null,
     done: false,
     error: null,
   });
 
   const reset = useCallback(() => {
-    setState({ logs: [], done: false, error: null });
+    setState({ logs: [], sandboxResult: null, done: false, error: null });
   }, []);
 
   useEffect(() => {
@@ -33,12 +35,17 @@ export function useAgentStream(incidentId: string | null) {
         try {
           const event = JSON.parse(ev.data) as {
             type: string;
-            data: AgentLog | { status: string };
+            data: AgentLog | { status: string } | SandboxResult;
           };
           if (event.type === "agent_log") {
             setState((prev) => ({
               ...prev,
               logs: [...prev.logs, event.data as AgentLog],
+            }));
+          } else if (event.type === "sandbox_result") {
+            setState((prev) => ({
+              ...prev,
+              sandboxResult: event.data as SandboxResult,
             }));
           }
         } catch {
