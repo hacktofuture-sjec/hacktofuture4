@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.api.routes.chat import IncidentReport, kernel
 from src.adapters.confluence_client import ConfluenceClient, ConfluenceClientError
+from src.adapters.grafana_client import GrafanaClient, GrafanaClientError
 from src.adapters.github_client import GitHubClient, GitHubClientError
 from src.adapters.iris_client import IrisClient, IrisClientError
 from src.adapters.jira_client import JiraClient, JiraClientError
@@ -125,6 +126,57 @@ class IngestGitHubResponse(BaseModel):
     failed_count: int
     source: str
     results: list[IngestGitHubResult]
+
+
+class GrafanaDashboardRef(BaseModel):
+    public_dashboard_url: str = Field(min_length=1)
+
+    @field_validator("public_dashboard_url")
+    @classmethod
+    def validate_public_dashboard_url(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("public_dashboard_url must be non-empty")
+        if not normalized.startswith("http://") and not normalized.startswith("https://"):
+            raise ValueError("public_dashboard_url must be an absolute URL")
+        return normalized
+
+
+class IngestGrafanaRequest(BaseModel):
+    dashboards: list[GrafanaDashboardRef] = Field(min_length=1)
+
+    @field_validator("dashboards")
+    @classmethod
+    def dedupe_dashboards(cls, value: list[GrafanaDashboardRef]) -> list[GrafanaDashboardRef]:
+        deduped: list[GrafanaDashboardRef] = []
+        seen: set[str] = set()
+
+        for ref in value:
+            key = ref.public_dashboard_url.strip().lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(ref)
+
+        if not deduped:
+            raise ValueError("dashboards must contain at least one valid Grafana dashboard URL")
+        return deduped
+
+
+class IngestGrafanaResult(BaseModel):
+    public_dashboard_url: str
+    status: Literal["ingested", "failed"]
+    title: str | None = None
+    panel_count: int | None = None
+    error: str | None = None
+    error_detail: IngestionErrorEnvelope | None = None
+
+
+class IngestGrafanaResponse(BaseModel):
+    ingested_count: int
+    failed_count: int
+    source: str
+    results: list[IngestGrafanaResult]
 
 
 class IngestJiraRequest(BaseModel):
@@ -574,6 +626,73 @@ def ingest_github(payload: IngestGitHubRequest) -> IngestGitHubResponse:
         ingested_count=ingested_count,
         failed_count=failed_count,
         source="github",
+        results=results,
+    )
+
+
+@router.post("/ingest/grafana", response_model=IngestGrafanaResponse)
+def ingest_grafana(payload: IngestGrafanaRequest) -> IngestGrafanaResponse:
+    try:
+        client = GrafanaClient.from_env()
+    except GrafanaClientError as exc:
+        detail = _build_ingestion_error(
+            source="grafana",
+            stage="init",
+            message=str(exc),
+            code="ingestion_adapter_unavailable",
+        )
+        raise HTTPException(status_code=502, detail=detail.model_dump()) from exc
+
+    results: list[IngestGrafanaResult] = []
+    for ref in payload.dashboards:
+        dashboard_url = ref.public_dashboard_url
+        try:
+            dashboard_payload = client.fetch_public_dashboard(public_dashboard_url=dashboard_url)
+            title = str(dashboard_payload.get("title", "Grafana Dashboard"))
+            panel_count = int(dashboard_payload.get("panel_count", 0) or 0)
+            token = str(dashboard_payload.get("public_dashboard_token", "dashboard")).replace("/", "_")
+
+            content = json.dumps(dashboard_payload, ensure_ascii=False, indent=2)
+            doc = MemoryDocument(
+                title=f"Grafana {title}",
+                path=f"runtime/grafana/{token}.json",
+                source_type="grafana",
+                content=content,
+            )
+            kernel.memory.ingest_runtime_document(doc)
+            results.append(
+                IngestGrafanaResult(
+                    public_dashboard_url=dashboard_url,
+                    status="ingested",
+                    title=title,
+                    panel_count=panel_count,
+                )
+            )
+        except Exception as exc:  # Keep batch ingestion resilient to per-dashboard failures.
+            error_detail = _build_ingestion_error(
+                source="grafana",
+                stage="fetch",
+                message=str(exc),
+                target=dashboard_url,
+            )
+            results.append(
+                IngestGrafanaResult(
+                    public_dashboard_url=dashboard_url,
+                    status="failed",
+                    error=str(exc),
+                    error_detail=error_detail,
+                )
+            )
+
+    ingested_count = len([item for item in results if item.status == "ingested"])
+    failed_count = len(results) - ingested_count
+    if ingested_count > 0:
+        _sync_vector_index()
+
+    return IngestGrafanaResponse(
+        ingested_count=ingested_count,
+        failed_count=failed_count,
+        source="grafana",
         results=results,
     )
 

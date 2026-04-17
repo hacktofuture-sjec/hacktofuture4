@@ -178,6 +178,63 @@ class _MixedSlackClient:
         }
 
 
+class _FakeGrafanaClient:
+    def fetch_public_dashboard(self, *, public_dashboard_url: str) -> dict:
+        token = public_dashboard_url.rstrip("/").split("/")[-1]
+        return {
+            "public_dashboard_token": token,
+            "source_url": public_dashboard_url,
+            "grafana_base_url": "https://f4tal1t.grafana.net",
+            "title": "Poxil Dashboard",
+            "uid": "ftk9vtl",
+            "version": 7,
+            "timezone": "browser",
+            "refresh": "30s",
+            "time_range": {
+                "from": "2026-04-16T19:31:58.104Z",
+                "to": "2026-04-16T19:32:01.591Z",
+            },
+            "meta": {
+                "slug": "poxil-dashboard",
+                "created": "2026-04-16T20:07:35Z",
+                "updated": "2026-04-16T23:38:50Z",
+                "public_dashboard_enabled": True,
+            },
+            "panel_count": 3,
+            "panels": [
+                {
+                    "id": 1,
+                    "title": "% increase  in req",
+                    "type": "timeseries",
+                    "datasource_type": "prometheus",
+                    "datasource_uid": "grafanacloud-prom",
+                    "grid_pos": {"h": 10, "w": 8, "x": 0, "y": 0},
+                    "transparent": True,
+                    "plugin_version": "13.1.0-24455754975",
+                    "targets": [
+                        {
+                            "ref_id": "B",
+                            "query": "sum(increase(http_requests_total[15m]))",
+                            "editor_mode": "code",
+                            "datasource_type": "prometheus",
+                            "datasource_uid": "grafanacloud-prom",
+                            "raw": {"refId": "B"},
+                        }
+                    ],
+                    "options": {},
+                    "field_config": {},
+                }
+            ],
+        }
+
+
+class _MixedGrafanaClient:
+    def fetch_public_dashboard(self, *, public_dashboard_url: str) -> dict:
+        if "broken" in public_dashboard_url:
+            raise RuntimeError("simulated grafana fetch failure")
+        return _FakeGrafanaClient().fetch_public_dashboard(public_dashboard_url=public_dashboard_url)
+
+
 def _clear_runtime_documents() -> None:
     ThreeTierMemory._runtime_documents = []
     kernel.memory._documents_cache = None
@@ -367,6 +424,69 @@ def test_ingest_github_batch_reports_partial_failures() -> None:
     docs = kernel.memory.load_documents(force_reload=True)
     assert any(doc.path == "runtime/github/org__repo-101.md" for doc in docs)
     assert not any(doc.path == "runtime/github/org__repo-404.md" for doc in docs)
+    _clear_runtime_documents()
+
+
+def test_ingest_grafana_batch_adds_runtime_documents() -> None:
+    _clear_runtime_documents()
+    client = TestClient(app)
+
+    with patch("app.api.routes.ingestion.GrafanaClient.from_env", return_value=_FakeGrafanaClient()):
+        response = client.post(
+            "/api/ingest/grafana",
+            json={
+                "dashboards": [
+                    {"public_dashboard_url": "https://f4tal1t.grafana.net/public-dashboards/a56bc0dfd37746ac8d32f2bb23519ac9"},
+                    {"public_dashboard_url": "https://f4tal1t.grafana.net/public-dashboards/xyz987654321"},
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "grafana"
+    assert payload["ingested_count"] == 2
+    assert payload["failed_count"] == 0
+
+    docs = kernel.memory.load_documents(force_reload=True)
+    assert any(doc.path == "runtime/grafana/a56bc0dfd37746ac8d32f2bb23519ac9.json" for doc in docs)
+    assert any(doc.path == "runtime/grafana/xyz987654321.json" for doc in docs)
+    _clear_runtime_documents()
+
+
+def test_ingest_grafana_batch_reports_partial_failures() -> None:
+    _clear_runtime_documents()
+    client = TestClient(app)
+
+    with patch("app.api.routes.ingestion.GrafanaClient.from_env", return_value=_MixedGrafanaClient()):
+        response = client.post(
+            "/api/ingest/grafana",
+            json={
+                "dashboards": [
+                    {"public_dashboard_url": "https://f4tal1t.grafana.net/public-dashboards/a56bc0dfd37746ac8d32f2bb23519ac9"},
+                    {"public_dashboard_url": "https://f4tal1t.grafana.net/public-dashboards/broken-token"},
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "grafana"
+    assert payload["ingested_count"] == 1
+    assert payload["failed_count"] == 1
+
+    success = next(item for item in payload["results"] if item["status"] == "ingested")
+    failure = next(item for item in payload["results"] if item["status"] == "failed")
+    assert success["title"] == "Poxil Dashboard"
+    assert success["panel_count"] == 3
+    assert "simulated grafana fetch failure" in failure["error"]
+    assert failure["error_detail"]["source"] == "grafana"
+    assert failure["error_detail"]["stage"] == "fetch"
+    assert failure["error_detail"]["target"] == "https://f4tal1t.grafana.net/public-dashboards/broken-token"
+
+    docs = kernel.memory.load_documents(force_reload=True)
+    assert any(doc.path == "runtime/grafana/a56bc0dfd37746ac8d32f2bb23519ac9.json" for doc in docs)
+    assert not any(doc.path == "runtime/grafana/broken-token.json" for doc in docs)
     _clear_runtime_documents()
 
 
