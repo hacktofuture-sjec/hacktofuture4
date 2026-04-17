@@ -2,7 +2,6 @@
 
 JanSetu is a next-generation civic governance platform designed to bridge the gap between citizens and government authorities using Artificial Intelligence, Real-time Mapping, and Multi-channel Communication (WhatsApp + Web).
 
-![JanSetu Banner](https://images.unsplash.com/photo-1573164713988-8665fc963095?auto=format&fit=crop&q=80&w=2069)
 
 ## 🚀 Key Features
 
