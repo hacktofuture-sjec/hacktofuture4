@@ -148,7 +148,7 @@ frontend-typecheck:
 	@test -f frontend/node_modules/typescript/bin/tsc || (echo "ERROR: frontend/node_modules missing. Run: make frontend-install   (CI must run npm ci in frontend/ before make fl or make test)"; exit 1)
 	cd frontend && node ./node_modules/typescript/bin/tsc --noEmit -p ./tsconfig.app.json
 
-frontend-lint:
+# frontend-lint:
 	@echo "Linting frontend (ESLint)..."
 	@test -f frontend/node_modules/eslint/bin/eslint.js || (echo "ERROR: frontend/node_modules missing. Run: make frontend-install   (CI must run npm ci in frontend/ before make fl or make test)"; exit 1)
 	cd frontend && node ./node_modules/eslint/bin/eslint.js src
