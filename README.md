@@ -69,9 +69,8 @@ Adaptive Security Response
 - Upon detection of anomalous activity, the system issues real-time popup alerts as the first line of defense
 - Response scales with risk severity:
   - Low risk — passive surveillance and audit logging
-  - Medium risk — access control restrictions on sensitive endpoints
-  - High risk — multi-factor re-authentication challenge via OTP
-  - Critical risk — forced session invalidation and termination
+  - Medium risk — multi-factor re-authentication challenge via OTP
+  - High risk — forced session invalidation and termination
 
 Device Intelligence and Session Integrity
 - Establishes a trusted device profile at session initialization by:
