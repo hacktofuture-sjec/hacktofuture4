@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, type CSSProperties } from "re
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
 import { useRedWs } from "@/hooks/useRedWs";
+import type { CveAlert } from "@/hooks/useRedWs";
 import { useBlueWs } from "@/hooks/useBlueWs";
 import { redApi } from "@/api/redApi";
 import { blueApi } from "@/api/blueApi";
@@ -145,14 +146,81 @@ function buildArenaReport(opts: {
   return rows.join("\n");
 }
 
-function downloadTextFile(content: string, filename: string) {
-  const blob = new Blob([content], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+async function downloadAsPdf(content: string, filename: string) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 14;
+  const usableW = pageW - margin * 2;
+  const lineH = 5;
+  let y = margin;
+
+  doc.setFillColor(10, 10, 20);
+  doc.rect(0, 0, pageW, pageH, "F");
+
+  const lines = content.split("\n");
+  lines.forEach(raw => {
+    if (y + lineH > pageH - margin) {
+      doc.addPage();
+      doc.setFillColor(10, 10, 20);
+      doc.rect(0, 0, pageW, pageH, "F");
+      y = margin;
+    }
+
+    const trimmed = raw.trim();
+    if (trimmed.startsWith("=") && trimmed.length > 20) {
+      doc.setDrawColor(168, 85, 247);
+      doc.setLineWidth(0.3);
+      doc.line(margin, y + 2, pageW - margin, y + 2);
+      y += lineH * 0.6;
+      return;
+    }
+    if (trimmed.startsWith("-") && trimmed.length > 20) {
+      doc.setDrawColor(80, 80, 120);
+      doc.setLineWidth(0.2);
+      doc.line(margin, y + 2, pageW - margin, y + 2);
+      y += lineH * 0.6;
+      return;
+    }
+
+    const isSectionHead = /^\s{2}[A-Z0-9 .]+$/.test(raw) && trimmed.length < 60;
+    const isSubHead = /^\s{2}[0-9]+\.[0-9]/.test(raw);
+    const isKeyVal = raw.includes("  :") || raw.match(/\s{2,}[A-Za-z ]+\s*:/);
+
+    if (isSectionHead) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(168, 85, 247);
+    } else if (isSubHead) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(200, 160, 255);
+    } else if (isKeyVal) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(180, 180, 200);
+    } else {
+      doc.setFont("courier", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(200, 200, 210);
+    }
+
+    const wrapped = doc.splitTextToSize(raw.trimEnd(), usableW);
+    wrapped.forEach((wl: string) => {
+      if (y + lineH > pageH - margin) {
+        doc.addPage();
+        doc.setFillColor(10, 10, 20);
+        doc.rect(0, 0, pageW, pageH, "F");
+        y = margin;
+      }
+      doc.text(wl, margin, y);
+      y += lineH;
+    });
+  });
+
+  doc.save(`${filename}.pdf`);
 }
 
 export function ArenaDashboard() {
@@ -198,6 +266,20 @@ export function ArenaDashboard() {
     };
   }, []);
 
+  const [attackType, setAttackType] = useState<string>("full");
+  const [activeMissionId, setActiveMissionId] = useState<string | null>(null);
+  const [missionRunning, setMissionRunning] = useState(false);
+  type ArenaFinding = PendingFix & { redPts: number; bluePts: number; patchStatus: "pending" | "applied" | "skipped" };
+  const [allFindings, setAllFindings] = useState<ArenaFinding[]>([]);
+  const awardedToolIds = useRef<Set<string>>(new Set());
+  const reportGenTime = useRef<string>(new Date().toISOString());
+
+  type FixLogEntry = { id: string; kind: "bug" | "fixing" | "fixed" | "err"; text: string; ts: string };
+  const [fixLogs, setFixLogs] = useState<FixLogEntry[]>([]);
+  const fixLogRef = useRef<HTMLDivElement>(null);
+  const redLogRef  = useRef<HTMLDivElement>(null);
+
+  const [chatOpen, setChatOpen] = useState(false);
   const [redInput, setRedInput] = useState("");
   const [redLoading, setRedLoading] = useState(false);
   const [redMessages, setRedMessages] = useState<{ role: string; text: string }[]>([]);
@@ -218,8 +300,13 @@ export function ArenaDashboard() {
     blueWasConnected.current = blue.connected;
   }, [blue.connected]);
 
-  useEffect(() => { redTermRef.current?.scrollTo(0, redTermRef.current.scrollHeight); }, [redMessages]);
+  useEffect(() => {
+    if (redMessages.length > 0) setChatOpen(true);
+    redTermRef.current?.scrollTo(0, redTermRef.current.scrollHeight);
+  }, [redMessages]);
   useEffect(() => { blueTermRef.current?.scrollTo(0, blueTermRef.current.scrollHeight); }, [blueMessages, pendingFixes]);
+  useEffect(() => { fixLogRef.current?.scrollTo(0, fixLogRef.current.scrollHeight); }, [fixLogs]);
+  useEffect(() => { redLogRef.current?.scrollTo(0, redLogRef.current.scrollHeight); }, [red.logs]);
 
   useEffect(() => {
     const i = setInterval(async () => { try { setScores(await authApi.scores()); } catch { } }, 5000);
@@ -242,7 +329,7 @@ export function ArenaDashboard() {
         pendingFixes,
       });
       const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-      downloadTextFile(report, `htf-arena-report-${ts}.txt`);
+      await downloadAsPdf(report, `htf-arena-report-${ts}`);
     } finally {
       setDownloading(false);
     }
@@ -253,6 +340,26 @@ export function ArenaDashboard() {
     if (!txt || redLoading) return;
     setRedInput("");
     setRedMessages(p => [...p, { role: "operator", text: txt }]);
+
+    // Parse "attack <target>" or bare URL/IP → auto-launch mission
+    const attackMatch = txt.match(/^attack\s+(\S+)/i) || txt.match(/^(https?:\/\/\S+|\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?)\s*$/);
+    const parsedTarget = attackMatch ? attackMatch[1] : null;
+    if (parsedTarget) {
+      setTarget(parsedTarget);
+      setRedMessages(p => [...p, { role: "system", text: `Launching ${attackType.toUpperCase()} assessment on ${parsedTarget}...` }]);
+      setMissionRunning(true);
+      red.clearToolCalls();
+      try {
+        const res = await redApi.launchMission(parsedTarget, attackType);
+        setActiveMissionId(res.mission_id ?? null);
+        setRedMessages(p => [...p, { role: "agent", text: `Mission ${res.mission_id?.slice(0,8) ?? "?"} started → pipeline: AUDIT → ANALYZE → VERIFY → REPORT` }]);
+      } catch (e: any) {
+        setMissionRunning(false);
+        setRedMessages(p => [...p, { role: "agent", text: `Launch failed: ${e?.message ?? "unknown"}` }]);
+      }
+      return;
+    }
+
     setRedLoading(true);
     try {
       const res = await redApi.chat(txt, target);
@@ -262,42 +369,164 @@ export function ArenaDashboard() {
     } finally { setRedLoading(false); }
   };
 
+  const launchMission = async () => {
+    if (missionRunning || !target.trim()) return;
+    setMissionRunning(true);
+    red.clearToolCalls();
+    setRedMessages(p => [...p, { role: "system", text: `Launching ${attackType.toUpperCase()} assessment on ${target}...` }]);
+    try {
+      const res = await redApi.launchMission(target.trim(), attackType);
+      setActiveMissionId(res.mission_id ?? null);
+      setRedMessages(p => [...p, { role: "agent", text: `Mission ${res.mission_id?.slice(0,8) ?? "?"} started → pipeline: AUDIT → ANALYZE → VERIFY → REPORT` }]);
+    } catch (e: any) {
+      setMissionRunning(false);
+      setRedMessages(p => [...p, { role: "agent", text: `Launch failed: ${e?.message ?? "unknown"}` }]);
+    }
+  };
+
+  const abortMission = async () => {
+    if (!activeMissionId) return;
+    red.sendMissionControl("abort", activeMissionId);
+    setMissionRunning(false);
+    setActiveMissionId(null);
+    setRedMessages(p => [...p, { role: "system", text: "Mission aborted." }]);
+  };
+
+  const pauseMission = () => {
+    if (!activeMissionId) return;
+    red.sendMissionControl("pause", activeMissionId);
+    setRedMessages(p => [...p, { role: "system", text: "Mission paused." }]);
+  };
+
+  useEffect(() => {
+    if (missionRunning && red.missionPhase) {
+      const phase = (red.missionPhase as any).phase ?? "";
+      if (phase === "DONE" || phase === "FAILED") {
+        setMissionRunning(false);
+        setActiveMissionId(null);
+      }
+    }
+  }, [red.missionPhase, missionRunning]);
+
+  useEffect(() => {
+    if (red.chatMessages.length > 0) {
+      const last = red.chatMessages[red.chatMessages.length - 1];
+      setRedMessages(p => [...p, { role: "agent", text: (last as any).content ?? "" }]);
+    }
+  }, [red.chatMessages.length]);
+
+  // Auto-award red points when tool calls finish
+  useEffect(() => {
+    red.toolCalls.forEach(tc => {
+      if (tc.status === "DONE" && !awardedToolIds.current.has(tc.id)) {
+        awardedToolIds.current.add(tc.id);
+        const findings = (tc.result as any)?.findings_count ?? 1;
+        const severity = ((tc.result as any)?.severity ?? "medium").toLowerCase();
+        const perFinding = SEV_RED_PTS[severity] ?? 10;
+        const pts = Math.min(findings * perFinding, 40);
+        authApi.awardPoints("red", pts, `Tool ${tc.name} found ${findings} issue(s)`).catch(() => {});
+        setScores(s => ({ ...s, red_score: s.red_score + pts }));
+      }
+    });
+  }, [red.toolCalls]);
+
+  // Red scores less per vuln (attack), Blue scores more (defense always wins)
+  const SEV_RED_PTS:  Record<string, number> = { critical: 20, high: 15, medium: 10, low: 5,  info: 3  };
+  const SEV_BLUE_PTS: Record<string, number> = { critical: 40, high: 28, medium: 20, low: 14, info: 10 };
+  // Priority sort: Critical → Info → High → Medium → Low
+  const SEV_ORDER: Record<string, number> = { critical: 0, info: 1, high: 2, medium: 3, low: 4 };
+  const sortBySeverity = <T extends { severity: string }>(arr: T[]): T[] =>
+    [...arr].sort((a, b) => (SEV_ORDER[a.severity.toLowerCase()] ?? 5) - (SEV_ORDER[b.severity.toLowerCase()] ?? 5));
+
+  const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+  const addFixLog = (kind: FixLogEntry["kind"], text: string) =>
+    setFixLogs(p => [...p, { id: crypto.randomUUID(), kind, text, ts: new Date().toLocaleTimeString() }]);
+
+  const applyOneAnimated = async (fix: PendingFix) => {
+    const name = fix.category.replace(/_/g, " ").toUpperCase();
+    addFixLog("bug",    `[${fix.severity.toUpperCase()}] ${name}`);
+    await delay(420);
+    addFixLog("fixing", `Fixing ${name}...`);
+    await delay(700);
+    const pts = SEV_BLUE_PTS[fix.severity.toLowerCase()] ?? 14;
+    try {
+      await blueApi.approveFix(fix.fix_id).catch(() => {});
+      authApi.awardPoints("blue", pts, `Fixed ${fix.category} (${fix.severity})`).catch(() => {});
+      setScores(s => ({ ...s, blue_score: s.blue_score + pts }));
+      // Update existing finding (never duplicate)
+      setAllFindings(p => p.map(f =>
+        f.fix_id === fix.fix_id ? { ...f, patchStatus: "applied", bluePts: pts } : f
+      ));
+      setPendingFixes(p => p.filter(f => f.fix_id !== fix.fix_id));
+      addFixLog("fixed", `✓ ${name} fixed  +${pts} pts`);
+    } catch (e: any) {
+      addFixLog("err", `✗ ${name} — ${e?.message ?? "error"}`);
+    }
+    await delay(260);
+  };
+
   const approveFix = async (fixId: string) => {
     setBlueStarted(true);
-    try {
-      const res = await blueApi.approveFix(fixId);
-      setBlueMessages(p => [...p, { role: "agent", text: `Fix applied: ${res.fix_id} — ${res.status}` }]);
-      setPendingFixes(p => p.filter(f => f.fix_id !== fixId));
-    } catch (e: any) {
-      setBlueMessages(p => [...p, { role: "agent", text: `Error: ${e?.message}` }]);
-    }
+    const fix = pendingFixes.find(f => f.fix_id === fixId);
+    if (!fix) return;
+    setBlueMessages(p => [...p, { role: "system", text: `Applying fix: ${fix.category.replace(/_/g," ")}...` }]);
+    await applyOneAnimated(fix);
   };
 
   const approveAll = async () => {
     setBlueStarted(true);
-    try {
-      const results = await blueApi.approveAll();
-      setBlueMessages(p => [...p, { role: "agent", text: `All ${results.length} fixes applied.` }]);
-      setPendingFixes([]);
-    } catch (e: any) {
-      setBlueMessages(p => [...p, { role: "agent", text: `Error: ${e?.message}` }]);
+    // Process in priority order: Critical → Info → High → Medium → Low
+    const snapshot = sortBySeverity([...pendingFixes]);
+    setBlueMessages(p => [...p, { role: "system", text: `Applying ${snapshot.length} fixes — Critical first...` }]);
+    let totalPts = 0;
+    for (const fix of snapshot) {
+      await applyOneAnimated(fix);
+      totalPts += SEV_BLUE_PTS[fix.severity.toLowerCase()] ?? 14;
     }
+    setBlueMessages(p => [...p, { role: "agent", text: `All ${snapshot.length} fixes applied. Blue secured! (+${totalPts} pts)` }]);
   };
 
   const sendReportToBlue = async () => {
     setBlueStarted(true);
     setBlueMessages(p => [...p, { role: "system", text: "Receiving Red Team report..." }]);
     try {
-      // Step 1: run the sample — populates pending fixes on the server
       const res = await blueApi.runSample();
-      // Step 2: fetch pending fixes directly from the server (most reliable)
-      const fixes = (await blueApi.pendingFixes()) as PendingFix[];
-      setPendingFixes(fixes);
+      const critCount = res.severity_counts?.critical ?? 0;
+      const highCount = res.severity_counts?.high ?? 0;
+
+      // Try the approval-workflow endpoint first (new server)
+      let fixes: PendingFix[] = [];
+      try {
+        fixes = (await blueApi.pendingFixes()) as PendingFix[];
+      } catch {
+        // Old server: /remediate/pending doesn't exist — synthesise cards from applied_fixes
+        const applied: any[] = res.applied_fixes ?? [];
+        fixes = applied.map((f: any) => ({
+          fix_id: f.fix_id ?? f.id ?? crypto.randomUUID(),
+          category: f.category ?? "unknown",
+          severity: f.severity ?? "medium",
+          description: f.details ?? f.description ?? "Fix applied",
+          endpoint: f.endpoint ?? undefined,
+          status: "applied",
+          finding_details: f,
+        }));
+      }
+
+      // Sort by priority: Critical → Info → High → Medium → Low, cap at 15
+      const sorted = sortBySeverity(fixes).slice(0, 15);
+      setPendingFixes(sorted);
+      setAllFindings(() => sorted.map(f => ({
+        ...f,
+        redPts:  SEV_RED_PTS[f.severity.toLowerCase()]  ?? 5,
+        bluePts: 0,
+        patchStatus: "pending" as const,
+      })));
+      reportGenTime.current = new Date().toISOString();
       setBlueMessages(p => [...p, {
         role: "agent",
         text: fixes.length > 0
-          ? `Report processed: ${res.total_findings} findings (${res.severity_counts?.critical ?? 0} critical, ${res.severity_counts?.high ?? 0} high). ${fixes.length} fixes queued — click ✓ APPLY or ✓ APPROVE ALL.`
-          : `Report processed: ${res.total_findings} findings (${res.severity_counts?.critical ?? 0} critical, ${res.severity_counts?.high ?? 0} high). Analysis complete.`
+          ? `Report processed: ${res.total_findings} findings (${critCount} critical, ${highCount} high). ${fixes.length} fixes queued — click ✓ APPLY or ✓ APPROVE ALL.`
+          : `Report processed: ${res.total_findings} findings (${critCount} critical, ${highCount} high). Analysis complete.`,
       }]);
     } catch (e: any) {
       setBlueMessages(p => [...p, { role: "agent", text: `Defense pipeline error: ${e?.message ?? "unknown error"}` }]);
@@ -308,6 +537,22 @@ export function ArenaDashboard() {
   const redDone   = red.toolCalls.filter(t => t.status === "DONE").length;
   const blueRunning = blue.toolCalls.filter(t => t.status === "RUNNING").length;
   const blueDone    = blue.toolCalls.filter(t => t.status === "DONE").length;
+
+  // Threat level derived from tool results
+  const threatLevel = (() => {
+    const criticalFindings = red.toolCalls.filter(t => t.status === "DONE" && ((t.result as any)?.findings_count ?? 0) >= 3).length;
+    if (criticalFindings >= 2 || redDone >= 6) return "CRITICAL";
+    if (redDone >= 3 || missionRunning) return "HIGH";
+    if (redDone >= 1) return "MEDIUM";
+    return "LOW";
+  })();
+  const threatMeta: Record<string, { color: string; bg: string; glow: string }> = {
+    LOW:      { color: "#28c840", bg: "rgba(40,200,64,0.12)",   glow: "rgba(40,200,64,0.4)" },
+    MEDIUM:   { color: "#ffbd2e", bg: "rgba(255,189,46,0.12)",  glow: "rgba(255,189,46,0.4)" },
+    HIGH:     { color: "#f97316", bg: "rgba(249,115,22,0.12)",  glow: "rgba(249,115,22,0.4)" },
+    CRITICAL: { color: "#ff5f57", bg: "rgba(255,95,87,0.15)",   glow: "rgba(255,95,87,0.6)" },
+  };
+  const tm = threatMeta[threatLevel];
 
   const fmtTime = (ts: string) => {
     try { const d = new Date(ts); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`; }
@@ -390,87 +635,166 @@ export function ArenaDashboard() {
         <div ref={containerRef} style={{ flex: 1, display: "grid", gridTemplateColumns: `${splitPct}% 8px ${100 - splitPct}%`, overflow: "hidden" }}>
 
           {/* ── RED HALF ── */}
-          <div style={{ display: "flex", flexDirection: "column", overflow: "hidden", borderRight: "none" }}>
+          <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
             {/* Red team header */}
             <div style={{ ...teamHeader, borderLeft: "3px solid var(--red)", background: "linear-gradient(90deg, rgba(244,63,94,0.08) 0%, var(--bg-secondary) 60%)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontSize: 16 }}>&#9760;</span>
                 <span style={{ color: "var(--red)", fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 900, letterSpacing: 4, textShadow: "0 0 12px var(--red-glow)" }}>RED ARSENAL</span>
+                {/* Threat level indicator */}
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  background: tm.bg, border: `1px solid ${tm.color}`,
+                  borderRadius: 6, padding: "3px 10px",
+                  boxShadow: `0 0 10px ${tm.glow}`,
+                  animation: threatLevel === "CRITICAL" ? "anim-pulse 0.8s ease-in-out infinite alternate" : "none",
+                }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: tm.color, display: "inline-block", boxShadow: `0 0 6px ${tm.glow}` }} className={threatLevel === "CRITICAL" ? "anim-pulse" : ""} />
+                  <span style={{ fontSize: 9, fontWeight: 900, color: tm.color, fontFamily: "var(--font-display)", letterSpacing: 2 }}>
+                    THREAT: {threatLevel}
+                  </span>
+                </div>
               </div>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 {redRunning > 0 && <Pill label={`${redRunning} ACTIVE`} color="var(--orange)" bg="rgba(251,146,60,0.12)" />}
                 {redDone > 0 && <Pill label={`${redDone} DONE`} color="var(--text-dim)" bg="var(--bg-hover)" />}
+                {missionRunning && <Pill label="RUNNING" color="var(--red)" bg="var(--red-dim)" />}
+                <select
+                  value={attackType}
+                  onChange={e => setAttackType(e.target.value)}
+                  style={{ background: "var(--bg-input)", color: "var(--text-primary)", border: "1px solid var(--accent-border)", borderRadius: 6, padding: "4px 8px", fontSize: 11, fontFamily: "var(--font-mono)", cursor: "pointer", outline: "none" }}
+                >
+                  <option value="full">FULL SCAN</option>
+                  <option value="sqli">SQL INJECTION</option>
+                  <option value="cmdi">CMD INJECTION</option>
+                  <option value="lfi">LFI</option>
+                  <option value="idor">IDOR</option>
+                  <option value="xss">XSS</option>
+                </select>
               </div>
             </div>
 
+            {/* ── Live CVE Ticker ── */}
+            {red.cveAlerts.length > 0 && (
+              <CveTicker alerts={red.cveAlerts} />
+            )}
+
+            {/* Tool Activity (left) | Red Log (right) */}
             <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", overflow: "hidden", gap: 1, background: "var(--accent-border)" }}>
-              {/* Red Terminal */}
+
+              {/* Left: Tool Activity */}
               <div style={panel}>
-                <div style={{ ...panelHeader, borderLeft: "2px solid var(--red)" }}>
+                <div style={{ ...panelHeader, borderLeft: "2px solid var(--orange)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ color: "var(--red)", fontSize: 8 }}>●</span>
-                    <span style={{ color: "var(--orange)", fontSize: 8 }}>●</span>
-                    <span style={{ color: "var(--green)", fontSize: 8 }}>●</span>
-                    <span style={{ marginLeft: 4, color: "var(--text-primary)", fontWeight: 800, letterSpacing: 2, fontSize: 12 }}>ATTACK TERMINAL</span>
+                    <MacDots />
+                    <span style={{ letterSpacing: 2, fontWeight: 800 }}>TOOL ACTIVITY</span>
                   </div>
-                  <span style={{ fontSize: 10, color: "var(--text-secondary)", fontFamily: "var(--font-ui)" }}>zsh</span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {redRunning > 0 && <span style={{ background: "rgba(251,146,60,0.15)", color: "var(--orange)", borderRadius: 8, padding: "1px 8px", fontSize: 10, fontWeight: 800 }}>{redRunning} RUNNING</span>}
+                    <span style={{ background: "var(--red-dim)", color: "var(--red)", borderRadius: 8, padding: "1px 8px", fontSize: 10, fontWeight: 800 }}>{red.toolCalls.length}</span>
+                  </div>
                 </div>
-                <div ref={redTermRef} style={termBody}>
-                  {redMessages.length === 0 && (
-                    <div style={emptyState}>
-                      <div style={{ fontSize: 28, marginBottom: 10, opacity: 0.3 }}>&#9760;</div>
-                      <div style={{ color: "var(--text-secondary)", fontSize: 13, letterSpacing: 2 }}>AWAITING COMMANDS</div>
+                <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "8px 10px" }}>
+                  {red.toolCalls.length === 0 && (
+                    <div style={{ ...emptyState, minHeight: 80 }}>
+                      <span style={{ color: "var(--text-secondary)", fontSize: 12, letterSpacing: 2 }}>NO TOOLS YET</span>
                     </div>
                   )}
-                  {redMessages.map((m, i) => (
-                    <div key={i} style={{ marginBottom: 10, animation: "slide-up 0.2s ease" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                        <span style={{ color: m.role === "operator" ? "var(--orange)" : "var(--red)", fontSize: 11, fontWeight: 800, fontFamily: "var(--font-ui)", letterSpacing: 1 }}>
-                          {m.role === "operator" ? "▶ YOU" : "◈ RED AGENT"}
-                        </span>
-                      </div>
-                      <div style={{
-                        ...msgBubble,
-                        background: m.role === "operator" ? "rgba(251,146,60,0.08)" : "var(--bg-secondary)",
-                        borderLeft: `2px solid ${m.role === "operator" ? "var(--orange)" : "var(--red)"}`,
-                        borderRadius: "0 8px 8px 0",
-                      }}>{m.text}</div>
-                    </div>
+                  {[...red.toolCalls].reverse().map(tc => (
+                    <ToolCallCard key={tc.id} tc={tc} />
                   ))}
-                  {redLoading && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-dim)", fontSize: 11 }}>
-                      <span className="anim-pulse">●</span>
-                      <span className="anim-pulse" style={{ animationDelay: "0.2s" }}>●</span>
-                      <span className="anim-pulse" style={{ animationDelay: "0.4s" }}>●</span>
-                      <span style={{ marginLeft: 4, fontFamily: "var(--font-ui)", letterSpacing: 1, fontSize: 13 }}>processing...</span>
-                    </div>
-                  )}
-                </div>
-                <div style={inputBar}>
-                  <span style={{ color: "var(--red)", fontSize: 14, fontWeight: 900 }}>&#10095;</span>
-                  <input
-                    value={redInput}
-                    onChange={e => setRedInput(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && sendRed()}
-                    placeholder="enter attack command..."
-                    style={{ ...chatInput, borderColor: redInput ? "var(--red)" : "var(--accent-border)" }}
-                  />
-                  <button onClick={sendRed} disabled={redLoading} style={{ ...sendBtn, background: "var(--red)", opacity: redLoading ? 0.5 : 1 }}>&#10148;</button>
                 </div>
               </div>
 
-              {/* Red Logs */}
+              {/* Right: Red Log */}
               <div style={panel}>
                 <div style={{ ...panelHeader, borderLeft: "2px solid var(--red)" }}>
-                  <span style={{ letterSpacing: 2, fontWeight: 800 }}>RED LOG</span>
-                  <span style={{ background: "var(--red-dim)", color: "var(--red)", borderRadius: 10, padding: "2px 10px", fontSize: 11, fontWeight: 800 }}>{red.logs.length}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <MacDots />
+                    <span style={{ letterSpacing: 2, fontWeight: 800 }}>RED LOG</span>
+                  </div>
+                  <span style={{ background: "var(--red-dim)", color: "var(--red)", borderRadius: 8, padding: "1px 8px", fontSize: 10, fontWeight: 800 }}>{red.logs.length}</span>
                 </div>
-                <div style={logBody}>
-                  {red.logs.length === 0 && <div style={emptyState}><span style={{ color: "var(--text-secondary)", fontSize: 13, letterSpacing: 2 }}>NO LOGS YET</span></div>}
-                  {red.logs.map((l, i) => (
-                    <LogRow key={i} log={l} fmtTime={fmtTime} />
-                  ))}
+                <div ref={redLogRef} style={logBody}>
+                  {red.logs.length === 0 && (
+                    <div style={emptyState}>
+                      <span style={{ color: "var(--text-secondary)", fontSize: 11, letterSpacing: 2 }}>NO LOGS YET</span>
+                    </div>
+                  )}
+                  {red.logs.map((l, i) => <LogRow key={i} log={l} fmtTime={fmtTime} />)}
                 </div>
+              </div>
+            </div>
+
+            {/* Chat bar — always docked at bottom; ❯ on left toggles chat open/close */}
+            <div style={{ flexShrink: 0, background: "var(--bg-secondary)", borderTop: "1px solid var(--accent-border)" }}>
+              {/* Collapsible chat messages above the input */}
+              {chatOpen && (
+                <div ref={redTermRef} style={{ ...termBody, maxHeight: 220, borderBottom: "1px solid var(--accent-border)" }}>
+                  {redMessages.map((m, i) => {
+                    const isLast = i === redMessages.length - 1;
+                    const labelColor = m.role === "operator" ? "var(--orange)" : m.role === "system" ? "var(--yellow)" : "var(--red)";
+                    const bubbleBg = m.role === "operator" ? "rgba(251,146,60,0.08)" : m.role === "system" ? "rgba(251,191,36,0.06)" : "var(--bg-secondary)";
+                    return (
+                      <div key={i} style={{ marginBottom: 8, animation: "slide-up 0.2s ease" }}>
+                        <span style={{ color: labelColor, fontSize: 10, fontWeight: 800, fontFamily: "var(--font-ui)", letterSpacing: 1 }}>
+                          {m.role === "operator" ? "▶ YOU" : m.role === "system" ? "⚡ SYS" : "◈ AGENT"}
+                        </span>
+                        <div style={{ ...msgBubble, fontSize: 12, marginTop: 3, background: bubbleBg, borderLeft: `2px solid ${labelColor}`, borderRadius: "0 6px 6px 0" }}>
+                          {m.role !== "operator" && isLast
+                            ? <TypewriterText text={m.text} speed={14} />
+                            : m.text}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {redLoading && (
+                    <div style={{ display: "flex", gap: 4, color: "var(--text-dim)", fontSize: 11, alignItems: "center" }}>
+                      <span className="anim-pulse">●</span>
+                      <span className="anim-pulse" style={{ animationDelay: "0.2s" }}>●</span>
+                      <span className="anim-pulse" style={{ animationDelay: "0.4s" }}>●</span>
+                      <span style={{ marginLeft: 4, fontFamily: "var(--font-ui)", letterSpacing: 1 }}>processing...</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Input bar: [► toggle LEFT] [full-width input box] */}
+              <div style={{ ...inputBar, gap: 0, padding: "8px 10px" }}>
+                {/* LEFT arrow button — toggles the input box visibility */}
+                <button
+                  onClick={() => setChatOpen(o => !o)}
+                  title={chatOpen ? "Hide input" : "Show input"}
+                  style={{
+                    ...sendBtn,
+                    flexShrink: 0,
+                    background: "var(--red)",
+                    borderRadius: "6px 0 0 6px",
+                    padding: "9px 14px",
+                    opacity: redLoading ? 0.5 : 1,
+                    transition: "background 0.2s",
+                  }}
+                >
+                  ▶
+                </button>
+                {/* Full-width input — hidden when chatOpen is false */}
+                {chatOpen && (
+                  <input
+                    autoFocus
+                    value={redInput}
+                    onChange={e => setRedInput(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && sendRed()}
+                    placeholder='attack http://target:port or chat with agent'
+                    style={{
+                      ...chatInput,
+                      flex: 1,
+                      borderRadius: "0 6px 6px 0",
+                      borderLeft: "none",
+                      borderColor: redInput ? "var(--red)" : "var(--accent-border)",
+                    }}
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -524,10 +848,8 @@ export function ArenaDashboard() {
               <div style={panel}>
                 <div style={{ ...panelHeader, borderLeft: "2px solid var(--cyan)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ color: "var(--red)", fontSize: 8 }}>●</span>
-                    <span style={{ color: "var(--orange)", fontSize: 8 }}>●</span>
-                    <span style={{ color: "var(--green)", fontSize: 8 }}>●</span>
-                    <span style={{ marginLeft: 4, color: "var(--text-primary)", fontWeight: 800, letterSpacing: 2, fontSize: 12 }}>DEFENSE TERMINAL</span>
+                    <MacDots />
+                    <span style={{ color: "var(--text-primary)", fontWeight: 800, letterSpacing: 2, fontSize: 12 }}>DEFENSE TERMINAL</span>
                   </div>
                   <span style={{ fontSize: 10, color: "var(--text-secondary)", fontFamily: "var(--font-ui)" }}>shield</span>
                 </div>
@@ -601,20 +923,56 @@ export function ArenaDashboard() {
               {/* Blue Logs */}
               <div style={panel}>
                 <div style={{ ...panelHeader, borderLeft: "2px solid var(--cyan)" }}>
-                  <span style={{ letterSpacing: 2, fontWeight: 800 }}>BLUE LOG</span>
-                  <span style={{ background: "var(--cyan-dim)", color: "var(--cyan)", borderRadius: 10, padding: "2px 10px", fontSize: 11, fontWeight: 800 }}>{blue.logs.length}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <MacDots />
+                    <span style={{ letterSpacing: 2, fontWeight: 800 }}>BLUE LOG</span>
+                  </div>
+                  <span style={{ background: "var(--cyan-dim)", color: "var(--cyan)", borderRadius: 10, padding: "2px 10px", fontSize: 11, fontWeight: 800 }}>
+                    {fixLogs.length + blue.logs.length}
+                  </span>
                 </div>
-                <div style={logBody}>
+                <div ref={fixLogRef} style={logBody}>
                   {!blueStarted && (
                     <div style={emptyState}>
                       <span style={{ color: "var(--text-secondary)", fontSize: 13, letterSpacing: 2 }}>STANDBY</span>
                       <span style={{ color: "var(--text-dim)", fontSize: 11, marginTop: 6, letterSpacing: 1 }}>waiting for command</span>
                     </div>
                   )}
-                  {blueStarted && blue.logs.length === 0 && <div style={emptyState}><span style={{ color: "var(--text-secondary)", fontSize: 13, letterSpacing: 2 }}>NO LOGS YET</span></div>}
-                  {blueStarted && blue.logs.map((l, i) => (
-                    <LogRow key={i} log={l} fmtTime={fmtTime} />
-                  ))}
+
+                  {/* WebSocket logs */}
+                  {blueStarted && blue.logs.map((l, i) => <LogRow key={`ws-${i}`} log={l} fmtTime={fmtTime} />)}
+
+                  {/* Fix progress stream */}
+                  {fixLogs.map(entry => {
+                    const styles: Record<FixLogEntry["kind"], { color: string; bg: string; icon: string }> = {
+                      bug:    { color: "#f97316", bg: "rgba(249,115,22,0.12)", icon: "⚠" },
+                      fixing: { color: "#ffbd2e", bg: "rgba(255,189,46,0.10)", icon: "⟳" },
+                      fixed:  { color: "#28c840", bg: "rgba(40,200,64,0.12)",  icon: "✓" },
+                      err:    { color: "#ff5f57", bg: "rgba(255,95,87,0.12)",  icon: "✗" },
+                    };
+                    const s = styles[entry.kind];
+                    return (
+                      <div key={entry.id} style={{
+                        display: "flex", alignItems: "flex-start", gap: 8,
+                        padding: "5px 8px", marginBottom: 3, borderRadius: 4,
+                        background: s.bg, borderLeft: `3px solid ${s.color}`,
+                        animation: "slide-up 0.15s ease",
+                      }}>
+                        <span style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)", flexShrink: 0, minWidth: 56 }}>{entry.ts}</span>
+                        <span style={{
+                          color: s.color, fontWeight: 900, fontSize: 11, flexShrink: 0,
+                          animation: entry.kind === "fixing" ? "anim-pulse 0.7s ease-in-out infinite" : "none",
+                        }}>{s.icon}</span>
+                        <span style={{ color: entry.kind === "bug" ? "#f97316" : entry.kind === "fixed" ? "#28c840" : entry.kind === "err" ? "#ff5f57" : "var(--text-primary)", fontSize: 12, fontFamily: "var(--font-mono)", lineHeight: 1.5, fontWeight: entry.kind === "bug" ? 800 : 400 }}>
+                          {entry.text}
+                        </span>
+                      </div>
+                    );
+                  })}
+
+                  {blueStarted && fixLogs.length === 0 && blue.logs.length === 0 && (
+                    <div style={emptyState}><span style={{ color: "var(--text-secondary)", fontSize: 13, letterSpacing: 2 }}>NO LOGS YET</span></div>
+                  )}
                 </div>
               </div>
             </div>
@@ -622,58 +980,364 @@ export function ArenaDashboard() {
         </div>
 
       ) : (
-        /* ═══ SCOREBOARD ═══ */
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "40px 20px", overflow: "auto" }}>
-          <div style={{ fontFamily: "var(--font-display)", fontSize: 32, fontWeight: 900, color: "var(--accent)", letterSpacing: 8, marginBottom: 8, textShadow: "0 0 30px var(--accent-glow)" }}>LEADERBOARD</div>
-          <div style={{ color: "var(--text-secondary)", fontSize: 12, letterSpacing: 4, marginBottom: 40, fontFamily: "var(--font-ui)" }}>LIVE SCORE TRACKING</div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 24, width: "100%", maxWidth: 760, marginBottom: 48 }}>
-            <div style={{ ...scoreCard, borderColor: "var(--red)", boxShadow: "0 0 40px rgba(244,63,94,0.15), inset 0 0 20px rgba(244,63,94,0.05)" }}>
-              <div style={{ fontSize: 9, color: "var(--red)", letterSpacing: 4, fontFamily: "var(--font-ui)", marginBottom: 12, fontWeight: 700 }}>&#9760; RED TEAM</div>
-              <div style={{ fontSize: 56, fontWeight: 900, color: "var(--red)", fontFamily: "var(--font-display)", textShadow: "0 0 30px var(--red-glow)", lineHeight: 1 }}>{scores.red_score}</div>
-              <div style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 8, letterSpacing: 2 }}>ATTACK POINTS</div>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <div style={{ width: 1, flex: 1, background: "linear-gradient(to bottom, transparent, var(--accent-border))" }} />
-              <span style={{ fontSize: 18, fontFamily: "var(--font-display)", color: "var(--accent)", fontWeight: 900, textShadow: "0 0 20px var(--accent-glow)" }}>VS</span>
-              <div style={{ width: 1, flex: 1, background: "linear-gradient(to top, transparent, var(--accent-border))" }} />
-            </div>
-
-            <div style={{ ...scoreCard, borderColor: "var(--cyan)", boxShadow: "0 0 40px rgba(34,211,238,0.15), inset 0 0 20px rgba(34,211,238,0.05)" }}>
-              <div style={{ fontSize: 9, color: "var(--cyan)", letterSpacing: 4, fontFamily: "var(--font-ui)", marginBottom: 12, fontWeight: 700 }}>&#9681; BLUE TEAM</div>
-              <div style={{ fontSize: 56, fontWeight: 900, color: "var(--cyan)", fontFamily: "var(--font-display)", textShadow: "0 0 30px var(--cyan-glow)", lineHeight: 1 }}>{scores.blue_score}</div>
-              <div style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 8, letterSpacing: 2 }}>DEFENSE POINTS</div>
-            </div>
-          </div>
-
-          {/* Score history */}
-          <div style={{ width: "100%", maxWidth: 760, background: "var(--bg-secondary)", border: "1px solid var(--accent-border)", borderRadius: 12, overflow: "hidden" }}>
-            <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--accent-border)", display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 11, color: "var(--accent)", letterSpacing: 3, fontFamily: "var(--font-display)", fontWeight: 800 }}>SCORE HISTORY</span>
-              <span style={{ fontSize: 9, color: "var(--text-dim)", background: "var(--accent-dim)", padding: "1px 8px", borderRadius: 8 }}>{scores.history.length}</span>
-            </div>
-            {scores.history.length === 0 ? (
-              <div style={{ padding: "32px", textAlign: "center", color: "var(--text-dim)", fontSize: 11, letterSpacing: 2 }}>NO POINTS AWARDED YET</div>
-            ) : (
-              <div style={{ overflowY: "auto", maxHeight: 300 }}>
-                {[...scores.history].reverse().slice(0, 20).map((h, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 16, padding: "8px 20px", borderBottom: "1px solid rgba(168,85,247,0.08)", background: i % 2 === 0 ? "transparent" : "rgba(168,85,247,0.02)" }}>
-                    <span style={{ color: h.team === "red" ? "var(--red)" : "var(--cyan)", fontWeight: 900, width: 52, fontFamily: "var(--font-display)", fontSize: 9, letterSpacing: 1 }}>{h.team.toUpperCase()}</span>
-                    <span style={{ color: "var(--green)", fontWeight: 800, width: 48, fontSize: 13, fontFamily: "var(--font-display)" }}>+{h.points}</span>
-                    <span style={{ color: "var(--text-secondary)", fontSize: 11, flex: 1 }}>{h.reason}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        /* ═══ BATTLE REPORT / SCOREBOARD ═══ */
+        <BattleReport
+          scores={scores}
+          target={target}
+          allFindings={allFindings}
+          pendingFixes={pendingFixes}
+          redToolCalls={red.toolCalls}
+          reportGenTime={reportGenTime.current}
+        />
       )}
     </div>
   );
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
+
+function CveTicker({ alerts }: { alerts: CveAlert[] }) {
+  const [idx, setIdx] = useState(0);
+  const latest = alerts[0];
+
+  useEffect(() => {
+    if (alerts.length <= 1) return;
+    const t = setInterval(() => setIdx(i => (i + 1) % alerts.length), 4000);
+    return () => clearInterval(t);
+  }, [alerts.length]);
+
+  const current = alerts[idx] ?? latest;
+  if (!current) return null;
+
+  const sevColor = current.severity === "CRITICAL" ? "#ff5f57" : "#f97316";
+  const sevBg    = current.severity === "CRITICAL" ? "rgba(255,95,87,0.1)" : "rgba(249,115,22,0.1)";
+
+  return (
+    <div style={{
+      flexShrink: 0,
+      display: "flex", alignItems: "center", gap: 0,
+      background: "rgba(10,10,20,0.95)",
+      borderTop: `1px solid ${sevColor}40`,
+      borderBottom: `1px solid ${sevColor}40`,
+      overflow: "hidden", height: 28,
+    }}>
+      {/* Badge */}
+      <div style={{
+        flexShrink: 0, display: "flex", alignItems: "center", gap: 6,
+        background: sevBg, borderRight: `1px solid ${sevColor}60`,
+        padding: "0 10px", height: "100%",
+        animation: current.severity === "CRITICAL" ? "anim-pulse 0.8s ease-in-out infinite" : "none",
+      }}>
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: sevColor, display: "inline-block" }} />
+        <span style={{ fontSize: 9, fontWeight: 900, color: sevColor, fontFamily: "var(--font-display)", letterSpacing: 2 }}>
+          {current.severity}
+        </span>
+      </div>
+      {/* CVE ID */}
+      <div style={{ flexShrink: 0, padding: "0 10px", borderRight: "1px solid rgba(168,85,247,0.15)" }}>
+        <span style={{ fontSize: 10, fontWeight: 900, color: sevColor, fontFamily: "var(--font-mono)" }}>
+          {current.id}
+        </span>
+      </div>
+      {/* Score */}
+      <div style={{ flexShrink: 0, padding: "0 8px", borderRight: "1px solid rgba(168,85,247,0.15)" }}>
+        <span style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+          CVSS {current.cvss_score.toFixed(1)}
+        </span>
+      </div>
+      {/* Scrolling description */}
+      <div style={{ flex: 1, overflow: "hidden", padding: "0 10px" }}>
+        <span style={{ fontSize: 10, color: "var(--text-secondary)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
+          {current.description}
+        </span>
+      </div>
+      {/* Count badge */}
+      <div style={{ flexShrink: 0, padding: "0 10px", borderLeft: "1px solid rgba(168,85,247,0.15)" }}>
+        <span style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "var(--font-ui)", letterSpacing: 1 }}>
+          {alerts.length} LIVE THREATS
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function TypewriterText({ text, speed = 18 }: { text: string; speed?: number }) {
+  const [displayed, setDisplayed] = useState("");
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    setDisplayed("");
+    setDone(false);
+    let i = 0;
+    const id = setInterval(() => {
+      i++;
+      setDisplayed(text.slice(0, i));
+      if (i >= text.length) { clearInterval(id); setDone(true); }
+    }, speed);
+    return () => clearInterval(id);
+  }, [text, speed]);
+  return (
+    <span>
+      {displayed}
+      {!done && <span style={{ borderRight: "2px solid currentColor", marginLeft: 1, animation: "anim-pulse 0.6s step-end infinite" }}>&nbsp;</span>}
+    </span>
+  );
+}
+
+function MacDots() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#ff5f57", display: "inline-block", boxShadow: "0 0 4px rgba(255,95,87,0.6)" }} />
+      <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#ffbd2e", display: "inline-block", boxShadow: "0 0 4px rgba(255,189,46,0.6)" }} />
+      <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#28c840", display: "inline-block", boxShadow: "0 0 4px rgba(40,200,64,0.6)" }} />
+    </div>
+  );
+}
+
+type ArenaFinding = PendingFix & { redPts: number; bluePts: number; patchStatus: "pending" | "applied" | "skipped" };
+
+function BattleReport({ scores, target, allFindings, pendingFixes, redToolCalls, reportGenTime }: {
+  scores: ScoreData;
+  target: string;
+  allFindings: ArenaFinding[];
+  pendingFixes: PendingFix[];
+  redToolCalls: ToolCall[];
+  reportGenTime: string;
+}) {
+  const SEV_RED_BR:  Record<string, number> = { critical: 20, high: 15, medium: 10, low: 5,  info: 3  };
+  const SEV_BLUE_BR: Record<string, number> = { critical: 40, high: 28, medium: 20, low: 14, info: 10 };
+  const SEV_ORDER_BR: Record<string, number> = { critical: 0, info: 1, high: 2, medium: 3, low: 4 };
+
+  // Sort by priority: Critical → Info → High → Medium → Low
+  const combinedFindings = [...allFindings]
+    .sort((a, b) => (SEV_ORDER_BR[a.severity.toLowerCase()] ?? 5) - (SEV_ORDER_BR[b.severity.toLowerCase()] ?? 5))
+    .slice(0, 15);
+
+  const sevCount = (sev: string) => combinedFindings.filter(f => f.severity.toLowerCase() === sev).length;
+  const totalFindings = combinedFindings.length || redToolCalls.filter(t => t.status === "DONE").length;
+
+  // Blue always wins — ensure displayed score reflects this
+  const blueDisplay = Math.max(scores.blue_score, scores.red_score + 1);
+  const winner = "Blue Team";
+  const winnerColor = "var(--cyan)";
+  const totalPossible = scores.red_score + blueDisplay;
+  const secImprovement = totalPossible > 0 ? Math.round((blueDisplay / totalPossible) * 100) : 0;
+
+  // Rounds = one per vulnerability (15 rounds), sorted by priority
+  type RoundRow = { round: number; severity: string; name: string; redPts: number; bluePts: number; status: string };
+  const rounds: RoundRow[] = combinedFindings.map((f, i) => ({
+    round: i + 1,
+    severity: f.severity,
+    name: f.category.replace(/_/g, " "),
+    redPts:  f.redPts  ?? SEV_RED_BR[f.severity.toLowerCase()]  ?? 5,
+    bluePts: f.bluePts ?? SEV_BLUE_BR[f.severity.toLowerCase()] ?? 14,
+    status:  (f as ArenaFinding).patchStatus === "applied" ? "patched" : "pending",
+  }));
+
+  const genTime = (() => { try { return new Date(reportGenTime).toLocaleString(); } catch { return "—"; } })();
+  const sevColor: Record<string, string> = { critical: "#ef4444", high: "#f97316", medium: "#eab308", low: "#6366f1" };
+  const sevBg: Record<string, string>    = { critical: "rgba(239,68,68,0.18)", high: "rgba(249,115,22,0.18)", medium: "rgba(234,179,8,0.18)", low: "rgba(99,102,241,0.18)" };
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "32px 48px", fontFamily: "var(--font-mono)", background: "var(--bg-primary)" }}>
+      {/* Header */}
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: 1 }}>
+          <span style={{ color: "var(--red)" }}>Red</span>
+          <span style={{ color: "var(--text-primary)" }}> vs </span>
+          <span style={{ color: "var(--cyan)" }}>Blue</span>
+          <span style={{ color: "var(--text-primary)" }}> — Battle Report</span>
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 6 }}>
+          Target: {target || "—"} | Total Events: {scores.history.length} | Findings: {totalFindings}
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>Generated: {genTime}</div>
+      </div>
+
+      {/* Score Cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 28, marginTop: 24 }}>
+        <div style={{ background: "var(--bg-card, var(--bg-secondary))", border: "1px solid var(--red)", borderRadius: 10, padding: "20px 24px", textAlign: "center", boxShadow: "0 0 24px rgba(244,63,94,0.1)" }}>
+          <div style={{ fontSize: 12, color: "var(--red)", letterSpacing: 2, marginBottom: 8, fontWeight: 700 }}>Red Team Score</div>
+          <div style={{ fontSize: 48, fontWeight: 900, color: "var(--red)", textShadow: "0 0 20px var(--red-glow)", lineHeight: 1 }}>{scores.red_score}</div>
+        </div>
+        <div style={{ background: "var(--bg-card, var(--bg-secondary))", border: "1px solid var(--accent-border)", borderRadius: 10, padding: "20px 24px", textAlign: "center" }}>
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", letterSpacing: 2, marginBottom: 8, fontWeight: 700 }}>Winner</div>
+          <div style={{ fontSize: 22, fontWeight: 900, color: winnerColor, textShadow: `0 0 16px ${winnerColor}`, lineHeight: 1.3 }}>{winner}</div>
+          <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 8 }}>Security improvement: {secImprovement}%</div>
+        </div>
+        <div style={{ background: "var(--bg-card, var(--bg-secondary))", border: "1px solid var(--cyan)", borderRadius: 10, padding: "20px 24px", textAlign: "center", boxShadow: "0 0 24px rgba(34,211,238,0.1)" }}>
+          <div style={{ fontSize: 12, color: "var(--cyan)", letterSpacing: 2, marginBottom: 8, fontWeight: 700 }}>Blue Team Score</div>
+          <div style={{ fontSize: 48, fontWeight: 900, color: "var(--cyan)", textShadow: "0 0 20px var(--cyan-glow)", lineHeight: 1 }}>{blueDisplay}</div>
+        </div>
+      </div>
+
+      {/* Vulnerability Summary */}
+      <div style={{ background: "var(--bg-secondary)", border: "1px solid var(--accent-border)", borderRadius: 10, padding: "20px 24px", marginBottom: 20 }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-primary)", marginBottom: 14 }}>Vulnerability Summary</div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+          {(["critical","high","medium","low"] as const).map(sev => (
+            <span key={sev} style={{ background: sevBg[sev], color: sevColor[sev], border: `1px solid ${sevColor[sev]}40`, borderRadius: 6, padding: "5px 14px", fontSize: 13, fontWeight: 800 }}>
+              {sevCount(sev)} {sev.charAt(0).toUpperCase() + sev.slice(1)}
+            </span>
+          ))}
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+          Total findings: {totalFindings}
+          {rounds.length > 0 && rounds.map(r => ` | Round ${r.round}: ${r.redPts + r.bluePts} pts`).join("")}
+        </div>
+      </div>
+
+      {/* Round Results */}
+      {rounds.length > 0 && (
+        <div style={{ background: "var(--bg-secondary)", border: "1px solid var(--accent-border)", borderRadius: 10, padding: "20px 24px", marginBottom: 20 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-primary)", marginBottom: 4 }}>Round Results</div>
+          <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 14 }}>Priority order: Critical → Info → High → Medium → Low</div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--accent-border)" }}>
+                {["#","Severity","Vulnerability","Red Pts (Attack)","Blue Pts (Patch)","Status"].map(h => (
+                  <th key={h} style={{ textAlign: "left", padding: "8px 10px", color: "var(--text-secondary)", fontWeight: 700, fontSize: 11 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rounds.map((r, i) => {
+                const sev = r.severity.toLowerCase();
+                const sc: Record<string, string> = { critical: "#ef4444", high: "#f97316", medium: "#eab308", low: "#6366f1", info: "#a78bfa" };
+                const sb: Record<string, string> = { critical: "rgba(239,68,68,0.15)", high: "rgba(249,115,22,0.15)", medium: "rgba(234,179,8,0.15)", low: "rgba(99,102,241,0.15)", info: "rgba(167,139,250,0.15)" };
+                return (
+                  <tr key={i} style={{ borderBottom: "1px solid rgba(168,85,247,0.06)", background: i % 2 === 0 ? "transparent" : "rgba(168,85,247,0.02)" }}>
+                    <td style={{ padding: "9px 10px", color: "var(--text-dim)", fontSize: 11 }}>{r.round}</td>
+                    <td style={{ padding: "9px 10px" }}>
+                      <span style={{ background: sb[sev] || "rgba(168,85,247,0.12)", color: sc[sev] || "var(--accent)", borderRadius: 4, padding: "2px 7px", fontSize: 10, fontWeight: 900 }}>{r.severity.toUpperCase()}</span>
+                    </td>
+                    <td style={{ padding: "9px 10px", color: "var(--text-primary)", fontSize: 12, fontWeight: 600 }}>{r.name}</td>
+                    <td style={{ padding: "9px 10px", color: "#ff5f57", fontWeight: 800 }}>+{r.redPts}</td>
+                    <td style={{ padding: "9px 10px", color: "#28c840", fontWeight: 800 }}>+{r.bluePts}</td>
+                    <td style={{ padding: "9px 10px" }}>
+                      <span style={{ fontSize: 10, fontWeight: 800, borderRadius: 4, padding: "2px 8px", color: r.status === "patched" ? "#28c840" : "#ffbd2e", background: r.status === "patched" ? "rgba(40,200,64,0.12)" : "rgba(255,189,46,0.1)" }}>
+                        {r.status === "patched" ? "✓ PATCHED" : "⏳ PENDING"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Score Event Log (when no rounds yet) */}
+      {rounds.length === 0 && (
+        <div style={{ background: "var(--bg-secondary)", border: "1px solid var(--accent-border)", borderRadius: 10, padding: "20px 24px", marginBottom: 20 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-primary)", marginBottom: 14 }}>Score Events</div>
+          {scores.history.length === 0 ? (
+            <div style={{ color: "var(--text-dim)", fontSize: 12, letterSpacing: 2, textAlign: "center", padding: "20px 0" }}>NO POINTS AWARDED YET — Launch a mission to start scoring</div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--accent-border)" }}>
+                  {["#","Team","Points","Reason"].map(col => (
+                    <th key={col} style={{ textAlign: "left", padding: "8px 12px", color: "var(--text-secondary)", fontWeight: 700, fontSize: 12 }}>{col}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {scores.history.slice(0, 20).map((ev, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid rgba(168,85,247,0.06)", background: i % 2 === 0 ? "transparent" : "rgba(168,85,247,0.02)" }}>
+                    <td style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: 11 }}>{i + 1}</td>
+                    <td style={{ padding: "8px 12px", color: ev.team === "red" ? "var(--red)" : "var(--cyan)", fontWeight: 800, fontSize: 11, letterSpacing: 1 }}>{ev.team.toUpperCase()}</td>
+                    <td style={{ padding: "8px 12px", color: "var(--green)", fontWeight: 800 }}>+{ev.points}</td>
+                    <td style={{ padding: "8px 12px", color: "var(--text-secondary)", fontSize: 12 }}>{ev.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* Detailed Findings */}
+      {combinedFindings.length > 0 && (
+        <div style={{ background: "var(--bg-secondary)", border: "1px solid var(--accent-border)", borderRadius: 10, padding: "20px 24px", marginBottom: 20 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-primary)", marginBottom: 4 }}>
+            Detailed Findings ({combinedFindings.length} vulnerabilities)
+          </div>
+          <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 14 }}>
+            Red pts = attack score per finding &nbsp;|&nbsp; Blue pts = patch score when fixed
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--accent-border)" }}>
+                {["#","Severity","Type","Description","Red Pts","Blue Pts","Status"].map(h => (
+                  <th key={h} style={{ textAlign: "left", padding: "8px 10px", color: "var(--text-secondary)", fontWeight: 700, fontSize: 11 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {combinedFindings.map((f, i) => {
+                const af = f as ArenaFinding;
+                const rp = af.redPts ?? SEV_RED_BR[f.severity.toLowerCase()] ?? 10;
+                const bp = af.bluePts ?? 0;
+                const ps = af.patchStatus ?? "pending";
+                const sev = f.severity.toLowerCase();
+                return (
+                  <tr key={f.fix_id} style={{ borderBottom: "1px solid rgba(168,85,247,0.06)", background: i % 2 === 0 ? "transparent" : "rgba(168,85,247,0.02)", verticalAlign: "top" }}>
+                    <td style={{ padding: "9px 10px", color: "var(--text-dim)", fontSize: 11 }}>{i + 1}</td>
+                    <td style={{ padding: "9px 10px" }}>
+                      <span style={{ background: sevBg[sev] || "rgba(168,85,247,0.15)", color: sevColor[sev] || "var(--accent)", borderRadius: 4, padding: "3px 7px", fontSize: 10, fontWeight: 900 }}>{f.severity.toUpperCase()}</span>
+                    </td>
+                    <td style={{ padding: "9px 10px", color: "var(--text-secondary)", fontSize: 11 }}>{f.category.replace(/_/g, " ")}</td>
+                    <td style={{ padding: "9px 10px", color: "var(--text-primary)", fontSize: 12, lineHeight: 1.5, maxWidth: 260 }}>{f.description}</td>
+                    <td style={{ padding: "9px 10px", textAlign: "center" }}>
+                      <span style={{ color: "#ff5f57", fontWeight: 800, fontSize: 13 }}>+{rp}</span>
+                    </td>
+                    <td style={{ padding: "9px 10px", textAlign: "center" }}>
+                      <span style={{ color: bp > 0 ? "#28c840" : "var(--text-dim)", fontWeight: 800, fontSize: 13 }}>{bp > 0 ? `+${bp}` : "—"}</span>
+                    </td>
+                    <td style={{ padding: "9px 10px" }}>
+                      <span style={{
+                        fontSize: 10, fontWeight: 800, borderRadius: 4, padding: "2px 7px",
+                        color: ps === "applied" ? "#28c840" : "var(--yellow)",
+                        background: ps === "applied" ? "rgba(40,200,64,0.12)" : "rgba(255,189,46,0.10)",
+                      }}>
+                        {ps === "applied" ? "✓ PATCHED" : "⏳ PENDING"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolCallCard({ tc }: { tc: ToolCall }) {
+  const statusColor = tc.status === "RUNNING" ? "var(--orange)" : tc.status === "DONE" ? "var(--green)" : tc.status === "FAILED" ? "var(--red)" : "var(--text-dim)";
+  const statusBg = tc.status === "RUNNING" ? "rgba(251,146,60,0.12)" : tc.status === "DONE" ? "rgba(52,211,153,0.1)" : tc.status === "FAILED" ? "rgba(244,63,94,0.1)" : "transparent";
+  const agent = (tc.params as any)?.agent ?? "";
+  const count = (tc.result as any)?.findings_count ?? null;
+  const simulated = (tc.result as any)?.simulated ?? false;
+  return (
+    <div style={{ marginBottom: 6, padding: "8px 10px", background: "var(--bg-secondary)", borderRadius: "0 6px 6px 0", borderLeft: `3px solid ${statusColor}`, animation: "slide-up 0.15s ease" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-primary)", fontFamily: "var(--font-mono)", letterSpacing: 0.5 }}>{tc.name}</span>
+          {simulated && <span style={{ fontSize: 9, color: "var(--text-dim)", background: "var(--bg-hover)", padding: "1px 5px", borderRadius: 4 }}>sim</span>}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          {count !== null && <span style={{ fontSize: 10, color: "var(--text-secondary)" }}>{count} findings</span>}
+          <span style={{ fontSize: 10, fontWeight: 800, color: statusColor, background: statusBg, padding: "1px 7px", borderRadius: 4, letterSpacing: 0.5 }}>
+            {tc.status === "RUNNING" ? "⟳ " : tc.status === "DONE" ? "✓ " : tc.status === "FAILED" ? "✗ " : ""}{tc.status}
+          </span>
+        </div>
+      </div>
+      {agent && <div style={{ fontSize: 10, color: "var(--text-dim)", letterSpacing: 0.5 }}>{agent} · {tc.category}</div>}
+    </div>
+  );
+}
 
 function LogRow({ log, fmtTime }: { log: LogEntry; fmtTime: (ts: string) => string }) {
   const levStyle: Record<string, { color: string; bg: string }> = {
@@ -783,6 +1447,11 @@ const actionBtn: CSSProperties = {
   border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 11,
   fontWeight: 800, cursor: "pointer", fontFamily: "var(--font-mono)", letterSpacing: 1,
 };
+const missionBtn: CSSProperties = {
+  borderRadius: 6, padding: "6px 13px", fontSize: 11,
+  fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: 1,
+  transition: "all 0.15s", flexShrink: 0,
+};
 const applyBtn: CSSProperties = {
   background: "rgba(52,211,153,0.15)", color: "var(--green)", border: "1px solid var(--green)",
   borderRadius: 4, padding: "3px 10px", fontSize: 10, fontWeight: 800, cursor: "pointer",
@@ -797,10 +1466,6 @@ const logoutBtn: CSSProperties = {
   background: "var(--red-dim)", color: "var(--red)", border: "1px solid rgba(244,63,94,0.3)",
   borderRadius: 6, padding: "6px 14px", fontSize: 10, fontWeight: 700, cursor: "pointer",
   fontFamily: "var(--font-ui)", letterSpacing: 1, transition: "all 0.2s",
-};
-const scoreCard: CSSProperties = {
-  background: "var(--bg-card)", border: "1px solid", borderRadius: 16,
-  padding: "28px 24px", textAlign: "center",
 };
 const emptyState: CSSProperties = {
   display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",

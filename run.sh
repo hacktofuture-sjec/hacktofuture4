@@ -67,13 +67,17 @@ free_port() {
         sleep 1
         return
     fi
-    # Windows (Git Bash / MSYS2) — use netstat + taskkill
+    # Windows (Git Bash / MSYS2) — netstat -ano lists TCP listeners with PID
     if command -v netstat &>/dev/null && command -v taskkill &>/dev/null; then
-        pids=$(netstat -ano 2>/dev/null | grep ":${port}[[:space:]]" | grep "LISTEN" | awk '{print $NF}' | sort -u)
+        pids=$(netstat -ano 2>/dev/null \
+            | grep -E "TCP.*:${port}[[:space:]].*LISTEN" \
+            | awk '{print $NF}' \
+            | grep -E '^[0-9]+$' \
+            | sort -u)
         if [ -n "$pids" ]; then
             log_warn "Port $port in use — freeing (Windows)"
             for pid in $pids; do
-                taskkill //F //PID "$pid" 2>/dev/null || true
+                [ "$pid" != "0" ] && taskkill //F //PID "$pid" 2>/dev/null || true
             done
             sleep 1
         fi

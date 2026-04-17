@@ -5,7 +5,8 @@
       "Bash(docker-compose -f docker-compose-blue.yml build --no-cache blue-backend)",
       "Bash(docker-compose -f docker-compose-blue.yml up -d blue-backend)",
       "Bash(docker exec *)",
-      "Bash(docker restart *)"
+      "Bash(docker restart *)",
+      "Bash(curl -s -o /dev/null -w \"pending:%{http_code}\" http://localhost:8002/remediate/pending)"
     ]
   }
 }

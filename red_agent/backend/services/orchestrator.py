@@ -121,9 +121,41 @@ class MissionOrchestrator:
             recon_tc = self._make_tool_call("crew_recon_agent", "scan", {"target": mission.target})
             await self._emit_tool_call_ws(recon_tc)
 
+            # ── Inject live CVE intelligence into the crew ────────────
+            from core.cve_feed import cve_feed
+            latest_cves = cve_feed.latest[:8]
+            cve_context = ""
+            if latest_cves:
+                cve_lines = [
+                    f"  - {c['id']} (CVSS {c['cvss_score']}, {c['severity']}): "
+                    f"{c['description'][:120]}"
+                    + (f" | Affects: {', '.join(c['affected_products'][:2])}" if c.get('affected_products') else "")
+                    for c in latest_cves
+                ]
+                cve_context = (
+                    "LIVE THREAT INTELLIGENCE — CVEs published in last 24 h (NVD real-time):\n"
+                    + "\n".join(cve_lines)
+                    + "\n\nCross-reference these CVEs against the target's technology stack. "
+                    "If any affected product matches a discovered service/version, "
+                    "prioritise that CVE in your assessment and mention the CVE ID explicitly.\n\n"
+                )
+                ids_preview = ", ".join(c["id"] for c in latest_cves[:4])
+                await self._emit_log(
+                    mission, "INFO",
+                    f"CVE Intel loaded: {len(latest_cves)} fresh CVEs — {ids_preview}",
+                )
+                await self._emit_chat(
+                    mission,
+                    f"**LIVE CVE INTELLIGENCE LOADED**\n\n"
+                    f"{len(latest_cves)} CVEs from NVD (last 24 h):\n"
+                    + "\n".join(f"• `{c['id']}` CVSS {c['cvss_score']} — {c['description'][:80]}..." for c in latest_cves[:5])
+                    + f"\n\nCross-referencing against {mission.target}...",
+                )
+            # ─────────────────────────────────────────────────────────
+
             # Run the CrewAI crew (sync operation in executor)
             from red_agent.agents.crew import run_crew_mission
-            results = await run_crew_mission(mission.target)
+            results = await run_crew_mission(mission.target, cve_context=cve_context)
 
             # Extract results
             mission.recon_output = results.get("recon_output", "")

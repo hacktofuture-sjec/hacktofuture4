@@ -34,9 +34,16 @@ BLUE_API_PORT = 8002
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: place to wire up the BlueController, event bus, log monitors, etc.
+    from core.event_bus import event_bus
+    from blue_agent.backend.services.blue_service import set_broadcast_callback
+    from blue_agent.backend.websocket.blue_ws import manager
+
+    async def _broadcast(payload: dict) -> None:
+        await manager.broadcast(payload)
+
+    set_broadcast_callback(_broadcast)
+    await event_bus.start()
     yield
-    # Shutdown: close any open resources here.
 
 
 app = FastAPI(

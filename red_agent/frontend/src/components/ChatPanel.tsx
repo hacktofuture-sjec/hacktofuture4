@@ -6,6 +6,9 @@ interface ChatPanelProps {
   chatMessages: ChatMessage[];
   target: string;
   onNewMessage: (msg: ChatMessage) => void;
+  onClear?: () => void;
+  /** When rendered inside a modal that already has its own title bar. */
+  hideHeader?: boolean;
 }
 
 function formatTime(ts: string): string {
@@ -13,7 +16,7 @@ function formatTime(ts: string): string {
   return d.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-export function ChatPanel({ chatMessages, target, onNewMessage }: ChatPanelProps) {
+export function ChatPanel({ chatMessages, target, onNewMessage, onClear, hideHeader = false }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -74,15 +77,25 @@ export function ChatPanel({ chatMessages, target, onNewMessage }: ChatPanelProps
   return (
     <div style={container}>
       {/* Header */}
-      <div style={header}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={headerDot} />
-          <span style={headerTitle}>OPERATOR TERMINAL</span>
+      {!hideHeader && (
+        <div style={header}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={headerDot} />
+            <span style={headerTitle}>OPERATOR TERMINAL</span>
+          </div>
+          <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-ui)" }}>
+            {chatMessages.length} messages
+            {chatMessages.length > 0 && onClear && (
+              <button onClick={onClear} style={{
+                fontSize: 8, fontWeight: 700, fontFamily: "var(--font-display)",
+                padding: "2px 8px", borderRadius: 3, border: "1px solid var(--red)",
+                background: "transparent", color: "var(--red)", cursor: "pointer",
+                letterSpacing: 1, marginLeft: 6,
+              }}>CLEAR</button>
+            )}
+          </span>
         </div>
-        <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-ui)" }}>
-          {chatMessages.length} messages
-        </span>
-      </div>
+      )}
 
       {/* Messages */}
       <div style={messageArea}>

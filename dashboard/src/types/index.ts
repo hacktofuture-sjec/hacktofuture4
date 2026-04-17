@@ -35,6 +35,14 @@ export interface MissionPhase {
   message: string;
 }
 
+export interface AutoPwnStep {
+  id: string;
+  step: string;
+  status: "RUNNING" | "DONE" | "FAILED";
+  result?: Record<string, unknown>;
+  timestamp: string;
+}
+
 export interface PendingFix {
   fix_id: string;
   category: string;

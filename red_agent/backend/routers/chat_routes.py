@@ -47,6 +47,7 @@ class ChatRequest(BaseModel):
     target: str | None = None
 
 
+
 class ChatMessage(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     role: str = "agent"

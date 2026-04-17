@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type {
+  AutoPwnStep,
   ChatMessage,
   LogEntry,
   MissionPhaseUpdate,
@@ -16,23 +17,60 @@ export interface RedWsState {
   logs: LogEntry[];
   chatMessages: ChatMessage[];
   missionPhase: MissionPhaseUpdate | null;
+  autoPwnSteps: AutoPwnStep[];
   sendMissionControl: (action: string, missionId: string) => void;
   clearToolCalls: () => void;
   clearLogs: () => void;
+  clearAutoPwn: () => void;
 }
 
 const MAX_TOOL_CALLS = 50;
 const MAX_LOGS = 300;
 const MAX_CHAT = 200;
+const MAX_AUTO_PWN = 100;
+
+// ── localStorage helpers ──
+const STORAGE_KEYS = {
+  toolCalls: "red_arsenal_tools",
+  logs: "red_arsenal_logs",
+  chatMessages: "red_arsenal_chat",
+  missionPhase: "red_arsenal_phase",
+  autoPwnSteps: "red_arsenal_auto_pwn",
+};
+
+function loadFromStorage<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveToStorage<T>(key: string, data: T): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch {
+    // localStorage full or unavailable — ignore
+  }
+}
 
 export function useRedWebSocket(): RedWsState {
   const [connected, setConnected] = useState(false);
-  const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [missionPhase, setMissionPhase] = useState<MissionPhaseUpdate | null>(null);
+  const [toolCalls, setToolCalls] = useState<ToolCall[]>(() => loadFromStorage(STORAGE_KEYS.toolCalls, []));
+  const [logs, setLogs] = useState<LogEntry[]>(() => loadFromStorage(STORAGE_KEYS.logs, []));
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => loadFromStorage(STORAGE_KEYS.chatMessages, []));
+  const [missionPhase, setMissionPhase] = useState<MissionPhaseUpdate | null>(() => loadFromStorage(STORAGE_KEYS.missionPhase, null));
+  const [autoPwnSteps, setAutoPwnSteps] = useState<AutoPwnStep[]>(() => loadFromStorage(STORAGE_KEYS.autoPwnSteps, []));
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<number | null>(null);
+
+  // Persist to localStorage on every state change
+  useEffect(() => { saveToStorage(STORAGE_KEYS.toolCalls, toolCalls); }, [toolCalls]);
+  useEffect(() => { saveToStorage(STORAGE_KEYS.logs, logs); }, [logs]);
+  useEffect(() => { saveToStorage(STORAGE_KEYS.chatMessages, chatMessages); }, [chatMessages]);
+  useEffect(() => { saveToStorage(STORAGE_KEYS.missionPhase, missionPhase); }, [missionPhase]);
+  useEffect(() => { saveToStorage(STORAGE_KEYS.autoPwnSteps, autoPwnSteps); }, [autoPwnSteps]);
 
   const sendMissionControl = useCallback((action: string, missionId: string) => {
     const ws = wsRef.current;
@@ -76,6 +114,12 @@ export function useRedWebSocket(): RedWsState {
             );
           } else if (env.type === "mission_phase") {
             setMissionPhase(env.payload);
+          } else if (env.type === "auto_pwn_step") {
+            setAutoPwnSteps((prev) => {
+              const next = prev.filter((s) => s.id !== env.payload.id);
+              next.push(env.payload);
+              return next.slice(-MAX_AUTO_PWN);
+            });
           }
         } catch (err) {
           console.error("[red ws] bad payload", err);
@@ -91,8 +135,20 @@ export function useRedWebSocket(): RedWsState {
     };
   }, []);
 
-  const clearToolCalls = useCallback(() => setToolCalls([]), []);
-  const clearLogs = useCallback(() => setLogs([]), []);
+  const clearToolCalls = useCallback(() => {
+    setToolCalls([]);
+    localStorage.removeItem(STORAGE_KEYS.toolCalls);
+  }, []);
 
-  return { connected, toolCalls, logs, chatMessages, missionPhase, sendMissionControl, clearToolCalls, clearLogs };
+  const clearLogs = useCallback(() => {
+    setLogs([]);
+    localStorage.removeItem(STORAGE_KEYS.logs);
+  }, []);
+
+  const clearAutoPwn = useCallback(() => {
+    setAutoPwnSteps([]);
+    localStorage.removeItem(STORAGE_KEYS.autoPwnSteps);
+  }, []);
+
+  return { connected, toolCalls, logs, chatMessages, missionPhase, autoPwnSteps, sendMissionControl, clearToolCalls, clearLogs, clearAutoPwn };
 }

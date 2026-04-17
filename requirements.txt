@@ -9,7 +9,9 @@ loguru==0.7.2
 paramiko==3.4.0
 
 # CrewAI multi-agent framework
-crewai>=0.86.0
+# crewai[litellm] wires up nvidia_nim/, azure/, etc. provider routing
+crewai[litellm]>=1.14.0
+litellm>=1.51.0
 openai>=1.0.0
 xmltodict>=0.13.0
 

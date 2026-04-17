@@ -16,27 +16,40 @@ router = APIRouter()
 class RedConnectionManager:
     def __init__(self) -> None:
         self._connections: Set[WebSocket] = set()
-        self._lock = asyncio.Lock()
+        self._main_loop: asyncio.AbstractEventLoop | None = None
+
+    def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Called once at startup so background threads can schedule broadcasts
+        on the main uvicorn loop."""
+        self._main_loop = loop
 
     async def connect(self, ws: WebSocket) -> None:
         await ws.accept()
-        async with self._lock:
-            self._connections.add(ws)
+        self._connections.add(ws)
 
     async def disconnect(self, ws: WebSocket) -> None:
-        async with self._lock:
-            self._connections.discard(ws)
+        self._connections.discard(ws)
 
     async def broadcast(self, payload: dict) -> None:
-        async with self._lock:
-            stale: list[WebSocket] = []
-            for ws in self._connections:
-                try:
-                    await ws.send_json(payload)
-                except Exception:
-                    stale.append(ws)
-            for ws in stale:
-                self._connections.discard(ws)
+        stale: list[WebSocket] = []
+        for ws in list(self._connections):
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                stale.append(ws)
+        for ws in stale:
+            self._connections.discard(ws)
+
+    def broadcast_threadsafe(self, payload: dict) -> None:
+        """Broadcast from any thread — schedules on the main loop if available,
+        otherwise falls back to a temporary loop."""
+        if self._main_loop and self._main_loop.is_running():
+            asyncio.run_coroutine_threadsafe(self.broadcast(payload), self._main_loop)
+        else:
+            try:
+                asyncio.run(self.broadcast(payload))
+            except RuntimeError:
+                pass
 
 
 manager = RedConnectionManager()
