@@ -1,0 +1,65 @@
+# Dependency directories
+node_modules/
+jspm_packages/
+.npm/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+bin/
+obj/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+mock_agent_eval.log
+mock_full.log
+local_log.txt
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+.docker
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local data volumes
+parseable-data/
+parseable-staging/
+spire-server-data/
+
+# Specific project junk
+mock_result.txt
+spiffe_init.py
+read_log.py
+Command_Center_Matrix.bat
