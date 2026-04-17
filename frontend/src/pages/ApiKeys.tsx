@@ -35,7 +35,8 @@ export default function ApiKeysPage() {
     setOpError(null);
     try {
       const created = await securityApi.createApiKey({ name });
-      if (created.key) setFreshKey(created.key);
+      const returnedKey = (created as any).raw_key;
+      if (returnedKey) setFreshKey(returnedKey);
       setName('');
       setShowForm(false);
       reload();

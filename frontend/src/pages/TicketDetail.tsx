@@ -13,6 +13,7 @@ import {
   formatDate,
   statusTone,
 } from '../components/ui';
+import { formatActivityDescription } from '../utils/apiDisplay';
 
 export default function TicketDetailPage() {
   const { id = '' } = useParams();
@@ -41,7 +42,7 @@ export default function TicketDetailPage() {
 
       <SectionHeader
         title={t.title}
-        subtitle={`${t.provider || 'unknown'} · ${t.external_id || t.id}`}
+        subtitle={`${t.provider || 'unknown'} · ${t.external_ticket_id || t.external_id || t.id}`}
         action={
           <div className="flex items-center gap-2">
             <Badge tone={statusTone(t.normalized_status)}>{t.normalized_status}</Badge>
@@ -78,7 +79,7 @@ export default function TicketDetailPage() {
                     className="p-3 rounded-lg bg-white/[0.03] border border-white/[0.05]"
                   >
                     <div className="flex items-center justify-between text-[11px] text-gray-500 mb-1.5">
-                      <span>{c.author_email || 'Unknown'}</span>
+                      <span>{c.author_name || c.author_email || 'Unknown'}</span>
                       <span>{formatDate(c.created_at)}</span>
                     </div>
                     <p className="text-sm text-gray-300 whitespace-pre-wrap">{c.body}</p>
@@ -108,19 +109,27 @@ export default function TicketDetailPage() {
                   >
                     <div className="flex-1">
                       <p className="text-gray-300">
-                        <span className="text-gray-500">{a.actor || 'system'}</span>{' '}
-                        <span className="font-medium">{a.action}</span>
-                        {a.from_value && a.to_value && (
+                        <span className="text-gray-500">{a.actor_name || a.actor || 'system'}</span>{' '}
+                        {a.action ? (
                           <>
-                            {' '}
-                            <span className="text-gray-500">from</span>{' '}
-                            <code className="text-[11px]">{a.from_value}</code>{' '}
-                            <span className="text-gray-500">to</span>{' '}
-                            <code className="text-[11px]">{a.to_value}</code>
+                            <span className="font-medium">{a.action}</span>
+                            {a.from_value != null && a.to_value != null && (
+                              <>
+                                {' '}
+                                <span className="text-gray-500">from</span>{' '}
+                                <code className="text-[11px]">{String(a.from_value)}</code>{' '}
+                                <span className="text-gray-500">to</span>{' '}
+                                <code className="text-[11px]">{String(a.to_value)}</code>
+                              </>
+                            )}
                           </>
+                        ) : (
+                          <span className="text-gray-200">{formatActivityDescription(a)}</span>
                         )}
                       </p>
-                      <p className="text-[11px] text-gray-600">{formatDate(a.created_at)}</p>
+                      <p className="text-[11px] text-gray-600">
+                        {formatDate(a.occurred_at || a.created_at)}
+                      </p>
                     </div>
                   </li>
                 ))}
@@ -133,8 +142,14 @@ export default function TicketDetailPage() {
           <Card className="p-5 text-sm space-y-3">
             <h3 className="text-sm font-semibold text-white mb-1">Details</h3>
             <Row label="Type" value={t.normalized_type} />
-            <Row label="Assignee" value={t.assignee_email} />
-            <Row label="Reporter" value={t.reporter_email} />
+            <Row
+              label="Assignee"
+              value={t.assignee?.display_name || t.assignee?.email || t.assignee_email || t.assignee_name}
+            />
+            <Row
+              label="Reporter"
+              value={t.reporter?.display_name || t.reporter?.email || t.reporter_email}
+            />
             <Row label="Due" value={formatDate(t.due_date)} />
             <Row label="Created" value={formatDate(t.created_at)} />
             <Row label="Updated" value={formatDate(t.updated_at)} />

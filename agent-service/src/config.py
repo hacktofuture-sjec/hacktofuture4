@@ -3,9 +3,14 @@ FastAPI Agent Service settings (Pydantic BaseSettings).
 All values loaded from environment variables.
 """
 
+import os
 from typing import Optional
 
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Force load the workspace .env into os.environ so dynamically imported MCP servers can see the Atlassian credentials
+load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.env")))
 
 
 class Settings(BaseSettings):
@@ -23,6 +28,7 @@ class Settings(BaseSettings):
     service_host: str = "0.0.0.0"
     service_port: int = 8001
     debug: bool = False
+    mcp_live: bool = False
 
     model_config = SettingsConfigDict(
         env_file="../.env",

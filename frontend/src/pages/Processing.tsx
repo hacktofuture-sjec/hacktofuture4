@@ -61,7 +61,9 @@ export default function ProcessingPage() {
                 </TD>
                 <TD className="text-gray-500">{r.attempt_count ?? 0}</TD>
                 <TD className="text-gray-500">{formatDate(r.started_at)}</TD>
-                <TD className="text-gray-500">{formatDate(r.finished_at)}</TD>
+                <TD className="text-gray-500">
+                  {formatDate(r.completed_at ?? r.finished_at)}
+                </TD>
               </TR>
             ))}
           </tbody>

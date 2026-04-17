@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Bot, UserPlus } from 'lucide-react';
+import { ApiRequestError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Button, ErrorBanner, Field, Input } from '../components/ui';
 
@@ -18,6 +19,7 @@ export default function RegisterPage() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const onChange = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -26,10 +28,18 @@ export default function RegisterPage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setFieldErrors({});
     try {
       await register(form);
       navigate('/', { replace: true });
     } catch (err) {
+      if (err instanceof ApiRequestError && err.fieldErrors) {
+        const next: Record<string, string> = {};
+        for (const [key, msgs] of Object.entries(err.fieldErrors)) {
+          next[key] = msgs.join(' ');
+        }
+        setFieldErrors(next);
+      }
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
       setLoading(false);
@@ -61,14 +71,14 @@ export default function RegisterPage() {
             {error && <ErrorBanner message={error} />}
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="First name">
+              <Field label="First name" error={fieldErrors.first_name}>
                 <Input
                   required
                   value={form.first_name}
                   onChange={onChange('first_name')}
                 />
               </Field>
-              <Field label="Last name">
+              <Field label="Last name" error={fieldErrors.last_name}>
                 <Input
                   required
                   value={form.last_name}
@@ -77,7 +87,7 @@ export default function RegisterPage() {
               </Field>
             </div>
 
-            <Field label="Work email">
+            <Field label="Work email" error={fieldErrors.email}>
               <Input
                 type="email"
                 required
@@ -86,7 +96,11 @@ export default function RegisterPage() {
               />
             </Field>
 
-            <Field label="Password" hint="At least 8 characters.">
+            <Field
+              label="Password"
+              hint="Use at least 8 characters with letters and numbers; avoid common passwords and numeric-only passwords."
+              error={fieldErrors.password}
+            >
               <Input
                 type="password"
                 required
@@ -96,7 +110,7 @@ export default function RegisterPage() {
               />
             </Field>
 
-            <Field label="Organization name">
+            <Field label="Organization name" error={fieldErrors.organization_name}>
               <Input
                 required
                 value={form.organization_name}

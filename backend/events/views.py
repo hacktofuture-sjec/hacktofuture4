@@ -73,8 +73,12 @@ class EventIngestView(APIView):
                 status=status.HTTP_200_OK,
             )
 
-        # Fire async Celery task on ingestion queue
-        process_raw_webhook.apply_async(args=[event.id], queue="ingestion", countdown=0)
+        # Fire async Celery task on ingestion queue only after DB transaction commits
+        transaction.on_commit(
+            lambda: process_raw_webhook.apply_async(
+                args=[event.id], queue="ingestion", countdown=0
+            )
+        )
 
         logger.info(
             "Event ingested: id=%s type=%s integration=%s",

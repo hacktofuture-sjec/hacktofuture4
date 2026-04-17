@@ -71,6 +71,31 @@ class ChatMessageListView(generics.ListAPIView):
         ).order_by("created_at")
 
 
+def _format_agent_reply(agent_resp: dict) -> tuple[str, dict]:
+    """
+    Map FastAPI POST /pipeline/action (ActionResult) to stored assistant text + metadata.
+    """
+    message = (agent_resp.get("message") or "").strip()
+    actions = agent_resp.get("actions_taken") or []
+    lines = []
+    if message:
+        lines.append(message)
+    for act in actions:
+        tool = act.get("tool", "?")
+        amsg = (act.get("message") or "").strip()
+        if amsg:
+            lines.append(f"• [{tool}] {amsg}")
+    text = "\n".join(lines).strip()
+    if not text:
+        text = "No actions were returned from the agent."
+    meta = {
+        "success": agent_resp.get("success"),
+        "actions_taken": actions,
+        "original_text": agent_resp.get("original_text"),
+    }
+    return text, meta
+
+
 class SendMessageView(APIView):
     """POST /api/v1/chat/sessions/{id}/send/ — stores user msg, proxies to agent."""
 
@@ -87,7 +112,8 @@ class SendMessageView(APIView):
         except ChatSession.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
 
-        content = request.data.get("content", "").strip()
+        raw = request.data.get("content", request.data.get("message", ""))
+        content = (raw or "").strip() if isinstance(raw, str) else ""
         if not content:
             return Response(
                 {"error": "content is required."}, status=status.HTTP_400_BAD_REQUEST
@@ -103,28 +129,36 @@ class SendMessageView(APIView):
             session.title = content[:100]
             session.save(update_fields=["title"])
 
-        # Proxy to agent service (sync for simplicity; use SSE for streaming)
+        base = settings.AGENT_SERVICE_URL.rstrip("/")
+        url = f"{base}/pipeline/action"
+
+        # Proxy to FastAPI agent (same contract as the Voice Agent screen).
         try:
-            with httpx.Client(timeout=30.0) as client:
+            with httpx.Client(timeout=120.0) as client:
                 resp = client.post(
-                    f"{settings.AGENT_SERVICE_URL}/chat",
+                    url,
                     json={
-                        "session_id": str(session_id),
-                        "message": content,
-                        "context": session.context,
-                        "org_id": str(org.id),
+                        "text": content,
+                        "organization_id": str(org.id),
+                        "user_id": str(request.user.pk),
                     },
                 )
                 resp.raise_for_status()
                 agent_resp = resp.json()
-        except Exception:
-            agent_resp = {"content": "Agent service unavailable.", "metadata": {}}
+                assistant_text, meta = _format_agent_reply(agent_resp)
+        except Exception as exc:
+            assistant_text = (
+                f"Agent service unreachable or returned an error. "
+                f"Ensure the agent is running at {base} and OPENAI_API_KEY is set. "
+                f"({exc!r})"
+            )
+            meta = {"error": True, "detail": str(exc)}
 
         assistant_msg = ChatMessage.objects.create(
             session=session,
             role="assistant",
-            content=agent_resp.get("content", ""),
-            metadata=agent_resp.get("metadata", {}),
+            content=assistant_text,
+            metadata=meta,
         )
 
         return Response(

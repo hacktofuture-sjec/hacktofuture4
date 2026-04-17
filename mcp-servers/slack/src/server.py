@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 app = FastMCP(
     name="Slack MCP Server",
-    description="MCP tools for Slack — channels, messages, threads.",
 )
 
 SLACK_BASE_URL = "https://slack.com/api"

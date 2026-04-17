@@ -20,7 +20,7 @@ from ..schemas import ActionItemData, ActionResult
 
 logger = logging.getLogger(__name__)
 
-MCP_LIVE = os.getenv("MCP_LIVE", "false").lower() == "true"
+MCP_LIVE = settings.mcp_live
 
 
 class ActionItem(BaseModel):
@@ -47,9 +47,10 @@ Your job is to parse this text, determine what actions need to occur across vari
 and output a structured plan.
 
 AVAILABLE TOOLS:
-- jira: [create_ticket, transition_status, update_ticket]
+- jira: [create_ticket, transition_status, update_ticket, search_issues]
   - create_ticket payload: {{project_key, summary, issue_type, description, priority, labels}}
   - transition_status payload: {{issue_key, transition_name}}
+  - search_issues payload: {{jql}}
 - slack: [send_message]
   - send_message payload: {{channel, text}}
 - linear: [create_issue, update_issue]
@@ -58,6 +59,7 @@ AVAILABLE TOOLS:
 RULES:
 1. Be precise — only emit actions the user explicitly or implicitly requested.
 2. For Jira transitions, use standard status names: To Do, In Progress, Done.
+3. For Jira searches, output valid JQL based on the user's intent.
 3. For Slack messages, compose a helpful, professional message.
 4. Include ALL relevant details from the user's input in the payloads.
 """
@@ -82,47 +84,68 @@ async def _execute_mock(tool: str, action: str, payload: dict) -> str:
         return f"Executed {action} on {tool}"
 
 
+import importlib.util
+
+
+def _load_mcp_server(provider: str):
+    path = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__), f"../../../mcp-servers/{provider}/src/server.py"
+        )
+    )
+    spec = importlib.util.spec_from_file_location(f"mcp_{provider}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 async def _execute_live(tool: str, action: str, payload: dict) -> str:
     """Live MCP execution — calls real Jira/Slack APIs."""
     try:
-        if tool == "jira" and action == "create_ticket":
-            from mcp_servers_jira import create_issue  # type: ignore
+        if tool == "jira":
+            jira_mod = _load_mcp_server("jira")
+            if action == "create_ticket":
+                result = await jira_mod.create_issue(
+                    project_key=payload.get("project_key", "PROJ"),
+                    summary=payload.get("summary", "Untitled"),
+                    issue_type=payload.get("issue_type", "Task"),
+                    description=payload.get("description", ""),
+                    priority=payload.get("priority", "Medium"),
+                    labels=payload.get("labels", []),
+                )
+                return f"Created Jira issue {result.get('key', '???')}"
 
-            result = await create_issue(
-                project_key=payload.get("project_key", "PROJ"),
-                summary=payload.get("summary", "Untitled"),
-                issue_type=payload.get("issue_type", "Task"),
-                description=payload.get("description", ""),
-                priority=payload.get("priority", "Medium"),
-                labels=payload.get("labels", []),
-            )
-            return f"Created Jira issue {result.get('key', '???')}"
+            elif action == "transition_status":
+                result = await jira_mod.transition_issue(
+                    issue_key=payload.get("issue_key", ""),
+                    transition_name=payload.get("transition_name", "Done"),
+                )
+                return f"Transitioned {result.get('issue_key')} to {result.get('transitioned_to')}"
 
-        elif tool == "jira" and action == "transition_status":
-            from mcp_servers_jira import transition_issue  # type: ignore
-
-            result = await transition_issue(
-                issue_key=payload.get("issue_key", ""),
-                transition_name=payload.get("transition_name", "Done"),
-            )
-            return f"Transitioned {result.get('issue_key')} to {result.get('transitioned_to')}"
+            elif action == "search_issues":
+                result = await jira_mod.search_issues(
+                    jql=payload.get("jql", "project = PROJ ORDER BY created DESC"),
+                )
+                if isinstance(result, list):
+                    count = len(result)
+                else:
+                    count = len(result.get("issues", []))
+                return f"Successfully fetched {count} issues matching your search from Jira."
 
         elif tool == "slack" and action == "send_message":
-            from mcp_servers_slack import send_message  # type: ignore
-
-            result = await send_message(
+            slack_mod = _load_mcp_server("slack")
+            result = await slack_mod.send_message(
                 channel_id=payload.get("channel", ""),
                 text=payload.get("text", ""),
             )
             return f"Sent Slack message (ts={result.get('ts', '???')})"
 
-        else:
-            return await _execute_mock(tool, action, payload)
+        return await _execute_mock(tool, action, payload)
 
     except Exception as exc:
         logger.error("[MCP LIVE] Failed %s.%s: %s", tool, action, exc)
         # Graceful fallback to mock on failure
-        return f"[FALLBACK] {await _execute_mock(tool, action, payload)}"
+        return f"[FALLBACK] {await _execute_mock(tool, action, payload)} (Error: {str(exc)})"
 
 
 async def run_action_orchestrator(text: str) -> ActionResult:

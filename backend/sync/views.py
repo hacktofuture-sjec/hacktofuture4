@@ -24,7 +24,9 @@ class SyncCheckpointListView(generics.ListAPIView):
 
     def get_queryset(self):
         org = self.request.user.profile.organization
-        return SyncCheckpoint.objects.filter(organization=org)
+        return SyncCheckpoint.objects.filter(organization=org).order_by(
+            "-last_synced_at"
+        )
 
 
 urlpatterns_sync = [

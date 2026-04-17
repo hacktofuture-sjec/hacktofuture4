@@ -27,6 +27,7 @@ import {
   statusTone,
 } from '../components/ui';
 import type { ReactNode } from 'react';
+import { formatInsightText } from '../utils/apiDisplay';
 
 function Stat({
   icon,
@@ -147,7 +148,8 @@ export default function DashboardPage() {
                         {t.title}
                       </p>
                       <p className="text-[11px] text-gray-500 mt-0.5">
-                        {t.provider || 'unknown'} · {formatDate(t.updated_at || t.created_at)}
+                        {t.provider || 'unknown'} ·{' '}
+                        {formatDate(t.updated_at || t.created_at)}
                       </p>
                     </div>
                     <Badge tone={statusTone(t.normalized_status)}>
@@ -225,7 +227,9 @@ export default function DashboardPage() {
             />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {insightList.slice(0, 4).map((i) => (
+              {insightList.slice(0, 4).map((i) => {
+                const insightPreview = formatInsightText(i);
+                return (
                 <div
                   key={i.id}
                   className="p-3.5 rounded-lg bg-white/[0.03] border border-white/[0.05]"
@@ -234,14 +238,14 @@ export default function DashboardPage() {
                     <h4 className="text-[13px] font-medium text-gray-200">{i.title}</h4>
                     {i.severity && <Badge tone={statusTone(i.severity)}>{i.severity}</Badge>}
                   </div>
-                  {i.body && (
+                  {insightPreview.trim() !== '' && (
                     <p className="text-[12px] text-gray-500 leading-relaxed line-clamp-3">
-                      {i.body}
+                      {insightPreview}
                     </p>
                   )}
                   <p className="text-[10px] text-gray-600 mt-2">{formatDate(i.created_at)}</p>
                 </div>
-              ))}
+              );})}
             </div>
           )}
         </Card>

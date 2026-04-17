@@ -24,7 +24,11 @@ class DashboardListView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         org = self.request.user.profile.organization
-        return Dashboard.objects.filter(organization=org).prefetch_related("widgets")
+        return (
+            Dashboard.objects.filter(organization=org)
+            .prefetch_related("widgets")
+            .order_by("-created_at")
+        )
 
     def perform_create(self, serializer):
         org = self.request.user.profile.organization

@@ -63,8 +63,14 @@ def custom_exception_handler(exc, context):
 
     # Normalise the response body into our envelope
     error_detail = response.data
+
+    if isinstance(error_detail, dict) and "detail" not in error_detail:
+        # Standard validation error dictionary (e.g., {"password": ["..."]}).
+        # Return it directly so the exact fields can be cleanly extracted.
+        return response
+
     if isinstance(error_detail, dict):
-        detail = error_detail.get("detail", str(error_detail))
+        detail = error_detail.get("detail", "")
     elif isinstance(error_detail, list):
         detail = error_detail[0] if error_detail else "Unknown error"
     else:

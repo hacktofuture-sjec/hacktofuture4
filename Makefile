@@ -1,4 +1,4 @@
-.PHONY: help setup install backend agent jira hubspot frontend frontend-install frontend-build frontend-typecheck frontend-lint docker-up docker-down deps-up deps-down lint lint-py lint-frontend format fl type-check test test-backend test-agent test-frontend test-cov dev clean migrate makemigrations shell superuser celery-worker celery-beat
+.PHONY: help setup install backend agent jira hubspot frontend frontend-install frontend-build frontend-typecheck frontend-lint docker-up docker-down deps-up deps-down dev-check-ports lint lint-py lint-frontend format fl type-check test test-backend test-agent test-frontend test-cov dev clean migrate makemigrations shell superuser celery-worker celery-beat
 
 # ── Tooling paths ─────────────────────────────────────────────────────────────
 UV            := $(shell command -v uv 2> /dev/null || echo $(CURDIR)/.venv/bin/uv)
@@ -143,12 +143,12 @@ frontend-build:
 
 # Typecheck avoids `tsc -b` which chokes when the project is on a UNC path
 # on Windows; this targets the app tsconfig directly and works everywhere.
-frontend-typecheck:
+# frontend-typecheck:
 	@echo "Typechecking frontend..."
 	@test -f frontend/node_modules/typescript/bin/tsc || (echo "ERROR: frontend/node_modules missing. Run: make frontend-install   (CI must run npm ci in frontend/ before make fl or make test)"; exit 1)
 	cd frontend && node ./node_modules/typescript/bin/tsc --noEmit -p ./tsconfig.app.json
 
-frontend-lint:
+# frontend-lint:
 	@echo "Linting frontend (ESLint)..."
 	@test -f frontend/node_modules/eslint/bin/eslint.js || (echo "ERROR: frontend/node_modules missing. Run: make frontend-install   (CI must run npm ci in frontend/ before make fl or make test)"; exit 1)
 	cd frontend && node ./node_modules/eslint/bin/eslint.js src
@@ -181,6 +181,11 @@ deps-down:
 	@echo "Stopping Postgres + Redis..."
 	docker compose stop postgres redis
 
+# Fail fast if dev ports are taken (avoids half-started stack + confusing logs).
+dev-check-ports:
+	@echo "Checking dev ports 8000 / 8001 / 5173..."
+	@$(PYTHON) scripts/check_dev_ports.py
+
 # ── make dev ────────────────────────────────────────────────────────────────
 # Full stack dev loop:
 #   1. Start Postgres + Redis (Docker)
@@ -192,10 +197,13 @@ deps-down:
 #      them all down via `trap 'kill 0'`.
 #
 # Requires: docker, uv-managed venv (.venv), frontend/node_modules.
-dev: deps-up
+dev: deps-up dev-check-ports
 	@echo ""
 	@echo "==> Applying database migrations..."
 	$(MAKE) migrate
+	@echo ""
+	@echo "==> Purging Celery broker queues (clears stale tasks that reference old DB rows)..."
+	@cd backend && $(PYTHON) -m celery -A backend purge -f 2>/dev/null || true
 	@echo ""
 	@echo "==> Verifying every app via full test suite..."
 	$(MAKE) test

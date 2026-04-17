@@ -11,6 +11,7 @@ import {
   formatDate,
   statusTone,
 } from '../components/ui';
+import { formatInsightText } from '../utils/apiDisplay';
 
 export default function InsightsPage() {
   const { data, loading, error } = useAsync(() => insightsApi.list(), []);
@@ -35,23 +36,26 @@ export default function InsightsPage() {
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {rows.map((i) => (
+          {rows.map((i) => {
+            const text = formatInsightText(i);
+            return (
             <Card key={i.id} className="p-5">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-semibold text-white">{i.title}</h3>
                 <div className="flex items-center gap-2">
+                  {i.insight_type && <Badge>{i.insight_type}</Badge>}
                   {i.category && <Badge>{i.category}</Badge>}
                   {i.severity && <Badge tone={statusTone(i.severity)}>{i.severity}</Badge>}
                 </div>
               </div>
-              {i.body && (
+              {text.trim() !== '' && (
                 <p className="text-sm text-gray-400 leading-relaxed whitespace-pre-wrap">
-                  {i.body}
+                  {text}
                 </p>
               )}
               <p className="text-[11px] text-gray-600 mt-3">{formatDate(i.created_at)}</p>
             </Card>
-          ))}
+          );})}
         </div>
       )}
     </>

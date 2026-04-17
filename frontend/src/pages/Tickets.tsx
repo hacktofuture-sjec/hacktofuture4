@@ -36,7 +36,7 @@ export default function TicketsPage() {
     if (!q.trim()) return list;
     const needle = q.toLowerCase();
     return list.filter((t) =>
-      `${t.title ?? ''} ${t.external_id ?? ''} ${t.provider ?? ''}`
+      `${t.title ?? ''} ${t.external_ticket_id ?? t.external_id ?? ''} ${t.provider ?? ''}`
         .toLowerCase()
         .includes(needle)
     );
@@ -96,7 +96,7 @@ export default function TicketsPage() {
                 <TD>
                   <Link to={`/tickets/${t.id}`} className="text-gray-100 hover:text-indigo-300">
                     <span className="text-gray-500 mr-2">
-                      {t.external_id || t.id.slice(0, 8)}
+                      {t.external_ticket_id || t.external_id || t.id.slice(0, 8)}
                     </span>
                     {t.title}
                   </Link>
@@ -108,7 +108,7 @@ export default function TicketsPage() {
                     {t.normalized_status || '—'}
                   </Badge>
                 </TD>
-                <TD className="text-gray-500">{t.assignee_email || '—'}</TD>
+                <TD className="text-gray-500">{t.assignee_name || t.assignee_email || '—'}</TD>
                 <TD className="text-gray-500">
                   {formatDate(t.updated_at || t.created_at)}
                 </TD>

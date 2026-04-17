@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { isAxiosError } from 'axios';
 
 const API_BASE = import.meta.env.VITE_AGENT_URL || 'http://localhost:8001';
 
@@ -148,8 +148,15 @@ export async function sendAction(text: string, orgId: string = 'org-demo-123'): 
     });
     return data;
   } catch (err) {
+    if (isAxiosError(err) && err.response) {
+      const detail = (err.response.data as { detail?: unknown })?.detail;
+      const msg =
+        typeof detail === 'string'
+          ? detail
+          : err.response.statusText || err.message;
+      throw new Error(msg);
+    }
     console.warn('[agent] Backend unreachable, using demo fallback:', err);
-    // Simulate network delay for realism
     await new Promise((r) => setTimeout(r, 1200 + Math.random() * 800));
     return getDemoResponse(text);
   }

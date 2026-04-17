@@ -42,17 +42,20 @@ export default function ProcessingDetailPage() {
         action={<Badge tone={statusTone(r.status)}>{r.status}</Badge>}
       />
 
-      {r.error && (
-        <div className="mb-4">
-          <ErrorBanner message={r.error} />
-        </div>
-      )}
-
       <Card className="p-5 mb-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
         <Kv label="Attempts" value={String(r.attempt_count ?? 0)} />
-        <Kv label="Event" value={r.event_id?.slice(0, 12) || '—'} />
+        <Kv
+          label="Raw event"
+          value={
+            r.raw_event_id != null
+              ? String(r.raw_event_id).slice(0, 12)
+              : r.event_id != null
+                ? String(r.event_id).slice(0, 12)
+                : '—'
+          }
+        />
         <Kv label="Started" value={formatDate(r.started_at)} />
-        <Kv label="Finished" value={formatDate(r.finished_at)} />
+        <Kv label="Finished" value={formatDate(r.completed_at ?? r.finished_at)} />
       </Card>
 
       <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
@@ -76,36 +79,38 @@ export default function ProcessingDetailPage() {
               <Card className="p-4">
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <div>
-                    <p className="text-[13px] font-medium text-gray-200">{s.node}</p>
+                    <p className="text-[13px] font-medium text-gray-200">
+                      {s.step_name || s.node || '—'}
+                    </p>
                     <p className="text-[11px] text-gray-500">
-                      {formatDate(s.created_at)}
+                      {formatDate(s.logged_at || s.created_at)}
                       {typeof s.duration_ms === 'number' && ` · ${s.duration_ms} ms`}
                     </p>
                   </div>
                   <Badge tone={statusTone(s.status)}>{s.status}</Badge>
                 </div>
 
-                {s.error && (
+                {(s.error_message || s.error) && (
                   <p className="text-[12px] text-red-300 font-mono bg-red-500/5 border border-red-500/20 rounded px-2 py-1 mb-2">
-                    {s.error}
+                    {s.error_message || s.error}
                   </p>
                 )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {s.input && (
+                  {(s.input_data ?? s.input) && (
                     <div>
                       <p className="text-[10px] uppercase tracking-[0.12em] text-gray-600 font-semibold mb-1">
                         Input
                       </p>
-                      <JsonBlock value={s.input} />
+                      <JsonBlock value={s.input_data ?? s.input} />
                     </div>
                   )}
-                  {s.output && (
+                  {(s.output_data ?? s.output) && (
                     <div>
                       <p className="text-[10px] uppercase tracking-[0.12em] text-gray-600 font-semibold mb-1">
                         Output
                       </p>
-                      <JsonBlock value={s.output} />
+                      <JsonBlock value={s.output_data ?? s.output} />
                     </div>
                   )}
                 </div>

@@ -98,8 +98,17 @@ export interface DLQItem {
 
 // ── Tickets ────────────────────────────────────────────────────────────────
 
+export interface ExternalIdentityRef {
+  id?: string;
+  display_name?: string;
+  email?: string;
+}
+
 export interface UnifiedTicket {
   id: string;
+  /** DRF: `external_ticket_id` (e.g. PROJ-123). */
+  external_ticket_id?: string;
+  /** Legacy/alternate name used in some UIs — prefer `external_ticket_id`. */
   external_id?: string;
   provider?: string;
   title: string;
@@ -108,17 +117,28 @@ export interface UnifiedTicket {
   normalized_type?: string;
   priority?: string;
   assignee_id?: string | null;
+  /** Present on list responses (`assignee_name`). */
+  assignee_name?: string | null;
   assignee_email?: string | null;
+  assignee?: ExternalIdentityRef | null;
+  reporter?: ExternalIdentityRef | null;
   reporter_email?: string | null;
   due_date?: string | null;
   provider_metadata?: Record<string, unknown>;
+  integration?: string | number;
   created_at?: string;
   updated_at?: string;
 }
 
 export interface TicketActivity {
   id: string;
-  ticket_id: string;
+  ticket_id?: string;
+  /** DRF: `activity_type` + `changes` (JSON). */
+  activity_type?: string;
+  actor_name?: string;
+  changes?: Record<string, { from?: unknown; to?: unknown }>;
+  occurred_at?: string;
+  /** Legacy shape — not returned by current serializers. */
   actor?: string;
   action?: string;
   from_value?: string | null;
@@ -129,7 +149,8 @@ export interface TicketActivity {
 
 export interface TicketComment {
   id: string;
-  ticket_id: string;
+  ticket_id?: string;
+  author_name?: string;
   author_email?: string;
   body: string;
   created_at?: string;
@@ -164,25 +185,48 @@ export interface IntegrationAccount {
 
 export interface ProcessingRun {
   id: string;
-  event_id?: string;
-  status: 'running' | 'succeeded' | 'failed' | 'retry' | string;
+  /** FK to RawWebhookEvent — DRF exposes `raw_event_id`. */
+  raw_event_id?: string | number;
+  /** Legacy client field name — prefer `raw_event_id`. */
+  event_id?: string | number;
+  status:
+    | 'started'
+    | 'mapping'
+    | 'validating'
+    | 'completed'
+    | 'failed'
+    | 'running'
+    | 'succeeded'
+    | 'retry'
+    | string;
   attempt_count?: number;
+  llm_model?: string;
   source?: string;
   started_at?: string;
+  /** DRF field name (replaces older UI name `finished_at`). */
+  completed_at?: string | null;
   finished_at?: string | null;
-  error?: string | null;
+  duration_ms?: number | null;
+  step_logs?: ProcessingStep[];
+  validation_result?: { is_valid?: boolean; validation_errors?: string[]; validated_at?: string };
 }
 
 export interface ProcessingStep {
   id: string;
-  run_id: string;
-  node: string;
+  /** DRF: `step_name` (fetcher, mapper, …). */
+  step_name?: string;
+  node?: string;
+  sequence?: number;
   status: string;
+  input_data?: Record<string, unknown> | null;
+  output_data?: Record<string, unknown> | null;
   input?: Record<string, unknown>;
   output?: Record<string, unknown>;
+  error_message?: string;
   error?: string | null;
+  logged_at?: string;
   created_at?: string;
-  duration_ms?: number;
+  duration_ms?: number | null;
 }
 
 // ── Chat ───────────────────────────────────────────────────────────────────
@@ -209,8 +253,17 @@ export interface ChatMessage {
 
 export interface Insight {
   id: string;
+  insight_type?: string;
   title: string;
+  /** Django JSONField — structured content; use `formatInsightText()` for display. */
+  content?: unknown;
+  /** Not sent by API — only if you map client-side. */
   body?: string;
+  period_start?: string;
+  period_end?: string;
+  generated_by?: string;
+  confidence_score?: number | null;
+  is_pinned?: boolean;
   category?: string;
   severity?: 'low' | 'medium' | 'high' | 'critical' | string;
   created_at?: string;
