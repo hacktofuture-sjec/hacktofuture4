@@ -5,8 +5,12 @@ All values loaded from environment variables.
 
 from typing import Optional
 
+import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
 
+# Force load the workspace .env into os.environ so dynamically imported MCP servers can see the Atlassian credentials
+load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.env")))
 
 class Settings(BaseSettings):
     # LLM
