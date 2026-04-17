@@ -2,32 +2,6 @@
 
 Welcome to your official HackToFuture 4 repository.
 
-This repository template will be used for development, tracking progress, and final submission of your project. Ensure that all work is committed here within the allowed hackathon duration.
-
----
-
-### Instructions for the teams:
-
-- Fork the Repository and name the forked repo in this convention: hacktofuture4-team_id (for eg: hacktofuture4-A01)
-
----
-
-## Rules
-
-- Work must be done ONLY in the forked repository
-- Only Four Contributors are allowed.
-- After 36 hours, Please make PR to the Main Repository. A Form will be sent to fill the required information.
-- Do not copy code from other teams
-- All commits must be from individual GitHub accounts
-- Please provide meaningful commits for tracking.
-- Do not share your repository with other teams
-- Final submission must be pushed before the deadline
-- Any violation may lead to disqualification
-
----
-
-# The Final README Template 
-
 ## Problem Statement / Idea
 - Cloud-native microservices deployed on Kubernetes are susceptible to runtime failures such as CrashLoopBackOff, resource exhaustion, and traffic spikes, making real-time system stability challenging.
 - Existing solutions rely on threshold-based autoscaling and manual intervention, lacking context-aware decision-making, root cause analysis, and adaptive recovery mechanisms.
@@ -60,6 +34,7 @@ This repository template will be used for development, tracking progress, and fi
 
 ## Project Setup Instructions
 
+```bash
 ## Step 1: Go to project root
 cd "Nova Chat"
 
@@ -190,3 +165,4 @@ curl http://localhost:3005/security/alerts
 ## Demo testing commands
 Trigger overload
 curl -X POST http://localhost:3002/simulate/overload
+```
