@@ -1,4 +1,4 @@
-# The Specter Sentinals
+# The Specter Sentinals-I01
 
 # Problem Statement 
 Karnataka has one of the largest livestock populations, but the "conception rate remains low (30–40%)" due to missed estrus (heat) detection. Farmers often fail to identify the critical "12–18 hour heat window", mainly because detection depends on manual observation and behavioral patterns vary due to climatic conditions (especially in Karnataka).
