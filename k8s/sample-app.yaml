@@ -1,0 +1,422 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: prod
+  labels:
+    app.kubernetes.io/managed-by: t3ps2
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sample-app-script
+  namespace: prod
+data:
+  app.py: |
+    import contextlib
+    import http.server
+    import json
+    import os
+    import threading
+    import time
+    import uuid
+    from datetime import datetime, timezone
+
+    try:
+      from opentelemetry import trace
+      from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+      from opentelemetry.sdk.resources import Resource
+      from opentelemetry.sdk.trace import TracerProvider
+      from opentelemetry.sdk.trace.export import BatchSpanProcessor
+      OTEL_AVAILABLE = True
+    except Exception:
+      OTEL_AVAILABLE = False
+
+    SERVICE_NAME = os.environ.get("SERVICE_NAME", "demo-app")
+    PORT = int(os.environ.get("PORT", "8080"))
+    request_count = 0
+    error_count = 0
+    start_time = time.time()
+    counter_lock = threading.Lock()
+    OTEL_EXPORTER_OTLP_ENDPOINT = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://tempo.monitoring.svc.cluster.local:4318/v1/traces")
+
+    def run_cpu_load(duration_seconds=5):
+      end = time.time() + duration_seconds
+      while time.time() < end:
+        _ = sum(i * i for i in range(10000))
+
+    def _trace_id():
+      return uuid.uuid4().hex
+
+    def init_tracer():
+      if not OTEL_AVAILABLE:
+        return None
+      resource = Resource.create({"service.name": SERVICE_NAME})
+      provider = TracerProvider(resource=resource)
+      exporter = OTLPSpanExporter(endpoint=OTEL_EXPORTER_OTLP_ENDPOINT)
+      provider.add_span_processor(BatchSpanProcessor(exporter))
+      trace.set_tracer_provider(provider)
+      return trace.get_tracer(SERVICE_NAME)
+
+    TRACER = init_tracer()
+
+    def log(level, message, **kwargs):
+      record = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "level": level,
+        "service": SERVICE_NAME,
+        "message": message,
+        **kwargs,
+      }
+      print(json.dumps(record), flush=True)
+
+    def metrics_output():
+      with open("/proc/self/status", "r", encoding="utf-8") as fp:
+        status = fp.read()
+      mem_kib = int(status.split("VmRSS:")[1].split("\n")[0].strip().split()[0])
+      mem_bytes = mem_kib * 1024
+      uptime = time.time() - start_time
+      return f"""# HELP http_requests_total Total HTTP requests
+    # TYPE http_requests_total counter
+    http_requests_total{{service=\"{SERVICE_NAME}\"}} {request_count}
+
+    # HELP http_errors_total Total HTTP errors
+    # TYPE http_errors_total counter
+    http_errors_total{{service=\"{SERVICE_NAME}\"}} {error_count}
+
+    # HELP process_uptime_seconds Process uptime
+    # TYPE process_uptime_seconds gauge
+    process_uptime_seconds{{service=\"{SERVICE_NAME}\"}} {uptime:.1f}
+
+    # HELP process_resident_memory_bytes Resident memory
+    # TYPE process_resident_memory_bytes gauge
+    process_resident_memory_bytes{{service=\"{SERVICE_NAME}\"}} {mem_bytes}
+    """
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+      def log_message(self, fmt, *args):
+        return
+
+      def do_GET(self):
+        global request_count, error_count
+        with counter_lock:
+          request_count += 1
+        span_name = f"GET {self.path}"
+        span_ctx = TRACER.start_as_current_span(span_name) if TRACER else contextlib.nullcontext()
+        with span_ctx as span:
+          trace_id = (
+            format(span.get_span_context().trace_id, "032x")
+            if span and span.get_span_context().trace_id
+            else _trace_id()
+          )
+          if self.path == "/health":
+            self._respond(200, b"ok")
+            log("info", "health check", path="/health", status=200, trace_id=trace_id)
+            if span:
+              span.set_attribute("http.method", "GET")
+              span.set_attribute("http.target", self.path)
+              span.set_attribute("http.status_code", 200)
+            return
+          if self.path == "/metrics":
+            body = metrics_output().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; version=0.0.4")
+            self.end_headers()
+            self.wfile.write(body)
+            if span:
+              span.set_attribute("http.method", "GET")
+              span.set_attribute("http.target", self.path)
+              span.set_attribute("http.status_code", 200)
+            return
+          if self.path == "/load":
+            log("warn", "cpu load test triggered", duration_seconds=5, trace_id=trace_id)
+            threading.Thread(target=run_cpu_load, args=(5,), daemon=True).start()
+            self._respond(200, b"load complete")
+            if span:
+              span.set_attribute("http.method", "GET")
+              span.set_attribute("http.target", self.path)
+              span.set_attribute("http.status_code", 200)
+            return
+          if self.path == "/":
+            self._respond(200, f"service={SERVICE_NAME}".encode("utf-8"))
+            log("info", "root hit", path="/", status=200, trace_id=trace_id)
+            if span:
+              span.set_attribute("http.method", "GET")
+              span.set_attribute("http.target", self.path)
+              span.set_attribute("http.status_code", 200)
+            return
+          with counter_lock:
+            error_count += 1
+          self._respond(404, b"not found")
+          log("error", "route not found", path=self.path, status=404, trace_id=trace_id)
+          if span:
+            span.set_attribute("http.method", "GET")
+            span.set_attribute("http.target", self.path)
+            span.set_attribute("http.status_code", 404)
+
+      def _respond(self, status, body):
+        self.send_response(status)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def background_logger():
+      while True:
+        time.sleep(15)
+        log("info", "heartbeat", uptime_seconds=round(time.time() - start_time, 1), trace_id=_trace_id())
+
+    if __name__ == "__main__":
+      t = threading.Thread(target=background_logger, daemon=True)
+      t.start()
+      server = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+      server.serve_forever()
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-api
+  namespace: prod
+  labels:
+    app: payment-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment-api
+  template:
+    metadata:
+      labels:
+        app: payment-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      volumes:
+        - name: app-script
+          configMap:
+            name: sample-app-script
+      containers:
+        - name: payment-api
+          image: python:3.11-slim
+          command:
+            - sh
+            - -c
+            - >-
+              pip install --no-cache-dir opentelemetry-sdk opentelemetry-exporter-otlp-proto-http >/tmp/pip-otel.log 2>&1
+              && python /app/app.py
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: app-script
+              mountPath: /app
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          env:
+            - name: SERVICE_NAME
+              value: payment-api
+            - name: PORT
+              value: "8080"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://tempo.monitoring.svc.cluster.local:4318/v1/traces
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-api
+  namespace: prod
+spec:
+  selector:
+    app: payment-api
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: prod
+  labels:
+    app: auth-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+    spec:
+      volumes:
+        - name: app-script
+          configMap:
+            name: sample-app-script
+      containers:
+        - name: auth-service
+          image: python:3.11-slim
+          command:
+            - sh
+            - -c
+            - >-
+              pip install --no-cache-dir opentelemetry-sdk opentelemetry-exporter-otlp-proto-http >/tmp/pip-otel.log 2>&1
+              && python /app/app.py
+          ports:
+            - containerPort: 8081
+          volumeMounts:
+            - name: app-script
+              mountPath: /app
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "25m"
+            limits:
+              memory: "64Mi"
+              cpu: "100m"
+          env:
+            - name: SERVICE_NAME
+              value: auth-service
+            - name: PORT
+              value: "8081"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://tempo.monitoring.svc.cluster.local:4318/v1/traces
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 30
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: prod
+spec:
+  selector:
+    app: auth-service
+  ports:
+    - port: 8081
+      targetPort: 8081
+      protocol: TCP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-service
+  namespace: prod
+  labels:
+    app: api-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api-service
+  template:
+    metadata:
+      labels:
+        app: api-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8082"
+    spec:
+      volumes:
+        - name: app-script
+          configMap:
+            name: sample-app-script
+      containers:
+        - name: api-service
+          image: python:3.11-slim
+          command:
+            - sh
+            - -c
+            - >-
+              pip install --no-cache-dir opentelemetry-sdk opentelemetry-exporter-otlp-proto-http >/tmp/pip-otel.log 2>&1
+              && python /app/app.py
+          ports:
+            - containerPort: 8082
+          volumeMounts:
+            - name: app-script
+              mountPath: /app
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+              cpu: "500m"
+          env:
+            - name: SERVICE_NAME
+              value: api-service
+            - name: PORT
+              value: "8082"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://tempo.monitoring.svc.cluster.local:4318/v1/traces
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 10
+            periodSeconds: 30
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+  namespace: prod
+spec:
+  selector:
+    app: api-service
+  ports:
+    - port: 8082
+      targetPort: 8082
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vcluster-sandboxes
+  labels:
+    app.kubernetes.io/managed-by: t3ps2

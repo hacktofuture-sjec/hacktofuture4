@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+node_modules/
+.next/
+*.db
+.env
+.env.*
+.run/
+*.stdout.log
+*.stderr.log
+*.log

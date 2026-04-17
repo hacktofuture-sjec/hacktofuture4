@@ -1,0 +1,342 @@
+adminUser: admin
+adminPassword: admin
+
+persistence:
+  enabled: false
+
+service:
+  type: ClusterIP
+
+downloadDashboardsImage:
+  registry: quay.io
+  repository: curl/curl
+  tag: 8.9.1
+
+grafana.ini:
+  server:
+    root_url: http://localhost:3300
+
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        access: proxy
+        url: http://prometheus-server.monitoring.svc.cluster.local
+        isDefault: true
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://loki.monitoring.svc.cluster.local:3100
+        jsonData:
+          derivedFields:
+            - name: TraceID
+              matcherRegex: "trace_id[=\": ]+([0-9a-f]{16,32})"
+              datasourceUid: tempo
+              url: "$${__value.raw}"
+      - name: Tempo
+        type: tempo
+        uid: tempo
+        access: proxy
+        url: http://tempo.monitoring.svc.cluster.local:3200
+        jsonData:
+          serviceMap:
+            datasourceUid: prometheus
+
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: htf-dashboards
+        orgId: 1
+        folder: HTF
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/htf-dashboards
+
+dashboards:
+  htf-dashboards:
+    htf-observability-overview:
+      json: |
+        {
+          "id": null,
+          "uid": "htf-overview",
+          "title": "HTF Observability Overview",
+          "tags": ["htf", "demo"],
+          "timezone": "browser",
+          "schemaVersion": 39,
+          "version": 1,
+          "refresh": "10s",
+          "time": {
+            "from": "now-15m",
+            "to": "now"
+          },
+          "templating": {
+            "list": []
+          },
+          "panels": [
+            {
+              "id": 1,
+              "type": "timeseries",
+              "title": "CPU Usage By Pod (prod)",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 0,
+                "y": 0
+              },
+              "targets": [
+                {
+                  "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"prod\",container!=\"\",image!=\"\"}[1m]))",
+                  "legendFormat": "{{pod}}",
+                  "refId": "A"
+                }
+              ]
+            },
+            {
+              "id": 6,
+              "type": "timeseries",
+              "title": "Memory Working Set By Pod (MiB)",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 8,
+                "y": 0
+              },
+              "targets": [
+                {
+                  "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"prod\",container!=\"\",image!=\"\"}) / 1024 / 1024",
+                  "legendFormat": "{{pod}}",
+                  "refId": "A"
+                }
+              ]
+            },
+            {
+              "id": 4,
+              "type": "timeseries",
+              "title": "Restart Burst (5m)",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 16,
+                "y": 0
+              },
+              "targets": [
+                {
+                  "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=\"prod\"}[5m]))",
+                  "legendFormat": "{{pod}}",
+                  "refId": "A"
+                }
+              ]
+            },
+            {
+              "id": 5,
+              "type": "timeseries",
+              "title": "Unready Pods (prod)",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "gridPos": {
+                "h": 6,
+                "w": 8,
+                "x": 18,
+                "y": 8
+              },
+              "targets": [
+                {
+                  "expr": "sum(kube_pod_status_ready{namespace=\"prod\",condition=\"false\"})",
+                  "legendFormat": "unready",
+                  "refId": "A"
+                }
+              ]
+            },
+            {
+              "id": 7,
+              "type": "timeseries",
+              "title": "Crash/ImagePull Waiting Pods",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "gridPos": {
+                "h": 6,
+                "w": 8,
+                "x": 8,
+                "y": 8
+              },
+              "targets": [
+                {
+                  "expr": "sum by (pod,reason) (kube_pod_container_status_waiting_reason{namespace=\"prod\",reason=~\"CrashLoopBackOff|ImagePullBackOff|ErrImagePull\"})",
+                  "legendFormat": "{{pod}} {{reason}}",
+                  "refId": "A"
+                }
+              ]
+            },
+            {
+              "id": 8,
+              "type": "timeseries",
+              "title": "App Error Rate (req/s)",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "gridPos": {
+                "h": 6,
+                "w": 8,
+                "x": 16,
+                "y": 8
+              },
+              "targets": [
+                {
+                  "expr": "sum by (service) (rate(http_errors_total[1m]))",
+                  "legendFormat": "{{service}}",
+                  "refId": "A"
+                }
+              ]
+            },
+            {
+              "id": 9,
+              "type": "timeseries",
+              "title": "App Request Rate (req/s)",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "gridPos": {
+                "h": 6,
+                "w": 8,
+                "x": 0,
+                "y": 8
+              },
+              "targets": [
+                {
+                  "expr": "sum by (service) (rate(http_requests_total[1m]))",
+                  "legendFormat": "{{service}}",
+                  "refId": "A"
+                }
+              ]
+            },
+            {
+              "id": 10,
+              "type": "timeseries",
+              "title": "OOMKilled Pods (last state)",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "gridPos": {
+                "h": 6,
+                "w": 8,
+                "x": 8,
+                "y": 14
+              },
+              "targets": [
+                {
+                  "expr": "sum by (pod) (kube_pod_container_status_last_terminated_reason{namespace=\"prod\",reason=\"OOMKilled\"})",
+                  "legendFormat": "{{pod}}",
+                  "refId": "A"
+                }
+              ]
+            },
+            {
+              "id": 2,
+              "type": "logs",
+              "title": "Loki: Fault-Oriented prod Logs",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 20
+              },
+              "targets": [
+                {
+                  "expr": "{namespace=\"prod\"} | json | level=~\"(?i)(warn|error)\" | line_format \"ts={{.timestamp}} lvl={{.level}} svc={{.service}} pod={{.pod}} msg={{.message}} path={{.path}} status={{.status}} trace={{.trace_id}}\"",
+                  "refId": "A"
+                }
+              ],
+              "options": {
+                "showTime": true,
+                "sortOrder": "Descending",
+                "wrapLogMessage": true
+              }
+            },
+            {
+              "id": 11,
+              "type": "logs",
+              "title": "Loki: Service Logs (no health/metrics noise)",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 20
+              },
+              "targets": [
+                {
+                  "expr": "{namespace=\"prod\"} | json | message!~\"(?i)(health check|heartbeat)\" | line_format \"ts={{.timestamp}} lvl={{.level}} svc={{.service}} msg={{.message}} path={{.path}} status={{.status}} trace={{.trace_id}}\"",
+                  "refId": "A"
+                }
+              ],
+              "options": {
+                "showTime": true,
+                "sortOrder": "Descending",
+                "wrapLogMessage": true
+              }
+            },
+            {
+              "id": 3,
+              "type": "table",
+              "title": "Tempo Traces (non-health)",
+              "gridPos": {
+                "h": 9,
+                "w": 24,
+                "x": 0,
+                "y": 28
+              },
+              "datasource": {
+                "type": "tempo",
+                "uid": "tempo"
+              },
+              "targets": [
+                {
+                  "refId": "A",
+                  "queryType": "traceqlSearch",
+                  "query": "{ span.name != \"GET /health\" && span.name != \"GET /metrics\" }",
+                  "tableType": "traces",
+                  "limit": 50,
+                  "spss": 3,
+                  "filters": []
+                }
+              ],
+              "options": {
+                "showHeader": true,
+                "cellHeight": "sm"
+              }
+            }
+          ]
+        }

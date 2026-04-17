@@ -1,0 +1,40 @@
+server:
+  service:
+    type: NodePort
+    nodePort: 30090
+  global:
+    scrape_interval: 15s
+  persistentVolume:
+    enabled: false
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+
+alertmanager:
+  enabled: false
+
+kube-state-metrics:
+  enabled: true
+
+prometheus-node-exporter:
+  enabled: true
+
+extraScrapeConfigs: |
+  - job_name: 'demo-apps'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['prod']
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: "true"
+      - source_labels: [__meta_kubernetes_pod_ip, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        target_label: __address__
+        regex: (.+);(.+)
+        replacement: $1:$2
