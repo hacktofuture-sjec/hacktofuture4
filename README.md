@@ -1,108 +1,148 @@
 # Trailblazers
 
-Welcome to your official HackToFuture 4 repository.
-
-This repository template will be used for development, tracking progress, and final submission of your project. Ensure that all work is committed here within the allowed hackathon duration.
-
----
-
-### Instructions for the teams:
-
-- Fork the Repository and name the forked repo in this convention: hacktofuture4-team_id (for eg: hacktofuture4-A01)
-
----
-
-## Rules
-
-- Work must be done ONLY in the forked repository
-- Only Four Contributors are allowed.
-- After 36 hours, Please make PR to the Main Repository. A Form will be sent to fill the required information.
-- Do not copy code from other teams
-- All commits must be from individual GitHub accounts
-- Please provide meaningful commits for tracking.
-- Do not share your repository with other teams
-- Final submission must be pushed before the deadline
-- Any violation may lead to disqualification
-
----
-
-# The Final README Template 
-
 ## Problem Statement / Idea
 
-Clearly describe the problem you are solving.
+### What is the problem?
 
-- What is the problem?
-- Why is it important?
-- Who are the target users?
+Most authentication systems today focus only on verifying a user at the time of login. Once the user successfully enters a password, OTP, or biometric detail, the system assumes that everything that happens afterward is safe and legitimate.
+
+In reality, this is where many security risks begin. If someone gains access using stolen credentials or a hijacked session, they can continue operating inside the system without being detected. These actions are often subtle and designed to look like normal user behavior, making them difficult to identify using traditional methods.
+
+---
+
+### Why is it important?
+
+The importance of this problem lies in how modern attacks are evolving. Not all threats are aggressive or immediate. Many of them are slow, silent, and spread over time, which makes them harder to detect and prevent.
+
+For organizations that handle sensitive data, even a small unnoticed action can lead to serious consequences such as data leaks, financial loss, or misuse of internal systems. Detecting these threats early, especially while they are still subtle, is critical to maintaining security and trust.
+
+---
+
+### Who are the target users?
+
+CyberSentinel is designed for small to mid-level enterprises that manage sensitive information and need stronger security without adding too much complexity to their systems.
+
+These organizations may not experience frequent brute-force attacks, but they still face risks from session misuse, insider threats, or unauthorized access over time. The solution is built to provide them with a smarter and more continuous way of ensuring user authenticity.
 
 ---
 
 ## Proposed Solution
 
-Explain your approach:
+### What are you building?
 
-- What are you building?
-- How does it solve the problem?
-- What makes your solution unique?
+We are building CyberSentinel, a system that continuously verifies user identity throughout an active session instead of relying only on a one-time login check.
+
+The system observes user behavior in the background and evaluates whether the current activity matches the expected behavior of the authenticated user.
+
+---
+
+### How does it solve the problem?
+
+CyberSentinel works by monitoring behavioral and contextual signals such as IP address, location, and keystroke patterns during the session. Instead of making a one-time decision, it keeps updating a trust score as the user interacts with the system.
+
+If the system detects unusual patterns or deviations, it responds gradually. It may start with simple monitoring, then move to restrictions, and finally trigger re-authentication or session termination if the risk becomes high.
+
+This approach allows the system to detect both immediate and slow-developing threats without interrupting normal users unnecessarily.
+
+---
+
+### What makes your solution unique?
+
+What makes CyberSentinel different is its focus on continuous and adaptive verification rather than one-time authentication.
+
+It is designed to detect subtle and long-term anomalies that traditional systems usually miss. Instead of reacting only to obvious threats, it quietly builds an understanding of normal user behavior and identifies deviations over time.
+
+The system also avoids being overly aggressive. It balances security and usability by responding proportionally to the level of risk, ensuring that genuine users are not disrupted unnecessarily.
 
 ---
 
 ## Features
 
-List the core features of your project:
+Continuous Behavioral Monitoring
+- Performs real-time threat surveillance across IP, location, and keystroke dynamics
+- Tracks IP anomalies, unauthorized networks, and proxy usage
+- Detects geolocation shifts, impossible travel, and geo-spoofing
+- Profiles keystroke dwell time and flight time as behavioral biometrics
+- Any deviation from the established behavioral baseline immediately triggers a trust score recalculation
 
-- Feature 1
-- Feature 2
-- Feature 3
+Adaptive Security Response
+- Upon detection of anomalous activity, the system issues real-time popup alerts as the first line of defense
+- Response scales with risk severity:
+  - Low risk — passive surveillance and audit logging
+  - Medium risk — access control restrictions on sensitive endpoints
+  - High risk — multi-factor re-authentication challenge via OTP
+  - Critical risk — forced session invalidation and termination
 
+Device Intelligence and Fingerprinting
+- Performs device profiling at session initialization to establish a trusted hardware baseline
+  - Screen size and resolution
+  - Browser agent, OS, and platform details
+  - Device type and hardware fingerprint
+- Any mid-session device anomaly is treated as a potential session hijacking attempt and escalated through the threat response pipeline
+- Admin dashboard provides real-time visibility into active sessions, risk scores, and detected anomalies
+- VM-based attack simulation using Kali Linux for testing and validation
 ---
 
 ## Tech Stack
 
-Mention all technologies used:
+*Frontend:*  
+Flutter (Web)
 
-- Frontend:
-- Backend:
-- Database:
-- APIs / Services:
-- Tools / Libraries:
+*Backend:*  
+Flask / FastAPI (Python)
+
+*Database:*  
+Firebase Firestore  
+
+*APIs / Services:*  
+IP Geolocation API  
+ipfy
+Firebase Authentication  
+
+*Tools / Libraries:*  
+Requests  
+Flask-CORS  
 
 ---
 
-## Project Setup Instructions
+## Setup
 
-Provide clear steps to run your project:
+### Clone the repository
 
-```bash
-# Clone the repository
+bash
 git clone <repo-link>
+cd <project-folder>
+
 
 # Install dependencies
 # Backend
+
+bash
 cd backend
 pip install -r requirements.txt
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+python app.py
+
 
 # Frontend
+bash
 cd ..
 flutter pub get
 
-# Run backend
-cd backend
-python app.py
 
-# Run Flutter app (web only)
-cd ..
+To Run Frontend Application:
+Run Admin Dashboard (Main Panel)
+Run this in the same terminal:
+
+bash
 flutter run -d chrome
-```
 
-## Firebase Setup
+Run User Dashboard (Separate Window)
+Open a new terminal and run:
+bash
+cd <project-folder>
+flutter run -d chrome
 
-This project is configured for web only.
+(This setup allows you to run both admin and user dashboards simultaneously.)
 
-1. Create a Firebase project in the Firebase console.
-2. Add a Web app to your Firebase project.
-3. Use the web config values in `lib/firebase_options.dart`.
-4. Run the app with `flutter run -d chrome`.
 
-If you later want Android or iOS support, add native Firebase config files separately.
