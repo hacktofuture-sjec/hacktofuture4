@@ -73,15 +73,11 @@ Adaptive Security Response
   - High risk — multi-factor re-authentication challenge via OTP
   - Critical risk — forced session invalidation and termination
 
-Device Intelligence and Fingerprinting
-- Performs device profiling at session initialization to establish a trusted hardware baseline
-  - Screen size and resolution
-  - Browser agent, OS, and platform details
-  - Device type and hardware fingerprint
-- Any mid-session device anomaly is treated as a potential session hijacking attempt and escalated through the threat response pipeline
-- Admin dashboard provides real-time visibility into active sessions, risk scores, and detected anomalies
-- VM-based attack simulation using Kali Linux for testing and validation
----
+Device Intelligence and Session Integrity
+- Establishes a trusted device profile at session initialization by:
+- Continuously validates device consistency throughout the session
+- Flags any mid-session anomalies as potential session hijacking attempts
+- Provides real-time visibility into active sessions, risk scores, and anomalies through the admin dashboard
 
 ## Tech Stack
 
@@ -120,7 +116,6 @@ cd <project-folder>
 bash
 cd backend
 pip install -r requirements.txt
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
 python app.py
 
 
