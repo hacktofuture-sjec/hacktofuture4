@@ -1,0 +1,146 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main, "dev-*"]
+    paths:
+      - "backend/**"
+      - "agent-service/**"
+      - "requirements.txt"
+      - "uv.lock"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "agent-service/**"
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ── Lint ─────────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint & Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # --all-extras resolves all [project.optional-dependencies] incl. dev
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Black — backend
+        run: cd backend && uv run black --check .
+
+      - name: Flake8 — backend
+        run: cd backend && uv run flake8 .
+
+      - name: Black — agent-service
+        run: cd agent-service && uv run black --check .
+
+      - name: Flake8 — agent-service
+        run: cd agent-service && uv run flake8 .
+
+  # ── Backend Tests ─────────────────────────────────────────────────────────────
+  test-backend:
+    name: Backend Tests (pytest + Postgres 14)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14-alpine
+        env:
+          POSTGRES_DB: platform_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      SECRET_KEY: "ci-test-secret-key-not-for-production"
+      DEBUG: "True"
+      POSTGRES_DB: platform_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      REDIS_URL: "redis://localhost:6379/0"
+      CELERY_BROKER_URL: "redis://localhost:6379/0"
+      CELERY_RESULT_BACKEND: "redis://localhost:6379/1"
+      AGENT_SERVICE_URL: "http://localhost:8001"
+      AGENT_SERVICE_API_KEY: "ci-test-api-key"
+      OPENAI_API_KEY: "sk-ci-placeholder"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run migrations
+        run: cd backend && uv run python manage.py migrate --no-input
+
+      - name: Run pytest (backend)
+        run: |
+          cd backend
+          uv run pytest --tb=short -q \
+            --cov=. \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+
+  # ── Agent Tests ───────────────────────────────────────────────────────────────
+  test-agent:
+    name: Agent Service Tests (pytest-asyncio)
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: "sk-ci-placeholder"
+      DJANGO_API_BASE_URL: "http://localhost:8000"
+      DJANGO_API_KEY: "ci-test-api-key"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run pytest (agent-service)
+        run: cd agent-service && uv run pytest --tb=short -q

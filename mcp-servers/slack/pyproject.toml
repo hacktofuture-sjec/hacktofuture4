@@ -1,0 +1,19 @@
+[project]
+name = "slack-mcp-server"
+version = "1.0.0"
+description = "Slack MCP Server — channel messages and thread ingestion"
+requires-python = ">=3.11"
+
+dependencies = [
+    "fastmcp>=0.1.0",
+    "httpx>=0.25.2",
+    "python-dotenv>=1.0.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

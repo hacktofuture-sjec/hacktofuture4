@@ -1,0 +1,10 @@
+# Cloudflare Tunnel Configuration for VoxBridge
+# Place at: /etc/cloudflared/config.yml or use CLI flags
+
+tunnel: voxbridge-tunnel
+credentials-file: /home/rajan/.cloudflared/voxbridge-tunnel.json
+
+ingress:
+  - hostname: voxbridge.yourdomain.com
+    service: http://localhost:8000
+  - service: http_status:404

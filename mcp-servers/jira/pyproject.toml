@@ -1,0 +1,20 @@
+[project]
+name = "voice-to-action-jira-mcp"
+version = "0.1.0"
+description = "Jira MCP Server for Voice-to-Action"
+requires-python = ">=3.11"
+
+dependencies = [
+    "fastmcp>=0.1.0",
+    "fastapi>=0.104.1",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.5.2",
+    "python-dotenv>=1.0.0",
+    "httpx>=0.25.2",
+    "black>=24.1.1",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+include = '\.pyi?$'

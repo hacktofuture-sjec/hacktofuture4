@@ -1,0 +1,228 @@
+# version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Product Intelligence Platform — Docker Compose
+#
+# Services:
+#   postgres     — PostgreSQL 14 (required)
+#   redis        — Redis 7 (Celery broker + cache)
+#   backend      — Django 4.2 REST API server
+#   celery-worker — Celery worker (ingestion + processing + analytics queues)
+#   celery-beat  — Celery beat scheduler (periodic tasks)
+#   agent        — FastAPI LangGraph agent service
+#
+# Usage:
+#   cp .env.example .env && docker compose up --build
+# ─────────────────────────────────────────────────────────────────────────────
+
+x-backend-env: &backend-env
+  DJANGO_SETTINGS_MODULE: backend.settings
+  SECRET_KEY: ${SECRET_KEY:-django-insecure-dev-only-change-me}
+  DEBUG: ${DEBUG:-True}
+  POSTGRES_DB: ${POSTGRES_DB:-product_intelligence}
+  POSTGRES_USER: ${POSTGRES_USER:-postgres}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  REDIS_URL: redis://redis:6379/0
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: django-db
+  AGENT_SERVICE_URL: http://agent:8001
+  AGENT_SERVICE_API_KEY: ${AGENT_SERVICE_API_KEY:-dev-agent-key}
+  ALLOWED_HOSTS: "localhost,127.0.0.1,backend,0.0.0.0"
+
+x-agent-env: &agent-env
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  LLM_MODEL: ${LLM_MODEL:-gpt-4o}
+  LLM_TEMPERATURE: "0.0"
+  DJANGO_API_BASE_URL: http://backend:8000
+  DJANGO_API_KEY: ${AGENT_SERVICE_API_KEY:-dev-agent-key}
+  SERVICE_HOST: "0.0.0.0"
+  SERVICE_PORT: "8001"
+
+services:
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:14-alpine
+    container_name: pip_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-product_intelligence}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-product_intelligence}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - pip_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: pip_redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - pip_net
+
+  # ── Django Backend ──────────────────────────────────────────────────────────
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pip_backend
+    restart: unless-stopped
+    command: >
+      sh -c "
+        python manage.py migrate --noinput &&
+        python manage.py collectstatic --noinput --clear &&
+        gunicorn backend.wsgi:application
+          --bind 0.0.0.0:8000
+          --workers 4
+          --worker-class sync
+          --timeout 120
+          --access-logfile -
+          --error-logfile -
+          --log-level info
+      "
+    environment:
+      <<: *backend-env
+    volumes:
+      - backend_static:/app/staticfiles
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:8000/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - pip_net
+
+  # ── Celery Worker ────────────────────────────────────────────────────────────
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pip_celery_worker
+    restart: unless-stopped
+    command: >
+      celery -A backend worker
+        --loglevel=info
+        --concurrency=4
+        --queues=ingestion,processing,analytics
+        --hostname=worker@%h
+        --without-heartbeat
+        --without-gossip
+        --without-mingle
+    environment:
+      <<: *backend-env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    networks:
+      - pip_net
+
+  # ── Celery Beat (Scheduler) ─────────────────────────────────────────────────
+
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pip_celery_beat
+    restart: unless-stopped
+    command: >
+      celery -A backend beat
+        --loglevel=info
+        --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    environment:
+      <<: *backend-env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    networks:
+      - pip_net
+
+  # ── FastAPI Agent Service ───────────────────────────────────────────────────
+
+  agent:
+    build:
+      context: ./agent-service
+      dockerfile: Dockerfile
+    container_name: pip_agent
+    restart: unless-stopped
+    command: >
+      uvicorn src.main:app
+        --host 0.0.0.0
+        --port 8001
+        --workers 2
+        --loop asyncio
+        --access-log
+        --log-level info
+    environment:
+      <<: *agent-env
+    ports:
+      - "8001:8001"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:8001/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - pip_net
+
+# ── Volumes ─────────────────────────────────────────────────────────────────
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_static:
+    driver: local
+
+# ── Networks ────────────────────────────────────────────────────────────────
+
+networks:
+  pip_net:
+    driver: bridge
