@@ -1,0 +1,18 @@
+{
+  "failure_signature": "test:jest:assertion_error",
+  "failure_type": "test",
+  "source": "human",
+  "confidence": 0.85,
+  "fix_description": "Jest assertion failure in CI. Update the failing snapshot or fix the assertion. Run tests locally first to verify the fix.",
+  "fix_commands": [
+    "npm test -- --updateSnapshot",
+    "npm test -- --verbose 2>&1 | tail -50"
+  ],
+  "fix_diff": null,
+  "id": "091e6a5a-c910-427b-8ee2-8169c44217d0",
+  "created_at": "2026-04-16T04:08:08.772451",
+  "updated_at": "2026-04-16T04:08:08.772479",
+  "retrieval_count": 0,
+  "success_count": 0,
+  "reward_score": 0.0
+}

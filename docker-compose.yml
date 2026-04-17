@@ -1,0 +1,97 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# REKALL — Full-stack docker-compose (DB-free)
+#
+#   Services (3 only — no postgres, no chromadb):
+#     backend   — Go (Gin) API server
+#     engine    — Python FastAPI (AI agent + RLM orchestration)
+#     frontend  — Next.js 15
+#
+#   Shared vault volume:
+#     engine writes JSON to /app/vault/
+#     backend reads JSON from /app/vault/ (flat-file reader)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── Python engine service ──────────────────────────────────────────────────
+  engine:
+    build:
+      context: .
+      dockerfile: engine/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_API_KEYS: ${GROQ_API_KEYS:-}
+      GROQ_API_KEY_2: ${GROQ_API_KEY_2:-}
+      GROQ_API_KEY_3: ${GROQ_API_KEY_3:-}
+      GROQ_API_KEY_4: ${GROQ_API_KEY_4:-}
+      GROQ_API_KEY_5: ${GROQ_API_KEY_5:-}
+      GO_BACKEND_URL: http://backend:8000
+      VAULT_PATH: /app/vault
+      LOG_LEVEL: INFO
+      # GitHub integration — required for real CI failure fetch + PR creation
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_REPO: ${GITHUB_REPO}
+      GITHUB_LIVE_PR: ${GITHUB_LIVE_PR:-true}
+      # Optional integrations
+      INTEGRATIONS_ENABLED: ${INTEGRATIONS_ENABLED}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
+      NOTION_TOKEN: ${NOTION_TOKEN}
+      NOTION_DATABASE_ID: ${NOTION_DATABASE_ID}
+      # Minikube sandbox (optional — requires minikube + kubectl on PATH)
+      SANDBOX_ENABLED: ${SANDBOX_ENABLED:-false}
+      MINIKUBE_PROFILE: ${MINIKUBE_PROFILE:-rekall}
+      MINIKUBE_CPUS: ${MINIKUBE_CPUS:-4}
+      MINIKUBE_MEMORY: ${MINIKUBE_MEMORY:-8192}
+      SANDBOX_TIMEOUT: ${SANDBOX_TIMEOUT:-300}
+      SANDBOX_VALKEY_IMAGE: ${SANDBOX_VALKEY_IMAGE:-valkey/valkey:7.2-alpine}
+    volumes:
+      - ./vault:/app/vault
+    healthcheck:
+      test: [ "CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8002/health')\"" ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ── Go backend ────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      ENGINE_URL: http://engine:8002
+      VAULT_PATH: /app/vault
+      CORS_ORIGINS: http://localhost:3000
+      GIN_MODE: release
+      PORT: "8000"
+    volumes:
+      - ./vault:/app/vault:ro # read-only: engine owns writes
+    depends_on:
+      engine:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:8000/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # ── Next.js frontend ──────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NODE_ENV: production
+    depends_on:
+      backend:
+        condition: service_healthy

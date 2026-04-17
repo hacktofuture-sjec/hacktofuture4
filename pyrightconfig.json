@@ -1,0 +1,15 @@
+{
+  "pythonVersion": "3.12",
+  "pythonPlatform": "Linux",
+  "venvPath": ".",
+  "include": [
+    "rekall_engine",
+    "engine"
+  ],
+  "extraPaths": [
+    "."
+  ],
+  "reportMissingImports": "warning",
+  "reportMissingModuleSource": "none",
+  "typeCheckingMode": "basic"
+}

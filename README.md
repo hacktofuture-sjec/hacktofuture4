@@ -1,86 +1,201 @@
-# HackToFuture 4.0 — Template
+# REKALL — Agentic CI/CD Failure Remediation System
 
-Welcome to your official HackToFuture 4 repository.
+REKALL is an intelligent, agent-driven system that automatically resolves CI/CD pipeline failures with governance, safety checks, and optional sandbox validation.
 
-This repository template will be used for development, tracking progress, and final submission of your project. Ensure that all work is committed here within the allowed hackathon duration.
+## What is REKALL?
 
----
+REKALL is an Agentic CI/CD Orchestration Platform that monitors failing pipelines such as GitHub Actions, GitLab CI, and Jenkins, and performs the following:
 
-### Instructions for the teams:
+* Detects failures in real time
+* Diagnoses root causes using LLM-powered agents
+* Retrieves or generates fixes
+* Evaluates risk using governance scoring
+* Decides whether to auto-apply, create a pull request, or wait for human approval
+* Validates fixes in a sandbox before raising pull requests
+* Learns from outcomes to improve future fixes
 
-- Fork the Repository and name the forked repo in this convention: hacktofuture4-team_id (for eg: hacktofuture4-A01)
+## Why REKALL?
 
----
+CI/CD failures slow down development workflows and require significant manual debugging effort.
 
-## Rules
+REKALL addresses this by automating debugging, learning from past incidents, enforcing safety through governance checks, validating fixes before submission, and providing real-time visibility through a dashboard.
 
-- Work must be done ONLY in the forked repository
-- Only Four Contributors are allowed.
-- After 36 hours, Please make PR to the Main Repository. A Form will be sent to fill the required information.
-- Do not copy code from other teams
-- All commits must be from individual GitHub accounts
-- Please provide meaningful commits for tracking.
-- Do not share your repository with other teams
-- Final submission must be pushed before the deadline
-- Any violation may lead to disqualification
+## Architecture Overview
 
----
+```
+CI/CD Systems (GitHub / GitLab / Jenkins)
+                │
+                ▼
+        Go Backend (Gin)
+        - Webhooks
+        - SSE Streaming
+        - Incident Store
+                │
+                ▼
+     Python Engine (FastAPI)
+     - Agent Pipeline
+     - LLM Reasoning
+     - Fix Generation
+                │
+                ▼
+         Vault (JSON)
+     - Known fixes
+     - Learned fixes
+                │
+                ▼
+      Next.js Dashboard
+     - Live agent timeline
+     - Fix proposals
+     - Approval flow
+```
 
-# The Final README Template 
+## Core Pipeline
 
-## Problem Statement / Idea
+REKALL executes a structured multi-agent pipeline:
 
-Clearly describe the problem you are solving.
+1. MonitorAgent
+   Normalizes raw CI/CD failure data
 
-- What is the problem?
-- Why is it important?
-- Who are the target users?
+2. DiagnosticAgent
+   Extracts root cause signals using recursive log analysis
 
----
+3. FixAgent
+   Retrieves or generates fixes using a three-tier system
 
-## Proposed Solution
+   * T1 Human vault
+   * T2 Learned fixes
+   * T3 LLM-generated fixes
 
-Explain your approach:
+4. SimulationAgent
+   Optional counterfactual validation
 
-- What are you building?
-- How does it solve the problem?
-- What makes your solution unique?
+5. GovernanceAgent
+   Computes a risk score and determines the action
 
----
+6. PublishGuardAgent
+   Detects unsafe or potentially harmful commands
 
-## Features
+7. Execution Layer
+   Applies fixes or creates pull requests
 
-List the core features of your project:
+8. LearningAgent
+   Updates system knowledge based on outcomes
 
-- Feature 1
-- Feature 2
-- Feature 3
+## Sandbox Validation
 
----
+REKALL supports validation of fixes before raising pull requests using a Minikube sandbox environment.
+
+* Creates an isolated Kubernetes environment
+* Applies generated fixes
+* Runs CI tests inside the sandbox
+* Collects logs and results
+* Creates a pull request only if tests pass
+
+This ensures that proposed fixes are validated before human review.
 
 ## Tech Stack
 
-Mention all technologies used:
+| Layer     | Technology                    |
+| --------- | ----------------------------- |
+| Backend   | Go (Gin)                      |
+| Engine    | Python (FastAPI, Groq)        |
+| Frontend  | Next.js, TypeScript, Tailwind |
+| AI Layer  | Groq LLaMA models             |
+| Storage   | Flat-file JSON vault          |
+| Streaming | Server-Sent Events            |
+| Sandbox   | Minikube, Kubernetes, Valkey  |
 
-- Frontend:
-- Backend:
-- Database:
-- APIs / Services:
-- Tools / Libraries:
+## Features
 
----
+* Real-time incident tracking
+* Live agent timeline via SSE
+* Intelligent fix generation
+* Governance-based decision making
+* Human approval workflow
+* Self-learning vault system
+* Sandbox-based validation
+* Automated pull request creation
+* Optional Slack and Notion integrations
 
-## Project Setup Instructions
+## Getting Started
 
-Provide clear steps to run your project:
+### Clone the repository
 
 ```bash
-# Clone the repository
-git clone <repo-link>
-
-# Install dependencies
-...
-
-# Run the project
-...
+git clone https://github.com/your-username/rekall.git
+cd rekall
 ```
+
+### Setup environment
+
+```bash
+cp .env.example .env
+```
+
+Fill in required variables:
+
+```
+GROQ_API_KEY=your_key
+GITHUB_TOKEN=your_token
+GITHUB_REPO=owner/repo
+```
+
+### Run with Docker
+
+```bash
+make docker
+```
+
+Services will be available at:
+
+* Backend: http://localhost:8000
+* Engine: http://localhost:8002
+* Frontend: http://localhost:3000
+
+### Simulate failures
+
+```bash
+make simulate
+```
+
+Available scenarios:
+
+* postgres_refused
+* oom_kill
+* test_failure
+* secret_leak
+* image_pull_backoff
+
+## Dashboard
+
+* /dashboard provides an overview of incidents
+* /incidents/[id] shows a live agent execution timeline
+* Includes vault explorer and metrics
+
+## Vault System
+
+REKALL uses a flat-file JSON vault to store and retrieve fixes.
+
+* Stores known fixes
+* Learns from successful outcomes
+* Uses confidence scoring and reward signals
+* Promotes generated fixes into reusable entries
+
+## Governance Model
+
+Risk-based decision system:
+
+| Risk Score     | Action                 |
+| -------------- | ---------------------- |
+| less than 0.40 | Auto apply             |
+| less than 0.70 | Create pull request    |
+| 0.70 or higher | Block for human review |
+
+Factors include confidence, failure type, use of secrets, and branch sensitivity.
+
+## Safety
+
+* Detects potentially dangerous commands
+* Blocks unsafe automatic execution
+* Requires human approval for high-risk fixes
+* Uses sandbox validation as an additional safety layer
