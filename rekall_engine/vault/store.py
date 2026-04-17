@@ -58,6 +58,7 @@ class VaultStore:
     def _ensure_dirs(self) -> None:
         (self._root / "local").mkdir(parents=True, exist_ok=True)
         (self._root / "org").mkdir(parents=True, exist_ok=True)
+        (self._root / "rlm").mkdir(parents=True, exist_ok=True)
 
     def _scope_dir(self, scope: str = "local") -> Path:
         return self._root / scope

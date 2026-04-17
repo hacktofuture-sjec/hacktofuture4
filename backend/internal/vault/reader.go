@@ -70,7 +70,9 @@ func ListAll(source *string, limit, offset int) ([]*models.VaultEntry, error) {
 		return nil, err
 	}
 	org, _ := listEntries("org") // org vault is optional
+	rlm, _ := listEntries("rlm") // rlm vault is optional
 	all := append(local, org...)
+	all = append(all, rlm...)
 
 	// Filter by source if requested
 	if source != nil && *source != "" {

@@ -42,7 +42,7 @@ export default function IncidentDetailPage({
   const { id } = use(params);
   const [data,    setData]    = useState<Detail | null>(null);
   const [loading, setLoading] = useState(true);
-  const { logs, done, sandboxResult: liveSandbox } = useAgentStream(id);
+  const { logs, done, sandboxResult: liveSandbox, status: liveStatus } = useAgentStream(id);
 
   const fetchData = useCallback(async () => {
     try {
@@ -55,6 +55,7 @@ export default function IncidentDetailPage({
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { if (done) fetchData(); }, [done, fetchData]);
+  useEffect(() => { if (liveStatus) fetchData(); }, [liveStatus, fetchData]);
 
   if (loading) {
     return (

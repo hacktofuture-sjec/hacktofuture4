@@ -143,13 +143,18 @@ class FixAgent(BaseAgent):
         """
         candidates = []
 
-        # T1: Exact signature match (local, then org)
+        # T1: Exact signature match (local, then org, then rlm)
         entry = self._vault.get_by_signature(failure_signature, scope="local")
         if entry:
             candidates.append(entry)
 
         if not entry and engine_config.org_vault_enabled:
             entry = self._vault.get_by_signature(failure_signature, scope="org")
+            if entry:
+                candidates.append(entry)
+
+        if not entry:
+            entry = self._vault.get_by_signature(failure_signature, scope="rlm")
             if entry:
                 candidates.append(entry)
 
