@@ -34,7 +34,6 @@ Welcome to your official HackToFuture 4 repository.
 
 ## Project Setup Instructions
 
-```bash
 ## Step 1: Go to project root
 cd "Nova Chat"
 
@@ -165,4 +164,3 @@ curl http://localhost:3005/security/alerts
 ## Demo testing commands
 Trigger overload
 curl -X POST http://localhost:3002/simulate/overload
-```

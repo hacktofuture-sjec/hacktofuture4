@@ -91,7 +91,28 @@ router.post("/advanced-heal", async (req, res) => {
     });
   }
 });
+const { analyzeLogs } = require('../services/logAnalyzer');
 
+// GET /agent/log-analysis
+router.get('/log-analysis', (req, res) => {
+    // Simulated raw logs (Replace with real log fetching if you have it)
+    const mockRawLogs = [
+        "INFO: Service started",
+        "WARN: Retrying connection to DB...",
+        "ERROR: DB connection timeout",
+        "WARN: Retrying connection to DB...",
+        "ERROR: DB connection timeout",
+        "CRITICAL: Traffic Tsunami Detected! Memory overflowing...",
+        "ERROR: Out of memory (OOM)",
+        "INFO: Healthcheck ping ok"
+    ];
+    
+    // Generate 1000+ noisy logs to prove compression works
+    for(let i=0; i<1200; i++) mockRawLogs.push("INFO: Background job running perfectly...");
+
+    const analysisResult = analyzeLogs(mockRawLogs);
+    res.json(analysisResult);
+});
 router.post("/scale-heal", async (req, res) => {
   try {
     const result = await runScaleHeal();

@@ -13,8 +13,8 @@ spec:
         app: ml-service
     spec:
       containers:
-        - name: ml-service
-          image: nova-chat-ml-service:v2
-          imagePullPolicy: Never
-          ports:
-            - containerPort: 5050
+      - name: ml-container
+        image: ml-service:latest
+        imagePullPolicy: Never   # <-- YEH ZAROORI HAI
+        ports:
+           - containerPort: 5050
