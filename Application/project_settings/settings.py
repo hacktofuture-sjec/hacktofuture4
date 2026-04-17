@@ -107,8 +107,12 @@ STATICFILES_DIRS = [
 CONTENT_TYPES = ['video']
 MAX_UPLOAD_SIZE = "104857600"
 
-# Groq API Key for LLM Reasoning Agent
-GROQ_API_KEY = ""
+# Load environment variables from .env
+from dotenv import load_dotenv
+load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+# Groq API Key for LLM Reasoning Agent — loaded from .env
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
 MEDIA_URL = "/media/"
 
