@@ -36,15 +36,21 @@ DEFAULT_MAX_TOOL_ROUNDS = int(os.getenv("LERNA_AGENT_MAX_TOOL_ROUNDS", "12"))
 
 
 def _build_chat_model(model_name: str | None = None) -> ChatOpenAI:
-    if not DEFAULT_API_KEY:
+    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+    base_url = os.getenv("OPENROUTER_BASE_URL") or os.getenv("OPENAI_BASE_URL")
+    default_model = os.getenv("LERNA_AGENT_MODEL", DEFAULT_MODEL_NAME)
+
+    if not api_key:
         raise ValueError("OPENROUTER_API_KEY is not set (pass api_key= or set the env var).")
+
     max_tokens = int(os.getenv("LERNA_AGENT_MAX_TOKENS", "2048"))
+
     return ChatOpenAI(
-        model=model_name or DEFAULT_MODEL_NAME,
+        model=model_name or default_model,
         temperature=0.0,
         max_tokens=max_tokens,
-        api_key=DEFAULT_API_KEY,
-        base_url=DEFAULT_BASE_URL,
+        api_key=api_key,
+        base_url=base_url,
     )
 
 

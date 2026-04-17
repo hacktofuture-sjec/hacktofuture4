@@ -48,7 +48,7 @@ def _build_orchestrator_agent() -> Any:
     return _OrchestratorAgent()
 
 
-@lru_cache(maxsize=None)
+# @lru_cache(maxsize=None)
 def get_orchestrator_agent() -> Any:
     return _build_orchestrator_agent()
 
