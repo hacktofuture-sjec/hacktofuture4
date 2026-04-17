@@ -15,27 +15,40 @@ const TABS = [
   { id: 'enforcement',label: 'Enforcement',     icon: Lock },
 ]
 
-const NOISE = [
-  { process: 'workload-proxy',    action: 'sys_openat',   file: '/etc/resolv.conf',      matchAction: 'Allow' },
-  { process: 'sentinel-agent',   action: 'sys_read',     file: '/proc/self/status',     matchAction: 'Allow' },
-  { process: 'spire-agent',      action: 'sys_write',    file: '/var/log/spire.log',    matchAction: 'Allow' },
-  { process: 'analytics-engine', action: 'tcp_connect',  file: 'api.internal:443',      matchAction: 'Allow' },
-  { process: 'parseable',        action: 'sys_read',     file: '/var/lib/parseable/',   matchAction: 'Allow' },
-  { process: 'fluent-bit',       action: 'sys_write',    file: '/var/log/tetragon.log', matchAction: 'Allow' },
-]
+
 
 function mkLog(evt) {
-  return { ...evt, timestamp: new Date().toISOString(), pid: String(Math.floor(Math.random() * 9000) + 1000) }
+  return { ...evt, timestamp: new Date().toISOString(), pid: evt.pid ?? '' }
 }
 
 // ─── Biometric Step-Up Modal ────────────────────────────────────────
-function BiometricModal({ onApprove, onDeny }) {
-  const [scanPhase, setScanPhase] = useState(0) // 0=waiting, 1=scanning, 2=done
+function BiometricModal({ onApprove, onDeny, authToken }) {
+  const [isVerifying, setIsVerifying] = useState(false)
+  const [authError, setAuthError] = useState('')
+  const [otp, setOtp] = useState('')
 
-  useEffect(() => {
-    const t1 = setTimeout(() => setScanPhase(1), 800)
-    return () => clearTimeout(t1)
-  }, [])
+  const handleFaceIdVerify = async () => {
+    if (isVerifying || otp.trim().length < 6) return
+    setAuthError('')
+    setIsVerifying(true)
+    try {
+      const verifyRes = await fetch('/auth/step-up', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ otp: otp.trim() }),
+      })
+      const payload = await verifyRes.json().catch(() => ({}))
+      if (!verifyRes.ok) throw new Error(payload?.detail || 'Step-up verification failed')
+      onApprove('TOTP_MFA', payload.step_up_token)
+    } catch (err) {
+      setAuthError(err?.message || 'Step-up verification failed.')
+    } finally {
+      setIsVerifying(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
@@ -68,66 +81,36 @@ function BiometricModal({ onApprove, onDeny }) {
           {/* Body */}
           <div className="space-y-4">
             <div className="bg-black/40 rounded-xl p-4 border border-slate-700/50 font-mono text-[11px] space-y-2">
-              <p className="text-slate-500">// COMPOSITE PRINCIPAL VERIFICATION</p>
-              <p><span className="text-slate-500">Agent:</span> <span className="text-sky-400">SENTINEL-01</span></p>
-              <p><span className="text-slate-500">Action:</span> <span className="text-rose-400">file.read("/forbidden_secrets.txt")</span></p>
-              <p><span className="text-slate-500">Risk Level:</span> <span className="text-rose-500 font-bold">CRITICAL</span></p>
-              <p><span className="text-slate-500">Policy:</span> <span className="text-amber-400">Requires human biometric approval (WebAuthn L2)</span></p>
-            </div>
-
-            {/* Operator Device Posture */}
-            <div className="bg-slate-900/80 rounded-xl p-3 border border-slate-700/40">
-              <p className="text-[9px] font-black tracking-widest text-slate-400 mb-2.5">OPERATOR DEVICE POSTURE</p>
-              <div className="flex items-center gap-3">
-                {[
-                  { icon: Cpu, label: 'TPM 2.0: Verified' },
-                  { icon: MapPin, label: 'Location: Nominal' },
-                  { icon: Eye, label: 'Behavioral Biometrics: Active' },
-                ].map(d => (
-                  <div key={d.label} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/8 border border-emerald-500/20">
-                    <CheckCircle className="w-3 h-3 text-emerald-400 flex-shrink-0" />
-                    <span className="text-[9px] font-bold text-emerald-400 whitespace-nowrap">{d.label}</span>
-                  </div>
-                ))}
-              </div>
+              <p className="text-slate-500">// RISK-TRIGGERED STEP-UP VERIFICATION</p>
+              <p><span className="text-slate-500">Required Action:</span> <span className="text-amber-400">Enter live TOTP code</span></p>
+              <p><span className="text-slate-500">Policy:</span> <span className="text-rose-500 font-bold">BLOCK UNTIL VERIFIED STEP-UP TOKEN</span></p>
+              <p><span className="text-slate-500">Verification:</span> <span className="text-emerald-400">Server-side TOTP validation</span></p>
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed">
-              Agent <span className="text-sky-400 font-bold">SENTINEL-01</span> is requesting access to a{' '}
-              <span className="text-rose-400 font-bold">restricted resource</span>. This action requires{' '}
-              <span className="text-amber-400 font-bold">human biometric authorization</span> via WebAuthn before proceeding.
-              The Composite Principal model mandates both agent and human identity verification for high-risk operations.
+              The platform requires a real second-factor verification from the operator before this action may continue.
+              Enter a valid authenticator app code to mint a short-lived step-up token.
             </p>
 
-            {/* Biometric Scanner Visual */}
+            {/* Step-up Input */}
             <div className="bg-black/60 rounded-xl p-5 border border-slate-700/50 flex items-center gap-5">
               <div className="relative flex-shrink-0">
-                <div className={`w-16 h-16 rounded-xl border-2 flex items-center justify-center transition-all duration-700 ${
-                  scanPhase === 0 ? 'border-slate-700 bg-slate-900' :
-                  scanPhase === 1 ? 'border-amber-500/60 bg-amber-500/5 animate-pulse' :
-                  'border-emerald-500/60 bg-emerald-500/10'
-                }`}>
-                  <Fingerprint className={`w-8 h-8 transition-colors duration-700 ${
-                    scanPhase === 0 ? 'text-slate-700' :
-                    scanPhase === 1 ? 'text-amber-400' :
-                    'text-emerald-400'
-                  }`} />
+                <div className="w-16 h-16 rounded-xl border-2 border-emerald-500/60 bg-emerald-500/10 flex items-center justify-center">
+                  <Fingerprint className="w-8 h-8 text-emerald-400" />
                 </div>
-                {scanPhase >= 1 && (
-                  <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-amber-500 animate-ping" />
-                )}
               </div>
               <div className="flex-1">
-                <p className="text-[10px] font-black tracking-widest text-slate-300 mb-1">WEBAUTHN BIOMETRIC CHALLENGE</p>
-                <p className="text-[9px] text-slate-500 font-mono">
-                  {scanPhase === 0 ? 'Initializing secure context...' :
-                   scanPhase === 1 ? 'Awaiting biometric input — Touch ID / Face ID / Security Key...' :
-                   'Biometric verified ✓'}
-                </p>
+                <p className="text-[10px] font-black tracking-widest text-slate-300 mb-1">MFA CODE CHALLENGE</p>
+                <input
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, '').slice(0, 8))}
+                  placeholder="Enter 6-digit code"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-200 text-xs font-mono outline-none focus:border-emerald-500/50"
+                />
                 <div className="flex items-center gap-3 mt-2 text-[9px] text-slate-600">
-                  <span className="flex items-center gap-1"><Shield className="w-3 h-3" /> FIDO2</span>
-                  <span className="flex items-center gap-1"><Lock className="w-3 h-3" /> TLS 1.3</span>
-                  <span className="flex items-center gap-1"><Fingerprint className="w-3 h-3" /> Platform Auth</span>
+                  <span className="flex items-center gap-1"><Shield className="w-3 h-3" /> TOTP</span>
+                  <span className="flex items-center gap-1"><Lock className="w-3 h-3" /> JWT</span>
+                  <span className="flex items-center gap-1"><Fingerprint className="w-3 h-3" /> Step-up</span>
                 </div>
               </div>
             </div>
@@ -143,16 +126,21 @@ function BiometricModal({ onApprove, onDeny }) {
               DENY ACCESS & ISOLATE
             </button>
             <button
-              onClick={onApprove}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[10px] font-black tracking-widest bg-emerald-500/10 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20 transition-all"
+              onClick={handleFaceIdVerify}
+              disabled={isVerifying || otp.trim().length < 6}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[10px] font-black tracking-widest bg-emerald-500/10 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               <ShieldCheck className="w-4 h-4" />
-              APPROVE (SIMULATE TOUCH ID)
+              {isVerifying ? 'VERIFYING...' : 'VERIFY STEP-UP'}
             </button>
           </div>
 
+          {authError && (
+            <p className="text-[9px] text-rose-400 mt-3">{authError}</p>
+          )}
+
           <p className="text-center text-[8px] text-slate-700 mt-3 font-mono">
-            AEGIS-DID · Agentic Session Defender · Composite Principal · WebAuthn Level 2
+            AEGIS-DID · Agentic Session Defender · Composite Principal · Server-Verified MFA
           </p>
         </div>
       </div>
@@ -162,26 +150,54 @@ function BiometricModal({ onApprove, onDeny }) {
 
 // ─── Authentication Boot Screen ────────────────────────────────────────
 function AuthenticationScreen({ onComplete }) {
-  const [phase, setPhase] = useState(0) // 0=idle, 1=oidc, 2=spiffe, 3=success
+  const [checking, setChecking] = useState(false)
+  const [mode, setMode] = useState('login')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [otp, setOtp] = useState('')
+  const [message, setMessage] = useState('')
+  const [provisioning, setProvisioning] = useState(null)
 
-  // Auto-reset on login screen mount to clear any lingering attack state
-  useEffect(() => {
-    const resetState = async () => {
-      try {
-        await fetch('/aegis-sync/reset', { method: 'POST' })
-      } catch (e) {
-        console.warn('Reset endpoint unavailable')
-      }
+  const handleRegister = async () => {
+    if (checking) return
+    setChecking(true)
+    setMessage('')
+    setProvisioning(null)
+    try {
+      const registerRes = await fetch('/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password }),
+      })
+      const payload = await registerRes.json().catch(() => ({}))
+      if (!registerRes.ok) throw new Error(payload?.detail || 'Registration failed')
+      setProvisioning(payload)
+      setMessage('User registered. Save your TOTP secret and then log in.')
+    } catch (e) {
+      setMessage(e?.message || 'Registration failed')
+    } finally {
+      setChecking(false)
     }
-    resetState()
-  }, [])
+  }
 
-  const handleLogin = () => {
-    if (phase !== 0) return
-    setPhase(1)
-    setTimeout(() => setPhase(2), 1500)
-    setTimeout(() => setPhase(3), 3000)
-    setTimeout(() => onComplete(), 4500)
+  const handleLogin = async () => {
+    if (checking) return
+    setChecking(true)
+    setMessage('')
+    try {
+      const loginRes = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password, otp: otp.trim() }),
+      })
+      const payload = await loginRes.json().catch(() => ({}))
+      if (!loginRes.ok) throw new Error(payload?.detail || 'Login failed')
+      onComplete({ token: payload.access_token, username: username.trim() })
+    } catch (e) {
+      setMessage(e?.message || 'Login failed')
+    } finally {
+      setChecking(false)
+    }
   }
 
   return (
@@ -192,38 +208,68 @@ function AuthenticationScreen({ onComplete }) {
         <div className="text-center mb-8">
           <Shield className="w-16 h-16 text-sky-400 mx-auto mb-4" />
           <h1 className="text-2xl font-black tracking-widest text-white">AEGIS<span className="text-sky-400">-DID</span></h1>
-          <p className="text-xs text-slate-400 tracking-widest mt-2">AGENTIC SESSION DEFENDER</p>
+          <p className="text-xs text-slate-400 tracking-widest mt-2">LIVE SESSION CONNECTOR</p>
         </div>
 
-        {phase === 0 ? (
+        <div className="space-y-4 font-mono text-xs">
+          <div className="p-3 rounded-lg border border-slate-800 bg-slate-900/50 text-slate-400">
+            Real login is enforced with username/password + TOTP. No simulated auth path.
+          </div>
+
+          <div className="flex rounded-lg overflow-hidden border border-slate-700/60">
+            <button
+              className={`flex-1 py-2 text-[10px] tracking-widest font-black ${mode === 'login' ? 'bg-sky-600/30 text-sky-300' : 'bg-slate-900 text-slate-500'}`}
+              onClick={() => setMode('login')}
+            >
+              LOGIN
+            </button>
+            <button
+              className={`flex-1 py-2 text-[10px] tracking-widest font-black ${mode === 'register' ? 'bg-amber-600/30 text-amber-300' : 'bg-slate-900 text-slate-500'}`}
+              onClick={() => setMode('register')}
+            >
+              REGISTER
+            </button>
+          </div>
+
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Username"
+            className="w-full px-3 py-3 rounded-lg bg-slate-900 border border-slate-700 text-slate-200 outline-none"
+          />
+          <input
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            type="password"
+            placeholder={mode === 'register' ? 'Password (min 12 chars)' : 'Password'}
+            className="w-full px-3 py-3 rounded-lg bg-slate-900 border border-slate-700 text-slate-200 outline-none"
+          />
+          {mode === 'login' && (
+            <input
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, '').slice(0, 8))}
+              placeholder="TOTP code"
+              className="w-full px-3 py-3 rounded-lg bg-slate-900 border border-slate-700 text-slate-200 outline-none"
+            />
+          )}
+
           <button
-            onClick={handleLogin}
-            className="w-full py-4 px-6 bg-gradient-to-r from-sky-600 to-indigo-600 rounded-xl font-bold tracking-widest text-sm shadow-[0_0_20px_rgba(2,132,199,0.3)] hover:shadow-[0_0_30px_rgba(2,132,199,0.5)] transition-all flex items-center justify-center gap-3 animate-pulse-glow"
+            onClick={mode === 'login' ? handleLogin : handleRegister}
+            className="w-full py-4 px-6 bg-gradient-to-r from-sky-600 to-indigo-600 rounded-xl font-bold tracking-widest text-sm shadow-[0_0_20px_rgba(2,132,199,0.3)] hover:shadow-[0_0_30px_rgba(2,132,199,0.5)] transition-all flex items-center justify-center gap-3 animate-pulse-glow disabled:opacity-60"
+            disabled={checking}
           >
             <User className="w-5 h-5" />
-            Authenticate (Sarah_Admin)
+            {checking ? 'PROCESSING...' : mode === 'login' ? 'LOGIN WITH MFA' : 'CREATE USER'}
           </button>
-        ) : (
-          <div className="space-y-4 font-mono text-xs">
-            <div className={`p-3 rounded-lg border flex items-center gap-3 transition-colors duration-500 ${phase >= 1 ? 'border-sky-500/30 bg-sky-500/10 text-sky-400' : 'border-slate-800 bg-slate-900/50 text-slate-600'}`}>
-              <CheckCircle className={`w-4 h-4 transition-opacity duration-300 ${phase >= 1 ? 'opacity-100' : 'opacity-0'}`} />
-              [1] Generating OIDC Token (Human Auth)
+
+          {provisioning && (
+            <div className="text-[10px] text-amber-400 border border-amber-500/20 rounded-lg p-2 bg-amber-500/5">
+              <p className="font-bold mb-1">Save this TOTP secret:</p>
+              <p className="break-all">{provisioning.totp_secret}</p>
             </div>
-            <div className={`p-3 rounded-lg border flex items-center gap-3 transition-colors duration-500 ${phase >= 2 ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' : 'border-slate-800 bg-slate-900/50 text-slate-600'}`}>
-              <CheckCircle className={`w-4 h-4 transition-opacity duration-300 ${phase >= 2 ? 'opacity-100' : 'opacity-0'}`} />
-              [2] Binding to Workload (SENTINEL-01)
-            </div>
-            <div className={`p-3 rounded-lg border flex items-center gap-3 transition-colors duration-500 ${phase >= 3 ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' : 'border-slate-800 bg-slate-900/50 text-slate-600'}`}>
-              <CheckCircle className={`w-4 h-4 transition-opacity duration-300 ${phase >= 3 ? 'opacity-100' : 'opacity-0'}`} />
-              [3] Issuing Composite SPIFFE ID
-            </div>
-            {phase >= 3 && (
-              <div className="text-center text-[10px] text-emerald-500 tracking-widest animate-pulse mt-4">
-                AUTHENTICATION SUCCESSFUL. REDIRECTING...
-              </div>
-            )}
-          </div>
-        )}
+          )}
+          {message && <div className="text-center text-[10px] text-amber-400">{message}</div>}
+        </div>
       </div>
     </div>
   )
@@ -231,26 +277,28 @@ function AuthenticationScreen({ onComplete }) {
 
 // ─── Main Application ───────────────────────────────────────────────────────
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [authToken, setAuthToken] = useState('')
+  const [authUser, setAuthUser] = useState('')
   const [activeTab, setActiveTab] = useState('command')
-  const [trustScore, setTrustScore] = useState(94.2)
-  const [trustHistory, setTrustHistory] = useState(() =>
-    Array.from({ length: 30 }, (_, i) => ({
-      time: new Date(Date.now() - (30 - i) * 2000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      score: 88 + Math.random() * 11,
-    }))
-  )
-  const [auditLogs, setAuditLogs] = useState([mkLog(NOISE[0]), mkLog(NOISE[1])])
+  const [trustScore, setTrustScore] = useState(null)
+  const [trustHistory, setTrustHistory] = useState([])
+  const [auditLogs, setAuditLogs] = useState([])
   const [isUnderAttack, setIsUnderAttack] = useState(false)
   const [ambushStatus, setAmbushStatus] = useState('idle') // idle | pending_auth | running | done
   const [hitlDecision, setHitlDecision] = useState(null) // null | 'denied' | 'approved'
   const tickRef = useRef(0)
 
   // Human Identity State
-  const [humanTrustScore, setHumanTrustScore] = useState(99.8)
+  const [humanTrustScore, setHumanTrustScore] = useState(null)
   const [showBiometricPrompt, setShowBiometricPrompt] = useState(false)
   const [autonomyMode, setAutonomyMode] = useState('Assist') // Watch | Assist | Auto
-  const [behavioralEvents, setBehavioralEvents] = useState({ keystrokes: 342, mouseDistance: 18420, sessions: 1 })
+  const [behavioralEvents, setBehavioralEvents] = useState({ keystrokes: 0, mouseDistance: 0, sessions: 0 })
+
+  const getAuthHeaders = (extra = {}) => (
+    authToken
+      ? { ...extra, Authorization: `Bearer ${authToken}` }
+      : { ...extra }
+  )
 
   // Poll 1 — Trust Score
   useEffect(() => {
@@ -280,164 +328,136 @@ export default function App() {
   // Poll 2 — Audit Logs (Parseable) + background noise fallback
   useEffect(() => {
     const poll = async () => {
-      let gotReal = false
       try {
+        const parseableAuth = import.meta.env.VITE_PARSEABLE_BASIC_AUTH
         const res = await fetch('/api/v1/logstream/tetragon?limit=20', {
-          headers: { Authorization: 'Basic ' + btoa('admin:admin') },
+          headers: parseableAuth ? { Authorization: `Basic ${parseableAuth}` } : {},
         })
         if (res.ok) {
           const data = await res.json()
           if (Array.isArray(data) && data.length > 0) {
             setAuditLogs(data.slice().reverse())
-            gotReal = true
           }
         }
       } catch {}
-
-      if (!gotReal && !isUnderAttack) {
-        tickRef.current += 1
-        if (tickRef.current % 2 === 0) {
-          setAuditLogs(prev => [mkLog(NOISE[Math.floor(Math.random() * NOISE.length)]), ...prev].slice(0, 25))
-        }
-      }
     }
     poll()
     const id = setInterval(poll, 1000)
     return () => clearInterval(id)
   }, [isUnderAttack])
 
-  // Poll 3 — Continuous Behavioral Biometrics (Human Trust fluctuation)
-  useEffect(() => {
-    if (isUnderAttack) return
-    const id = setInterval(() => {
-      setHumanTrustScore(prev => {
-        const drift = (Math.random() - 0.48) * 0.3 // slight positive bias
-        return parseFloat(Math.min(99.9, Math.max(96.0, prev + drift)).toFixed(1))
-      })
-      setBehavioralEvents(prev => ({
-        keystrokes: prev.keystrokes + Math.floor(Math.random() * 8) + 1,
-        mouseDistance: prev.mouseDistance + Math.floor(Math.random() * 200) + 50,
-        sessions: prev.sessions,
-      }))
-    }, 3000)
-    return () => clearInterval(id)
-  }, [isUnderAttack])
 
-  // Kill Switch — watches for Sigkill in logs
-  useEffect(() => {
-    if (auditLogs.some(l => l.matchAction === 'Sigkill' || l.matchAction === 'SIGKILL')) {
-      setIsUnderAttack(true)
-      setAmbushStatus('done')
-    }
-  }, [auditLogs])
 
-  // Red Team Ambush — now gates through biometric modal
-  // Network Sync Listener for Cross-Laptop Presentation
+  // Poll for real incidents from backend
   useEffect(() => {
-    let interval = setInterval(async () => {
+    if (ambushStatus !== 'idle' || !authToken) return
+    const poll = async () => {
       try {
-        const res = await fetch('/aegis-sync/state')
-        const data = await res.json()
-        if (data.triggered && ambushStatus === 'idle') {
-          executeAmbush()
+        const res = await fetch('/incidents/active', { headers: getAuthHeaders() })
+        if (res.ok) {
+          const incident = await res.json()
+          if (incident && incident.id) {
+            setIsUnderAttack(true)
+            if (autonomyMode === 'Auto') {
+              handleBiometricDeny()
+            } else if (autonomyMode === 'Watch') {
+              setAmbushStatus('watch')
+            } else {
+              setAmbushStatus('pending_auth')
+              setShowBiometricPrompt(true)
+            }
+          }
         }
       } catch (e) { }
-    }, 500)
-    return () => clearInterval(interval)
-  }, [ambushStatus])
-
-  const executeAmbush = () => {
-    if (ambushStatus !== 'idle') return
-
-    if (autonomyMode === 'Auto') {
-      // Full AI Autonomy: Bypass HITL entirely and execute kill sequence
-      setAmbushStatus('running')
-      handleBiometricDeny() // Reusing the deny logic to trigger the SIGKILL
-    } else if (autonomyMode === 'Watch') {
-      // Passive Watch: Do not block automatically, wait for manual override
-      setIsUnderAttack(true)
-      setAmbushStatus('watch')
-      try { fetch('/aegis-sync/defend', { method: 'POST', body: JSON.stringify({ status: 'pending' }) }) } catch {}
-    } else {
-      // Assist: Standard Human-in-the-Loop 
-      setAmbushStatus('pending_auth')
-      setShowBiometricPrompt(true)
-      try { fetch('/aegis-sync/defend', { method: 'POST', body: JSON.stringify({ status: 'pending' }) }) } catch {}
     }
-  }
+    const interval = setInterval(poll, 2000)
+    return () => clearInterval(interval)
+  }, [ambushStatus, autonomyMode, authToken])
 
-  // HITL: Deny Access & Isolate
-  const handleBiometricDeny = () => {
+
+
+  // HITL: Deny Access & Isolate — sends real enforcement decision to backend
+  const handleBiometricDeny = async () => {
     setShowBiometricPrompt(false)
     setHitlDecision('denied')
-    setHumanTrustScore(99.9) // elevated — operator acted correctly
+    setHumanTrustScore(99.9)
     setAmbushStatus('running')
 
-    try { fetch('/analytics/trigger_attack', { method: 'POST' }) } catch {}
-    try { fetch('/aegis-sync/defend', { method: 'POST', body: JSON.stringify({ status: 'killed' }) }) } catch {}
+    // Send enforcement decision to backend
+    try {
+      await fetch('/enforce/decision', {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ decision: 'DENY', reason: 'HITL rejection', timestamp: new Date().toISOString() })
+      })
+    } catch (e) {
+      console.error('Failed to send enforcement decision:', e)
+    }
 
     setActiveTab('telemetry')
     setTimeout(() => {
       setAuditLogs(prev => [
-        mkLog({ process: 'HITL-DENY', action: 'Step-Up MFA REJECTED by Sarah_Admin', file: '/forbidden_secrets.txt', matchAction: 'Sigkill', pid: '4721' }),
-        mkLog({ process: 'rogue-agent', action: 'sys_openat', file: '/forbidden_secrets.txt', matchAction: 'Sigkill', pid: '4721' }),
+        mkLog({ process: 'HITL-DENY', action: 'Step-Up MFA REJECTED by live operator', file: '/restricted-resource', matchAction: 'Sigkill', pid: '—' }),
+        mkLog({ process: 'enforcement', action: 'Backend enforcement applied', file: '/api/enforce', matchAction: 'DENY', pid: '—' }),
         ...prev,
       ].slice(0, 25))
-      setIsUnderAttack(true)
-      setTrustScore(8.3)
-      setTrustHistory(prev => [...prev, { time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }), score: 8.3 }])
     }, 1200)
 
-    setTimeout(() => setActiveTab('analytics'), 3000)
-    setTimeout(() => { setActiveTab('enforcement'); setAmbushStatus('done') }, 5000)
+    setTimeout(() => { setActiveTab('enforcement'); setAmbushStatus('done') }, 3000)
   }
 
-  // HITL: Approve (simulate — still triggers attack for demo, but as an approved action)
-  const handleBiometricApprove = () => {
+  // HITL: Approve — sends real approval decision to backend with real auth method
+  const handleBiometricApprove = async (approvalMode = 'TOTP_MFA', stepUpToken = null) => {
     setShowBiometricPrompt(false)
     setHitlDecision('approved')
-    setHumanTrustScore(42.1) // drops — operator approved a dangerous action
+    setHumanTrustScore(85)
     setAmbushStatus('running')
 
-    try { fetch('/analytics/trigger_attack', { method: 'POST' }) } catch {}
+    // Send enforcement decision to backend with real auth method
+    try {
+      await fetch('/enforce/decision', {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ decision: 'ALLOW', reason: 'HITL approval with MFA', authMethod: approvalMode, stepUpToken, timestamp: new Date().toISOString() })
+      })
+    } catch (e) {
+      console.error('Failed to send enforcement decision:', e)
+    }
 
     setActiveTab('telemetry')
     setTimeout(() => {
       setAuditLogs(prev => [
-        mkLog({ process: 'HITL-APPROVE', action: 'Step-Up MFA APPROVED by Sarah_Admin — MONITORING', file: '/forbidden_secrets.txt', matchAction: 'Allow', pid: '4721' }),
-        mkLog({ process: 'rogue-agent', action: 'sys_openat', file: '/forbidden_secrets.txt', matchAction: 'Sigkill', pid: '4721' }),
+        mkLog({ process: 'HITL-APPROVE', action: `Step-Up MFA APPROVED by live operator via ${approvalMode}`, file: '/restricted-resource', matchAction: 'Allow', pid: '—' }),
+        mkLog({ process: 'enforcement', action: 'Backend enforcement applied', file: '/api/enforce', matchAction: 'ALLOW', pid: '—' }),
         ...prev,
       ].slice(0, 25))
-      setIsUnderAttack(true)
-      setTrustScore(8.3)
-      setTrustHistory(prev => [...prev, { time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }), score: 8.3 }])
-    }, 1500)
+    }, 1200)
 
-    setTimeout(() => setActiveTab('analytics'), 3500)
-    setTimeout(() => { setActiveTab('enforcement'); setAmbushStatus('done') }, 5500)
+    setTimeout(() => { setActiveTab('enforcement'); setAmbushStatus('done') }, 3000)
   }
 
   const resetSystem = async () => {
-    setTrustScore(99.8)
+    setTrustScore(null)
     setIsUnderAttack(false)
     setAmbushStatus('idle')
     setShowBiometricPrompt(false)
     setHitlDecision(null)
     setAuditLogs([])
-    try { await fetch('/aegis-sync/reset', { method: 'POST' }) } catch {}
-    setHumanTrustScore(99.8)
-    setAuditLogs([mkLog(NOISE[0])])
+    setHumanTrustScore(null)
+    setBehavioralEvents({ keystrokes: 0, mouseDistance: 0, sessions: 0 })
     setActiveTab('command')
-    setTrustHistory(Array.from({ length: 30 }, (_, i) => ({
-      time: new Date(Date.now() - (30 - i) * 2000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      score: 88 + Math.random() * 11,
-    })))
+    setTrustHistory([])
+    // Send reset signal to backend
+    try { await fetch('/enforce/reset', { method: 'POST', headers: getAuthHeaders() }) } catch {}
   }
 
   // Composite Trust = weighted combination of agent + human
   const compositeTrust = isUnderAttack
-    ? parseFloat((trustScore * 0.6 + humanTrustScore * 0.4).toFixed(1))
-    : parseFloat((trustScore * 0.5 + humanTrustScore * 0.5).toFixed(1))
+    ? null
+    : null
+
+  const displayTrustScore = trustScore === null ? '—' : `${trustScore}%`
+  const displayHumanTrust = humanTrustScore === null ? '—' : `${humanTrustScore}%`
 
   const views = {
     command:     <CommandCenter trustScore={trustScore} trustHistory={trustHistory} isUnderAttack={isUnderAttack} humanTrustScore={humanTrustScore} compositeTrust={compositeTrust} behavioralEvents={behavioralEvents} autonomyMode={autonomyMode} />,
@@ -452,8 +472,15 @@ export default function App() {
     return <HackerTerminal />
   }
 
-  if (!isAuthenticated) {
-    return <AuthenticationScreen onComplete={() => setIsAuthenticated(true)} />
+  if (!authToken) {
+    return (
+      <AuthenticationScreen
+        onComplete={({ token, username }) => {
+          setAuthToken(token)
+          setAuthUser(username)
+        }}
+      />
+    )
   }
 
   return (
@@ -466,7 +493,7 @@ export default function App() {
 
       {/* Biometric Modal */}
       {showBiometricPrompt && (
-        <BiometricModal onApprove={handleBiometricApprove} onDeny={handleBiometricDeny} />
+        <BiometricModal onApprove={handleBiometricApprove} onDeny={handleBiometricDeny} authToken={authToken} />
       )}
 
       {/* Header */}
@@ -511,10 +538,11 @@ export default function App() {
                 <User className="w-3.5 h-3.5 text-violet-400" />
               </div>
               <div className="leading-tight">
-                <p className="text-[9px] font-black tracking-widest text-slate-300">Sarah_Admin</p>
+                <p className="text-[9px] font-black tracking-widest text-slate-300">Live operator</p>
                 <div className="flex items-center gap-2 text-[8px] text-slate-500">
-                  <span className={`font-bold ${humanTrustScore > 90 ? 'text-emerald-400' : humanTrustScore > 50 ? 'text-amber-400' : 'text-rose-500'}`}>
-                    TRUST: {humanTrustScore}%
+                  <span className="text-sky-400">USER: {authUser}</span>
+                  <span className={`font-bold ${humanTrustScore === null ? 'text-slate-500' : humanTrustScore > 90 ? 'text-emerald-400' : humanTrustScore > 50 ? 'text-amber-400' : 'text-rose-500'}`}>
+                    TRUST: {displayHumanTrust}
                   </span>
                   <span className="flex items-center gap-0.5 text-violet-400">
                     <MousePointer2 className="w-2.5 h-2.5" />
@@ -558,11 +586,11 @@ export default function App() {
               </button>
             ) : ambushStatus === 'idle' ? (
               <button
-                onClick={executeAmbush}
-                className="flex items-center gap-2 px-3 py-2 text-[10px] font-black tracking-widest bg-rose-600/10 border border-rose-600/40 text-rose-500 rounded-lg hover:bg-rose-600/20 transition-all"
+                onClick={() => setAmbushStatus('idle')}
+                className="flex items-center gap-2 px-3 py-2 text-[10px] font-black tracking-widest bg-emerald-600/10 border border-emerald-600/40 text-emerald-500 rounded-lg hover:bg-emerald-600/20 transition-all"
               >
                 <ShieldAlert className="w-3 h-3" />
-                SIMULATE STOLEN SESSION
+                MONITORING FOR INCIDENTS...
               </button>
             ) : ambushStatus === 'pending_auth' ? (
               <span className="px-3 py-2 text-[10px] font-black text-amber-400 animate-pulse tracking-widest">
@@ -597,12 +625,12 @@ export default function App() {
           <span>● PARSEABLE:CONNECTED</span>
           <span>● OPA:ARMED</span>
           <span>● FASTAPI:ONLINE</span>
-          <span className="text-violet-400">● WEBAUTHN:READY</span>
+          <span className="text-violet-400">● MFA:TOTP</span>
         </div>
         <div className="flex items-center gap-5">
-          <span>AGENT TRUST: {trustScore}%</span>
-          <span className={humanTrustScore > 90 ? 'text-emerald-500' : humanTrustScore > 50 ? 'text-amber-400' : 'text-rose-500'}>
-            HUMAN TRUST: {humanTrustScore}%
+          <span>AGENT TRUST: {displayTrustScore}</span>
+          <span className={humanTrustScore === null ? 'text-slate-500' : humanTrustScore > 90 ? 'text-emerald-500' : humanTrustScore > 50 ? 'text-amber-400' : 'text-rose-500'}>
+            HUMAN TRUST: {displayHumanTrust}
           </span>
           <span className={isUnderAttack ? 'text-rose-500 font-bold animate-pulse' : 'text-emerald-500'}>
             {isUnderAttack ? 'UNDER ATTACK' : 'NOMINAL'}

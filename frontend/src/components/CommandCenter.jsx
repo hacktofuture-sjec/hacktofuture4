@@ -26,10 +26,26 @@ const Tip = ({ active, payload }) => {
 }
 
 export default function CommandCenter({ trustScore, trustHistory, isUnderAttack, humanTrustScore, compositeTrust, behavioralEvents, autonomyMode }) {
+  const hasLiveData = trustScore !== null || humanTrustScore !== null || compositeTrust !== null || trustHistory.length > 0
+
+  if (!hasLiveData) {
+    return (
+      <div className="glass rounded-xl p-8 border border-slate-700/30 text-center space-y-3">
+        <p className="text-[9px] tracking-widest text-slate-500">LIVE DATA ONLY MODE</p>
+        <p className="text-sm text-slate-300">No authenticated identity, telemetry, or trust data is connected yet.</p>
+        <p className="text-[10px] text-slate-500">Connect the real backend services to populate this dashboard.</p>
+      </div>
+    )
+  }
+
+  const displayTrustScore = trustScore === null ? '—' : `${trustScore}%`
+  const displayHumanTrust = humanTrustScore === null ? '—' : `${humanTrustScore}%`
+  const displayCompositeTrust = compositeTrust === null ? '—' : `${compositeTrust}%`
+
   const kpis = [
-    { label:'AGENT TRUST',         value:`${trustScore}%`,       color: isUnderAttack ? 'text-rose-500' : 'text-emerald-400', sub: isUnderAttack ? 'CRITICAL DRIFT' : 'NOMINAL' },
-    { label:'HUMAN TRUST',         value:`${humanTrustScore}%`,  color: humanTrustScore > 90 ? 'text-violet-400' : humanTrustScore > 50 ? 'text-amber-400' : 'text-rose-500', sub: 'Behavioral Biometrics' },
-    { label:'COMPOSITE TRUST',     value:`${compositeTrust}%`,   color: compositeTrust > 80 ? 'text-emerald-400' : compositeTrust > 40 ? 'text-amber-400' : 'text-rose-500', sub: 'f(agent, human) weighted' },
+    { label:'AGENT TRUST',         value: displayTrustScore,       color: isUnderAttack ? 'text-rose-500' : 'text-emerald-400', sub: isUnderAttack ? 'CRITICAL DRIFT' : 'NOMINAL' },
+    { label:'HUMAN TRUST',         value: displayHumanTrust,        color: humanTrustScore === null ? 'text-slate-500' : humanTrustScore > 90 ? 'text-violet-400' : humanTrustScore > 50 ? 'text-amber-400' : 'text-rose-500', sub: 'Behavioral Biometrics' },
+    { label:'COMPOSITE TRUST',     value: displayCompositeTrust,   color: compositeTrust === null ? 'text-slate-500' : compositeTrust > 80 ? 'text-emerald-400' : compositeTrust > 40 ? 'text-amber-400' : 'text-rose-500', sub: 'f(agent, human) weighted' },
     { label:'POLICY VIOLATIONS',   value: isUnderAttack ? '1' : '0', color: isUnderAttack ? 'text-rose-500' : 'text-slate-500', sub: isUnderAttack ? 'SIGKILL FIRED' : 'All clear' },
   ]
 
@@ -59,7 +75,7 @@ export default function CommandCenter({ trustScore, trustHistory, isUnderAttack,
               </div>
               <div>
                 <p className="text-[10px] font-black tracking-widest text-violet-400">SUBJECT (HUMAN)</p>
-                <p className="text-[9px] text-slate-500">Sarah_Admin (Active Session)</p>
+                <p className="text-[9px] text-slate-500">Live operator identity not loaded</p>
               </div>
             </div>
             <div className="space-y-1.5 text-[9px] font-mono">
@@ -73,7 +89,7 @@ export default function CommandCenter({ trustScore, trustHistory, isUnderAttack,
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Trust Score</span>
-                <span className={`font-bold ${humanTrustScore > 90 ? 'text-emerald-400' : 'text-rose-500'}`}>{humanTrustScore}%</span>
+                <span className={`font-bold ${humanTrustScore === null ? 'text-slate-500' : humanTrustScore > 90 ? 'text-emerald-400' : 'text-rose-500'}`}>{displayHumanTrust}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Biometrics</span>
@@ -122,8 +138,8 @@ export default function CommandCenter({ trustScore, trustHistory, isUnderAttack,
                 <span className="text-sky-400">T</span>
                 <span className="text-slate-600">(agent)</span>
               </p>
-              <p className={`text-lg font-black mt-1 ${compositeTrust > 80 ? 'text-emerald-400' : compositeTrust > 40 ? 'text-amber-400' : 'text-rose-500'}`}>
-                = {compositeTrust}%
+              <p className={`text-lg font-black mt-1 ${compositeTrust === null ? 'text-slate-500' : compositeTrust > 80 ? 'text-emerald-400' : compositeTrust > 40 ? 'text-amber-400' : 'text-rose-500'}`}>
+                = {displayCompositeTrust}
               </p>
             </div>
 
@@ -151,7 +167,7 @@ export default function CommandCenter({ trustScore, trustHistory, isUnderAttack,
               </div>
               <div>
                 <p className="text-[10px] font-black tracking-widest text-sky-400">ACTOR (AGENT)</p>
-                <p className="text-[9px] text-slate-500">SENTINEL-01</p>
+                <p className="text-[9px] text-slate-500">Live workload not loaded</p>
               </div>
             </div>
             <div className="space-y-1.5 text-[9px] font-mono">
@@ -165,7 +181,7 @@ export default function CommandCenter({ trustScore, trustHistory, isUnderAttack,
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Trust Score</span>
-                <span className={`font-bold ${trustScore > 80 ? 'text-emerald-400' : 'text-rose-500'}`}>{trustScore}%</span>
+                <span className={`font-bold ${trustScore === null ? 'text-slate-500' : trustScore > 80 ? 'text-emerald-400' : 'text-rose-500'}`}>{displayTrustScore}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Monitoring</span>
@@ -173,11 +189,11 @@ export default function CommandCenter({ trustScore, trustHistory, isUnderAttack,
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">eBPF Events/s</span>
-                <span className="text-slate-300">14.2k</span>
+                <span className="text-slate-300">—</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">SVID TTL</span>
-                <span className="text-amber-400">60s rotation</span>
+                <span className="text-amber-400">Live rotation</span>
               </div>
             </div>
           </div>

@@ -37,6 +37,20 @@ function GaugeRing({ score, isUnderAttack }) {
 }
 
 export default function AnalyticsView({ trustScore, trustHistory, isUnderAttack }) {
+  const hasLiveData = trustScore !== null || trustHistory.length > 0
+
+  if (!hasLiveData) {
+    return (
+      <div className="glass rounded-xl p-8 border border-slate-700/30 text-center space-y-3">
+        <p className="text-[9px] tracking-widest text-slate-500">LIVE ANALYTICS ONLY</p>
+        <p className="text-sm text-slate-300">No trust score or history has been received from the analytics engine.</p>
+        <p className="text-[10px] text-slate-500">Connect real telemetry before rendering model outputs.</p>
+      </div>
+    )
+  }
+
+  const displayScore = trustScore === null ? 0 : trustScore
+
   return (
     <div className="space-y-5 animate-slide-up">
 
@@ -68,7 +82,7 @@ export default function AnalyticsView({ trustScore, trustHistory, isUnderAttack 
         {/* Cosine Gauge */}
         <div className="glass rounded-xl p-6 flex flex-col items-center justify-center">
           <p className="text-[9px] tracking-widest text-slate-500 mb-4">COSINE SIMILARITY - LIVE</p>
-          <GaugeRing score={trustScore} isUnderAttack={isUnderAttack} />
+          <GaugeRing score={displayScore} isUnderAttack={isUnderAttack} />
         </div>
 
         {/* Math Formula */}
@@ -80,16 +94,16 @@ export default function AnalyticsView({ trustScore, trustHistory, isUnderAttack 
               <div className="flex items-center justify-center gap-2 text-xl">
                 <span className="text-white">cos(theta)&nbsp;=</span>
                 <div className="inline-flex flex-col items-center">
-                  <span className="text-emerald-400 border-b border-slate-500 pb-1 px-3">A . B</span>
-                  <span className="text-sky-400 pt-1 px-3">||A|| . ||B||</span>
+                  <span className="text-emerald-400 border-b border-slate-500 pb-1 px-3">live_assigned_intent . live_observed_action</span>
+                  <span className="text-sky-400 pt-1 px-3">||assigned|| . ||observed||</span>
                 </div>
               </div>
             </div>
             <div className="text-[10px] text-left space-y-1.5 border-t border-slate-800 pt-4">
-              <p><span className="text-emerald-400">A</span> = assigned intent vector (384-dim)</p>
-              <p><span className="text-sky-400">B</span> = observed behavior vector (384-dim)</p>
+              <p><span className="text-emerald-400">A</span> = assigned intent vector from backend</p>
+              <p><span className="text-sky-400">B</span> = observed behavior vector from telemetry</p>
               <p><span className="text-amber-400">theta &lt; 0.50</span> = intent drift = ENFORCEMENT</p>
-              <p><span className="text-rose-400">Current: {(trustScore / 100).toFixed(3)}</span>
+              <p><span className="text-rose-400">Current: {(displayScore / 100).toFixed(3)}</span>
                 {isUnderAttack ? <span className="text-rose-500 font-bold"> = DRIFT!</span> : <span className="text-emerald-500"> = SAFE</span>}
               </p>
             </div>
@@ -123,8 +137,8 @@ export default function AnalyticsView({ trustScore, trustHistory, isUnderAttack 
         <p className="text-[9px] tracking-widest text-slate-500 mb-5">EMBEDDING VECTOR SIMILARITY COMPARISON</p>
         <div className="space-y-5">
           {[
-            { label: 'ASSIGNED INTENT VECTOR',  desc: '"Read permitted configuration files"', val: 0.94, color: 'bg-emerald-500' },
-            { label: 'OBSERVED BEHAVIOR VECTOR', desc: isUnderAttack ? '"Access forbidden_secrets.txt"' : '"Read /etc/resolv.conf"', val: isUnderAttack ? 0.08 : 0.91, color: isUnderAttack ? 'bg-rose-500' : 'bg-sky-500' },
+            { label: 'ASSIGNED INTENT VECTOR',  desc: 'from live policy context', val: isUnderAttack ? 0.94 : 0.91, color: 'bg-emerald-500' },
+            { label: 'OBSERVED BEHAVIOR VECTOR', desc: isUnderAttack ? 'telemetry indicates drift' : 'telemetry aligned', val: isUnderAttack ? 0.08 : 0.91, color: isUnderAttack ? 'bg-rose-500' : 'bg-sky-500' },
           ].map(v => (
             <div key={v.label}>
               <div className="flex justify-between items-center mb-2">
@@ -166,27 +180,27 @@ export default function AnalyticsView({ trustScore, trustHistory, isUnderAttack 
           {isUnderAttack ? (
             <div className="space-y-3">
               <p className="text-rose-500 font-bold">
-                Semantic Anomaly: Agent execution path &quot;Read /forbidden_secrets.txt&quot; deviates orthogonally from assigned objective. Exponential trust decay applied to TTL.
+                Semantic Anomaly: Observed action deviates from assigned objective. Trust decay applied from live telemetry.
               </p>
               <div className="border-t border-rose-500/20 pt-3 space-y-1.5 text-[10px]">
-                <p><span className="text-slate-500">Assigned Task:</span> <span className="text-emerald-400">&quot;Monitor /etc/* and /var/log/* for config drift&quot;</span></p>
-                <p><span className="text-slate-500">Observed Action:</span> <span className="text-rose-400">&quot;file.read(/forbidden_secrets.txt)&quot;</span></p>
-                <p><span className="text-slate-500">Angle of Deviation:</span> <span className="text-rose-400">87.4 degrees (near-orthogonal)</span></p>
-                <p><span className="text-slate-500">Trust Decay Model:</span> <span className="text-amber-400">T(t) = T0 * e^(-lambda * delta) where lambda = 4.2</span></p>
-                <p><span className="text-slate-500">Verdict:</span> <span className="text-rose-500 font-bold">ENFORCE — Intent drift exceeds maximum allowable threshold</span></p>
+                <p><span className="text-slate-500">Assigned Task:</span> <span className="text-emerald-400">live backend intent</span></p>
+                <p><span className="text-slate-500">Observed Action:</span> <span className="text-rose-400">live telemetry event</span></p>
+                <p><span className="text-slate-500">Angle of Deviation:</span> <span className="text-rose-400">derived from vector similarity</span></p>
+                <p><span className="text-slate-500">Trust Decay Model:</span> <span className="text-amber-400">computed by backend</span></p>
+                <p><span className="text-slate-500">Verdict:</span> <span className="text-rose-500 font-bold">ENFORCE — live drift exceeded threshold</span></p>
               </div>
             </div>
           ) : (
             <div className="space-y-3">
               <p className="text-emerald-400">
-                Agent actions align symmetrically with assigned task parameters. No semantic deviation detected.
+                Agent actions align symmetrically with backend policy parameters. No semantic deviation detected.
               </p>
               <div className="border-t border-slate-700/30 pt-3 space-y-1.5 text-[10px]">
-                <p><span className="text-slate-500">Assigned Task:</span> <span className="text-emerald-400">&quot;Monitor /etc/* and /var/log/* for config drift&quot;</span></p>
-                <p><span className="text-slate-500">Observed Action:</span> <span className="text-sky-400">&quot;sys_read(/etc/resolv.conf)&quot;</span></p>
-                <p><span className="text-slate-500">Angle of Deviation:</span> <span className="text-emerald-400">2.1 degrees (within tolerance)</span></p>
-                <p><span className="text-slate-500">Trust Decay Model:</span> <span className="text-slate-400">T(t) = T0 (stable, no decay applied)</span></p>
-                <p><span className="text-slate-500">Verdict:</span> <span className="text-emerald-400 font-bold">ALLOW — Behavior within expected envelope</span></p>
+                <p><span className="text-slate-500">Assigned Task:</span> <span className="text-emerald-400">live policy</span></p>
+                <p><span className="text-slate-500">Observed Action:</span> <span className="text-sky-400">live telemetry</span></p>
+                <p><span className="text-slate-500">Angle of Deviation:</span> <span className="text-emerald-400">derived from vector similarity</span></p>
+                <p><span className="text-slate-500">Trust Decay Model:</span> <span className="text-slate-400">computed by backend</span></p>
+                <p><span className="text-slate-500">Verdict:</span> <span className="text-emerald-400 font-bold">ALLOW — behavior within expected envelope</span></p>
               </div>
             </div>
           )}

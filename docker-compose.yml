@@ -19,7 +19,7 @@ services:
       - ./conf/agent/agent.conf:/opt/spire/conf/agent/agent.conf:ro
       - spire-agent-socket:/opt/spire/sockets
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    command: ["-config", "/opt/spire/conf/agent/agent.conf", "-joinToken", "1d1c54a1-98a3-43ed-833f-b0a29797f920"]
+    command: ["-config", "/opt/spire/conf/agent/agent.conf", "-joinToken", "${SPIRE_JOIN_TOKEN:?SPIRE_JOIN_TOKEN must be set}"]
 
   mock-agent:
     build:
@@ -60,8 +60,8 @@ services:
     ports:
       - "8081:8000"
     environment:
-      - P_USERNAME=admin
-      - P_PASSWORD=admin
+      - P_USERNAME=${PARSEABLE_USERNAME:?PARSEABLE_USERNAME must be set}
+      - P_PASSWORD=${PARSEABLE_PASSWORD:?PARSEABLE_PASSWORD must be set}
       - P_STAGING_DIR=/parseable/staging
       - P_FS_DIR=/parseable/data
     command: ["parseable", "local-store"]
@@ -73,6 +73,8 @@ services:
   fluent-bit:
     image: fluent/fluent-bit:3.0.4
     container_name: fluent-bit
+    environment:
+      - PARSEABLE_BASIC_AUTH=${PARSEABLE_BASIC_AUTH:?PARSEABLE_BASIC_AUTH must be set}
     volumes:
       - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
       - /var/run/docker.sock:/var/run/docker.sock
@@ -81,13 +83,46 @@ services:
       - parseable
       - tetragon
 
+  tetragon-processor:
+    build:
+      context: .
+      dockerfile: Dockerfile.tetragon-processor
+    container_name: tetragon-processor
+    depends_on:
+      - parseable
+      - analytics-engine
+    environment:
+      - PARSEABLE_URL=http://parseable:8000
+      - PARSEABLE_USERNAME=${PARSEABLE_USERNAME:?PARSEABLE_USERNAME must be set}
+      - PARSEABLE_PASSWORD=${PARSEABLE_PASSWORD:?PARSEABLE_PASSWORD must be set}
+      - ANALYTICS_ENGINE_URL=http://analytics-engine:8000
+      - PYTHONUNBUFFERED=1
+    labels:
+      - "app=tetragon-processor"
+
+  enforcement-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.enforcement-bridge
+    container_name: enforcement-bridge
+    depends_on:
+      - analytics-engine
+    environment:
+      - ANALYTICS_ENGINE_URL=http://analytics-engine:8000
+      - OPA_URL=http://opa:8181
+      - CILIUM_API_URL=http://cilium-agent:8000/api/v1
+      - TETRAGON_API_URL=http://tetragon:54321
+      - PYTHONUNBUFFERED=1
+    labels:
+      - "app=enforcement-bridge"
+
   grafana:
     image: grafana/grafana:10.4.1
     container_name: grafana
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
       - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=yes
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro

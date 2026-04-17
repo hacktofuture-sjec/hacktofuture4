@@ -35,9 +35,20 @@ function TTLRing({ ttl, rotating }) {
   )
 }
 
-export default function IdentityView({ isUnderAttack, humanTrustScore = 99.8, compositeTrust = 97.0, behavioralEvents = { keystrokes: 342, mouseDistance: 18420, sessions: 1 } }) {
+export default function IdentityView({ isUnderAttack, humanTrustScore = null, compositeTrust = null, behavioralEvents = { keystrokes: 0, mouseDistance: 0, sessions: 0 } }) {
   const [ttl, setTtl] = useState(42)
   const [rotating, setRotating] = useState(false)
+  const hasLiveData = humanTrustScore !== null || compositeTrust !== null || behavioralEvents.sessions > 0
+
+  if (!hasLiveData) {
+    return (
+      <div className="glass rounded-xl p-8 border border-slate-700/30 text-center space-y-3">
+        <p className="text-[9px] tracking-widest text-slate-500">LIVE IDENTITY ONLY</p>
+        <p className="text-sm text-slate-300">No identity, SVID, or biometric signal has been loaded from a live backend.</p>
+        <p className="text-[10px] text-slate-500">Connect the real SPIFFE and auth services to populate this view.</p>
+      </div>
+    )
+  }
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -71,10 +82,10 @@ export default function IdentityView({ isUnderAttack, humanTrustScore = 99.8, co
                 </div>
               </div>
               <div className="space-y-1.5 text-[9px] font-mono">
-                <p><span className="text-slate-500">Subject</span> <span className="text-violet-400">Sarah_Admin</span></p>
-                <p><span className="text-slate-500">Method</span> <span className="text-emerald-400">Platform Authenticator</span></p>
-                <p><span className="text-slate-500">OIDC Issuer</span> <span className="text-sky-400">aegis.did/idp</span></p>
-                <p><span className="text-slate-500">Token</span> <span className="text-emerald-400">VALID</span></p>
+                <p><span className="text-slate-500">Subject</span> <span className="text-violet-400">—</span></p>
+                <p><span className="text-slate-500">Method</span> <span className="text-emerald-400">—</span></p>
+                <p><span className="text-slate-500">OIDC Issuer</span> <span className="text-sky-400">—</span></p>
+                <p><span className="text-slate-500">Token</span> <span className="text-emerald-400">—</span></p>
               </div>
             </div>
             <div className="bg-black/40 rounded-lg p-2.5 border border-slate-800/50 text-center">
@@ -106,10 +117,10 @@ export default function IdentityView({ isUnderAttack, humanTrustScore = 99.8, co
                 </div>
               </div>
               <div className="space-y-1.5 text-[9px] font-mono">
-                <p><span className="text-slate-500">Claim</span> <span className="text-amber-400">sub:admin-01</span></p>
-                <p><span className="text-slate-500">Maps To</span> <span className="text-sky-400">sentinel/agent/01</span></p>
-                <p><span className="text-slate-500">X.509 Bind</span> <span className="text-emerald-400">CRYPTOGRAPHIC</span></p>
-                <p><span className="text-slate-500">Revocable</span> <span className="text-amber-400">YES</span></p>
+                <p><span className="text-slate-500">Claim</span> <span className="text-amber-400">—</span></p>
+                <p><span className="text-slate-500">Maps To</span> <span className="text-sky-400">—</span></p>
+                <p><span className="text-slate-500">X.509 Bind</span> <span className="text-emerald-400">—</span></p>
+                <p><span className="text-slate-500">Revocable</span> <span className="text-amber-400">—</span></p>
               </div>
             </div>
             <div className="bg-black/40 rounded-lg p-2.5 border border-slate-800/50 text-center">
@@ -141,10 +152,10 @@ export default function IdentityView({ isUnderAttack, humanTrustScore = 99.8, co
                 </div>
               </div>
               <div className="space-y-1.5 text-[9px] font-mono">
-                <p><span className="text-slate-500">SPIFFE ID</span> <span className="text-sky-400 text-[8px]">.../sentinel/agent/01</span></p>
-                <p><span className="text-slate-500">mTLS</span> <span className="text-emerald-400">ESTABLISHED</span></p>
-                <p><span className="text-slate-500">Delegated By</span> <span className="text-violet-400">Sarah_Admin</span></p>
-                <p><span className="text-slate-500">eBPF Monitor</span> <span className="text-sky-400">48 kprobes</span></p>
+                <p><span className="text-slate-500">SPIFFE ID</span> <span className="text-sky-400 text-[8px]">—</span></p>
+                <p><span className="text-slate-500">mTLS</span> <span className="text-emerald-400">—</span></p>
+                <p><span className="text-slate-500">Delegated By</span> <span className="text-violet-400">—</span></p>
+                <p><span className="text-slate-500">eBPF Monitor</span> <span className="text-sky-400">—</span></p>
               </div>
             </div>
             <div className="bg-black/40 rounded-lg p-2.5 border border-slate-800/50 text-center">
@@ -189,12 +200,12 @@ export default function IdentityView({ isUnderAttack, humanTrustScore = 99.8, co
           <div className="terminal space-y-1">
             <p><span className="text-emerald-500">$</span> <span className="text-sky-400">spire-agent api fetch-x509-svid --output json</span></p>
             <div className="border-t border-slate-800 pt-2 space-y-1 text-[11px]">
-              <p><span className="text-slate-500 w-28 inline-block">SPIFFE ID</span><span className="text-emerald-400">spiffe://aegis.did/sentinel/agent/01</span></p>
-              <p><span className="text-slate-500 w-28 inline-block">Trust Domain</span><span className="text-sky-400">aegis.did</span></p>
-              <p><span className="text-slate-500 w-28 inline-block">Key Type</span><span className="text-amber-400">EC P-256</span></p>
-              <p><span className="text-slate-500 w-28 inline-block">Serial</span><span className="text-slate-300">7A:3F:B2:91:C4:D8:E6:02</span></p>
-              <p><span className="text-slate-500 w-28 inline-block">Delegated By</span><span className="text-violet-400">OIDC:sub:admin-01 (WebAuthn)</span></p>
-              <p><span className="text-slate-500 w-28 inline-block">Issuer</span><span className="text-slate-300">SPIRE Server v1.9.0</span></p>
+              <p><span className="text-slate-500 w-28 inline-block">SPIFFE ID</span><span className="text-emerald-400">—</span></p>
+              <p><span className="text-slate-500 w-28 inline-block">Trust Domain</span><span className="text-sky-400">—</span></p>
+              <p><span className="text-slate-500 w-28 inline-block">Key Type</span><span className="text-amber-400">—</span></p>
+              <p><span className="text-slate-500 w-28 inline-block">Serial</span><span className="text-slate-300">—</span></p>
+              <p><span className="text-slate-500 w-28 inline-block">Delegated By</span><span className="text-violet-400">—</span></p>
+              <p><span className="text-slate-500 w-28 inline-block">Issuer</span><span className="text-slate-300">—</span></p>
               <p><span className="text-slate-500 w-28 inline-block">Not Before</span><span className="text-slate-400">{new Date(Date.now() - (60 - ttl) * 1000).toISOString()}</span></p>
               <p><span className="text-slate-500 w-28 inline-block">Not After</span><span className="text-slate-400">{new Date(Date.now() + ttl * 1000).toISOString()}</span></p>
               <p>
@@ -232,7 +243,7 @@ export default function IdentityView({ isUnderAttack, humanTrustScore = 99.8, co
                   <td className="py-3 pr-4 text-amber-400">{s.key}</td>
                   <td className="py-3 pr-4">
                     {s.primary
-                      ? <span className="text-violet-400 flex items-center gap-1"><User className="w-3 h-3" /> Sarah_Admin (OIDC)</span>
+                      ? <span className="text-violet-400 flex items-center gap-1"><User className="w-3 h-3" /> Live OIDC subject</span>
                       : <span className="text-slate-600">System</span>
                     }
                   </td>

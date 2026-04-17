@@ -175,6 +175,15 @@ From the project root, run:
 docker compose up -d --build
 ```
 
+Before starting the stack, set these environment variables in a local `.env` file or your shell:
+
+- `SPIRE_JOIN_TOKEN`
+- `PARSEABLE_USERNAME`
+- `PARSEABLE_PASSWORD`
+- `PARSEABLE_BASIC_AUTH`
+- `GRAFANA_ADMIN_PASSWORD`
+- `FRONTEND_ORIGINS` (optional, defaults to `http://localhost:5173`)
+
 This brings up:
 
 - analytics-engine on port 8000

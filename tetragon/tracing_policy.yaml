@@ -16,6 +16,6 @@ spec:
       - index: 1
         operator: "Equal"
         values:
-        - "/app/forbidden_secrets.txt"
+        - "/app/restricted-resource"
       matchActions:
       - action: Sigkill

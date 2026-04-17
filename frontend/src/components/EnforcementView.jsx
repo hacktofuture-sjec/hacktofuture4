@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { CheckCircle, Clock, Zap, Shield, AlertTriangle, User, ScanFace } from 'lucide-react'
 
 const POLICIES = [
-  { rule: 'deny file.read("/forbidden_secrets.txt")', action: 'SIGKILL',     sev: 'CRITICAL', trigger: true },
+  { rule: 'deny file.read("/restricted-resource")', action: 'SIGKILL',     sev: 'CRITICAL', trigger: true },
   { rule: 'deny process.exec(uid=0) outside /usr/bin',  action: 'SIGKILL',     sev: 'HIGH',     trigger: false },
   { rule: 'deny net.connect(dst not in 443) from workload/*', action: 'DROP_PACKET', sev: 'HIGH',     trigger: false },
   { rule: 'deny file.write("/etc/*") from non-root',    action: 'SIGKILL',     sev: 'HIGH',     trigger: false },
@@ -11,7 +11,7 @@ const POLICIES = [
 ]
 
 const BASE_TIMELINE = [
-  { t: 'T+0ms',  icon: Clock,         text: 'sys_openat("/forbidden_secrets.txt") intercepted by eBPF kprobe',          category: 'detect' },
+  { t: 'T+0ms',  icon: Clock,         text: 'sys_openat("/restricted-resource") intercepted by eBPF kprobe',          category: 'detect' },
   { t: 'T+12ms', icon: Zap,           text: 'Tetragon emits structured JSON event to Parseable log stream',             category: 'detect' },
   { t: 'T+23ms', icon: Zap,           text: 'FastAPI ML engine receives event, generates 384-dim sentence embedding',   category: 'analyze' },
   { t: 'T+31ms', icon: AlertTriangle, text: 'Cosine similarity: 0.94 -> 0.09 (threshold 0.50) - DRIFT CONFIRMED',      category: 'analyze' },
@@ -20,10 +20,10 @@ const BASE_TIMELINE = [
 ]
 
 const HITL_DENIED_STEP = {
-  t: 'T+52ms', icon: User,   text: 'HITL Step-Up MFA REJECTED by Sarah_Admin -> Enforcement authorized', category: 'hitl',
+  t: 'T+52ms', icon: User,   text: 'HITL Step-Up MFA REJECTED by live operator -> Enforcement authorized', category: 'hitl',
 }
 const HITL_APPROVED_STEP = {
-  t: 'T+52ms', icon: ScanFace, text: 'HITL Step-Up MFA APPROVED by Sarah_Admin -> Override logged, monitoring elevated', category: 'hitl',
+  t: 'T+52ms', icon: ScanFace, text: 'HITL Step-Up MFA APPROVED by live operator -> Override logged, monitoring elevated', category: 'hitl',
 }
 
 const FINAL_STEPS = [
@@ -48,6 +48,17 @@ function stepColor(category, i) {
 
 export default function EnforcementView({ isUnderAttack, hitlDecision }) {
   const [activeStep, setActiveStep] = useState(-1)
+  const hasLiveIncident = isUnderAttack || hitlDecision !== null
+
+  if (!hasLiveIncident) {
+    return (
+      <div className="glass rounded-xl p-8 border border-slate-700/30 text-center space-y-3">
+        <p className="text-[9px] tracking-widest text-slate-500">LIVE ENFORCEMENT ONLY</p>
+        <p className="text-sm text-slate-300">No active incident is present, so no policy timeline is rendered.</p>
+        <p className="text-[10px] text-slate-500">Connect a real enforcement backend to populate policy and response events.</p>
+      </div>
+    )
+  }
 
   // Build dynamic timeline based on HITL decision
   const timeline = [
@@ -136,7 +147,7 @@ export default function EnforcementView({ isUnderAttack, hitlDecision }) {
           {!isUnderAttack && (
             <div className="flex flex-col items-center justify-center h-64 gap-3">
               <Shield className="w-10 h-10 text-slate-700" />
-              <p className="text-[10px] text-slate-600 text-center">Simulate Stolen Session<br />to activate timeline</p>
+              <p className="text-[10px] text-slate-600 text-center">Connect a live incident feed<br />to activate timeline</p>
             </div>
           )}
 

@@ -1,10 +1,12 @@
 import os
 import time
 import requests
+import uuid
+from datetime import datetime
 from spiffe.workloadapi.workload_api_client import WorkloadApiClient
 
 def main():
-    print("Starting Mock AI Agent...")
+    print("Starting Aegis Workload Observer...")
     socket_path = os.getenv('SPIFFE_ENDPOINT_SOCKET')
     if not socket_path:
         print("Error: SPIFFE_ENDPOINT_SOCKET not set.")
@@ -15,38 +17,54 @@ def main():
     # Initialize the client. By default it uses the SPIFFE_ENDPOINT_SOCKET env var.
     client = WorkloadApiClient()
     
+    # Track if we've already reported an incident this cycle
+    reported_incident = False
+    
     while True:
         try:
             # Fetch the X.509 SVID
             x509_context = client.fetch_x509_context()
             svid = x509_context.default_svid
-            print("==================================================")
-            print("Successfully fetched X.509 SVID!")
+            print("===================================================")
+            print("Workload Identity Verified (SPIFFE SVID)")
             print(f"SPIFFE ID: {svid.spiffe_id}")
-            print("==================================================")
-            
-            assigned_intent = "summarize internal project documents"
-            current_action = "read /app/forbidden_secrets.txt"
+            print("===================================================")
             
             try:
-                print("Consulting Analytics Engine for trust score...")
-                resp = requests.post(
-                    "http://analytics-engine:8000/calculate_trust",
-                    json={"assigned_intent": assigned_intent, "current_action": current_action},
-                    timeout=5
-                )
+                # Fetch current trust state from analytics engine
+                resp = requests.get("http://analytics-engine:8000/latest_score", timeout=5)
                 resp.raise_for_status()
                 data = resp.json()
-                print(f"Trust Score: {data.get('trust_score'):.4f} - Intent Drift Detected: {data.get('intent_drift_detected')}")
+                trust_score = data.get('trust_score', 1.0)
+                drift_detected = data.get('intent_drift_detected', False)
+                
+                print(f"Trust Score: {trust_score:.4f} - Intent Drift Detected: {drift_detected}")
+                
+                # Only report an incident once per detection cycle
+                if drift_detected and not reported_incident:
+                    print("[REAL INCIDENT] Drift detected. Creating backend incident for HITL...")
+                    try:
+                        incident_response = requests.post(
+                            "http://analytics-engine:8000/incidents/create",
+                            json={
+                                "id": str(uuid.uuid4()),
+                                "detected_at": datetime.utcnow().isoformat(),
+                                "severity": "HIGH",
+                                "description": f"Intent drift detected: trust_score={trust_score:.4f}"
+                            },
+                            timeout=5
+                        )
+                        incident_response.raise_for_status()
+                        print(f"Incident created: {incident_response.json()}")
+                        reported_incident = True
+                    except Exception as err:
+                        print(f"Failed to create incident: {err}")
+                elif not drift_detected:
+                    reported_incident = False
+                    print("Workload behavior nominal. Ready for next observation cycle.")
+                    
             except Exception as err:
                 print(f"Analytics engine error: {err}")
-                
-            print("Simulating intent drift...")
-            try:
-                with open("/app/forbidden_secrets.txt", "r") as f:
-                    f.read()
-            except Exception as fe:
-                print(f"File access failed or blocked: {fe}")
                 
         except Exception as e:
             print(f"Error fetching SVID (Waiting for Agent / authorization): {e}")
@@ -56,3 +74,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
