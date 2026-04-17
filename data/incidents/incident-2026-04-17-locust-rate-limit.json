@@ -1,0 +1,55 @@
+{
+  "id": "INC-2026-04-17-LOCUST-001",
+  "source_system": "locust",
+  "case_id": "LT-2026-04-17-001",
+  "service": "api-gateway",
+  "severity": "SEV-1",
+  "summary": "Severe rate limiting on GET /api/projects during load test",
+  "short_description": "Load test generated sustained HTTP 429 responses on the unauthorized projects endpoint.",
+  "status": "open",
+  "tags": [
+    "load-test",
+    "rate-limit",
+    "http-429",
+    "api-gateway"
+  ],
+  "metrics": {
+    "request_count": 19795,
+    "failure_count": 19295,
+    "failure_rate_percent": 97.47,
+    "median_response_ms": 280,
+    "avg_response_ms": 315.27,
+    "p95_response_ms": 460,
+    "p99_response_ms": 730,
+    "max_response_ms": 6422.06
+  },
+  "evidence": {
+    "stats_file": "scripts/artifacts/locust_incident_demo_stats.csv",
+    "failures_file": "scripts/artifacts/locust_incident_demo_failures.csv",
+    "error_signature": "Expected 401 but got 429: Too many requests, please try again later.",
+    "failure_occurrences": 19295,
+    "endpoint": "GET /api/projects (unauthorized)"
+  },
+  "timeline": [
+    {
+      "timestamp_epoch": 1776382068,
+      "event": "Failure rate starts rising above baseline",
+      "failures_per_second": 8.6
+    },
+    {
+      "timestamp_epoch": 1776382075,
+      "event": "High failure rate sustained",
+      "failures_per_second": 88.1
+    },
+    {
+      "timestamp_epoch": 1776382081,
+      "event": "Failure rate peaks in early saturation window",
+      "failures_per_second": 117.0
+    }
+  ],
+  "recommended_actions": [
+    "Review API gateway/auth middleware rate-limit policy for unauthorized requests.",
+    "Split 401 and 429 handling paths to preserve expected security semantics.",
+    "Add dedicated alert on sudden 429 spike for auth-protected endpoints."
+  ]
+}
