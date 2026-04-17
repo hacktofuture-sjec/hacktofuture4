@@ -1,86 +1,166 @@
-# HackToFuture 4.0 — Template
+# Code Brigade - A01
 
 Welcome to your official HackToFuture 4 repository.
 
-This repository template will be used for development, tracking progress, and final submission of your project. Ensure that all work is committed here within the allowed hackathon duration.
-
----
-
-### Instructions for the teams:
-
-- Fork the Repository and name the forked repo in this convention: hacktofuture4-team_id (for eg: hacktofuture4-A01)
-
----
-
-## Rules
-
-- Work must be done ONLY in the forked repository
-- Only Four Contributors are allowed.
-- After 36 hours, Please make PR to the Main Repository. A Form will be sent to fill the required information.
-- Do not copy code from other teams
-- All commits must be from individual GitHub accounts
-- Please provide meaningful commits for tracking.
-- Do not share your repository with other teams
-- Final submission must be pushed before the deadline
-- Any violation may lead to disqualification
-
----
-
-# The Final README Template 
-
 ## Problem Statement / Idea
-
-Clearly describe the problem you are solving.
-
-- What is the problem?
-- Why is it important?
-- Who are the target users?
+- Cloud-native microservices deployed on Kubernetes are susceptible to runtime failures such as CrashLoopBackOff, resource exhaustion, and traffic spikes, making real-time system stability challenging.
+- Existing solutions rely on threshold-based autoscaling and manual intervention, lacking context-aware decision-making, root cause analysis, and adaptive recovery mechanisms.
+- Target users include DevOps engineers, SRE teams, and cloud platform operators who require automated, intelligent systems for self-healing, resilience, and performance optimization.
 
 ---
 
 ## Proposed Solution
-
-Explain your approach:
-
-- What are you building?
-- How does it solve the problem?
-- What makes your solution unique?
+- We are building an agent-driven, Kubernetes-based microservices platform that continuously monitors system health, performs root cause analysis (RCA), and autonomously executes remediation actions such as scaling and recovery.
+- The system combines observability signals (logs, restart counts, latency) with ML-based prediction and a capacity-aware model to enable context-driven decision-making and graceful degradation under load.
+- The uniqueness lies in its agentic architecture, where multiple specialized agents (SRE, Capacity, Learning, Log Intelligence) collaborate to create a self-healing, self-optimizing, and resilient infrastructure system.
 
 ---
 
 ## Features
-
-List the core features of your project:
-
-- Feature 1
-- Feature 2
-- Feature 3
+- Agent-Based Self-Healing System — Autonomous monitoring, root cause analysis, and remediation using a centralized SRE agent with specialized supporting agents.
+- Intelligent Scaling & Capacity Buffering — Context-aware scaling combined with dynamic reserve capacity to ensure graceful degradation and continuous service availability.
+- ML-Driven Prediction & Learning Loop — Lightweight ML pipeline that predicts failures, learns from past incidents, and improves decision-making over time.
 
 ---
 
 ## Tech Stack
-
-Mention all technologies used:
-
-- Frontend:
-- Backend:
-- Database:
-- APIs / Services:
-- Tools / Libraries:
+- Frontend: React.js (Dashboard UI for monitoring, visualization, and system insights)
+- Backend: Node.js, Express.js (Microservices architecture with agent-based logic)
+- Database: MongoDB / JSON-based storage (for logs, incidents, and ML dataset)
+- APIs / Services: REST APIs, Kubernetes API (for deployments, scaling, and monitoring), Groq API (LLM-based reasoning)
+- Tools / Libraries: Docker, Kubernetes (Minikube), Socket.IO, Axios, Tailwind CSS, @kubernetes/client-node
 
 ---
 
 ## Project Setup Instructions
 
-Provide clear steps to run your project:
+## Step 1: Go to project root
+cd "Nova Chat"
 
-```bash
-# Clone the repository
-git clone <repo-link>
+## Step 2: Install dependencies (all services)
+Do this for each service:
+cd auth-service
+npm install
 
-# Install dependencies
-...
+cd ../messaging-service
+npm install
 
-# Run the project
-...
-```
+cd ../presence-service
+npm install
+
+cd ../agent-service
+npm install
+
+cd ../security-service
+npm install
+
+## Step 3: Setup environment variables
+Create .env files in each service.
+## Example (auth-service/.env)
+PORT=3001
+MONGO_URI=mongodb://<laptop-IP-Address>/nova-chat
+
+## messaging-service
+PORT=3002
+MONGO_URI=mongodb://<laptop-IP-Address>/nova-chat
+
+## presence-service
+PORT=3003
+
+## agent-service
+PORT=4000
+GROQ_API_KEY=your_key_here
+
+## security-service
+PORT=3005
+
+## dashboard frontend
+NEXT_PUBLIC_AGENT_BASE_URL=http://localhost:4000
+NEXT_PUBLIC_SECURITY_BASE_URL=http://localhost:3005
+
+## Step 4: Start MongoDB (VERY IMPORTANT)
+If local MongoDB:
+mongod
+
+OR if using Docker:
+docker run -d -p 27017:27017 --name mongo mongo
+
+## Step 5: Run dashboard frontend
+cd dashboard
+npm run dev
+Open:
+http://localhost:5173
+
+## Step 6: Test system
+Check:
+http://localhost:4000/agent/analyze
+http://localhost:3005/security/status
+http://localhost:3005/security/alerts
+
+## OPTION 2 — Docker (Better for demo)
+## Step 1: Build all services
+From root:
+docker-compose build
+
+## Step 2: Start all services
+docker-compose up
+OR background:
+docker-compose up -d
+
+## Step 3: Check running containers
+docker ps
+
+## Step 4: Open app
+http://localhost:5173
+
+## Step 5: Check logs
+docker-compose logs -f
+
+## OPTION 3 — Kubernetes
+## Step 1: Start Minikube
+minikube start --driver=docker
+
+## Step 2: Enable Docker inside Minikube
+eval $(minikube docker-env) 
+
+## Step 3: Build images
+docker build -t nova-chat-auth-service ./auth-service
+docker build -t nova-chat-messaging-service ./messaging-service
+docker build -t nova-chat-presence-service ./presence-service
+docker build -t nova-chat-agent-service ./agent-service
+docker build -t nova-chat-security-service ./security-service
+docker build -t nova-chat-frontend ./dashboard
+
+## Step 4: Apply Kubernetes configs
+kubectl apply -f k8s/
+
+## Step 5: Check pods
+kubectl get pods
+
+## Step 6: Check services
+kubectl get svc
+
+## Step 7: Port forward (VERY IMPORTANT)
+Dashboard:
+kubectl port-forward svc/frontend 5173:80
+
+Agent:
+kubectl port-forward svc/agent-service 4000:4000
+
+Security:
+kubectl port-forward svc/security-service 3005:3005
+
+## Step 8: Open app
+http://localhost:5173
+
+## FINAL TEST COMMANDS
+Check agent
+curl http://localhost:4000/agent/analyze
+
+Check security
+curl http://localhost:3005/security/status
+curl http://localhost:3005/security/alerts
+
+## Demo testing commands
+Trigger overload
+curl -X POST http://localhost:3002/simulate/overload

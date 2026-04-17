@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-service
+  template:
+    metadata:
+      labels:
+        app: agent-service
+    spec:
+      serviceAccountName: agent-service
+      containers:
+        - name: agent-service
+          image: nova-chat-agent-service
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 4000
+          env:
+            - name: PORT
+              value: "4000"
+            - name: AUTH_SERVICE_URL
+              value: http://auth-service:3001
+            - name: MESSAGING_SERVICE_URL
+              value: http://messaging-service:3002
+            - name: PRESENCE_SERVICE_URL
+              value: http://presence-service:3003
+            - name: ML_SERVICE_URL
+              value: http://ml-service:5050
+            - name: GROQ_MODEL
+              value: llama-3.3-70b-versatile
+            - name: EARLY_HEAL_RESTART_THRESHOLD
+              value: "2"
+            - name: GROQ_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-secret
+                  key: GROQ_API_KEY

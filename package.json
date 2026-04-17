@@ -1,0 +1,30 @@
+{
+  "name": "nova-chat",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "auth-service",
+    "messaging-service",
+    "presence-service",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "node ./scripts/predev.js && dotenv -e .env -- concurrently --kill-others-on-fail \"npm --workspace auth-service run dev\" \"npm --workspace messaging-service run dev\" \"npm --workspace presence-service run dev\" \"npm --workspace frontend run dev\"",
+    "start": "npm run dev",
+    "build": "npm --workspace frontend run build",
+    "gateway:dev": "node -r dotenv/config gateway.js",
+    "gateway": "node -r dotenv/config gateway.js",
+    "check-ports": "node ./scripts/checkPorts.js"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0",
+    "cors": "^2.8.5",
+    "cross-env": "^7.0.3",
+    "dotenv-cli": "^7.2.0",
+    "express": "^4.19.2",
+    "http-proxy-middleware": "^2.0.6"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.1"
+  }
+}

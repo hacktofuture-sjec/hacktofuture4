@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: security-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: security-service
+  template:
+    metadata:
+      labels:
+        app: security-service
+    spec:
+      containers:
+        - name: security-service
+          image: nova-chat-security-service
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 3005
+          env:
+            - name: PORT
+              value: "3005"
+            - name: RATE_LIMIT_WINDOW_MS
+              value: "10000"
+            - name: RATE_LIMIT_MAX_REQUESTS
+              value: "35"
+            - name: FAILED_LOGIN_WINDOW_MS
+              value: "300000"
+            - name: FAILED_LOGIN_THRESHOLD
+              value: "5"
+            - name: BLOCK_TTL_MS
+              value: "600000"
