@@ -138,6 +138,16 @@ body {
   justify-content: center;
 }
 
+.status-label {
+  font-size: 12px;
+  color: var(--color-text-primary);
+  background: #0f141a;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  text-transform: capitalize;
+}
+
 .drawer-overlay,
 .modal-overlay {
   position: fixed;
@@ -244,6 +254,32 @@ body {
   border-radius: var(--radius);
   padding: 8px;
   background: var(--color-surface);
+}
+
+.planner-state-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.planner-state-badge {
+  font-size: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #0f141a;
+}
+
+.planner-state-meta {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.planner-feedback {
+  margin: 8px 0;
+  color: #9ecbff;
+  font-size: 13px;
 }
 
 .progress-wrap {

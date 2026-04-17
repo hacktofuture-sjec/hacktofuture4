@@ -15,6 +15,7 @@ from config import settings
 from db import get_db
 from incident.incident_assembler import IncidentAssembler
 from incident.store import INCIDENTS
+from planner.planner_agent import PlannerAgent
 from realtime.hub import BROADCASTER
 
 
@@ -24,6 +25,8 @@ MONITORED_SCENARIO_IDS = {
     "crash-loop-001",
     "db-latency-001",
 }
+
+RECENT_INCIDENT_SUPPRESSION_SECONDS = 120
 
 
 class LiveMonitorAgent:
@@ -35,6 +38,7 @@ class LiveMonitorAgent:
         self.loki = LokiCollector()
         self.tempo = TempoCollector()
         self.k8s_events = K8sEventsCollector()
+        self.planner = PlannerAgent()
         self._task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
 
@@ -185,27 +189,29 @@ class LiveMonitorAgent:
 
         diagnosis = diagnose_snapshot(self._to_diagnosis_snapshot(incident))
         record, created = self._upsert_incident_record(incident=incident, diagnosis=diagnosis)
+        previous_status, new_status = self._refresh_plan_record(record=record, diagnosis=diagnosis)
 
         if created:
             await BROADCASTER.broadcast(
                 {
                     "type": "incident_event",
                     "incident_id": record["incident_id"],
-                    "status": record.get("status", "open"),
+                    "status": record.get("status", new_status),
                     "severity": record.get("severity", "medium"),
                     "created_at": record.get("created_at", datetime.now(timezone.utc).isoformat()),
                 }
             )
         else:
-            await BROADCASTER.broadcast(
-                {
-                    "type": "status_change",
-                    "incident_id": record["incident_id"],
-                    "previous_status": "open",
-                    "new_status": record.get("status", "open"),
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                }
-            )
+            if previous_status != new_status:
+                await BROADCASTER.broadcast(
+                    {
+                        "type": "status_change",
+                        "incident_id": record["incident_id"],
+                        "previous_status": previous_status,
+                        "new_status": new_status,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
 
         await BROADCASTER.broadcast(
             {
@@ -214,6 +220,15 @@ class LiveMonitorAgent:
                 "diagnosis": diagnosis,
             }
         )
+
+        if record.get("plan_json"):
+            await BROADCASTER.broadcast(
+                {
+                    "type": "plan_ready",
+                    "incident_id": record["incident_id"],
+                    "plan": record["plan_json"],
+                }
+            )
 
     async def _resolve_pod_name(self, namespace: str, deployment: str) -> str:
         if self.k8s_events.v1 is None:
@@ -331,6 +346,7 @@ class LiveMonitorAgent:
         failure_class: str,
         scenario_id: str | None = None,
     ) -> dict[str, Any] | None:
+        now = datetime.now(timezone.utc)
         matches: list[dict[str, Any]] = []
         for incident in INCIDENTS:
             if incident.get("service") != service:
@@ -340,7 +356,18 @@ class LiveMonitorAgent:
             if scope.get("namespace") != namespace:
                 continue
 
-            if incident.get("status") in {"resolved", "failed"}:
+            status = str(incident.get("status", "open"))
+            recent_closed = status in {"resolved", "failed"} and self._is_recent_incident(incident, now=now)
+            if status in {"resolved", "failed"} and not recent_closed:
+                continue
+
+            if recent_closed:
+                if scenario_id:
+                    if str(incident.get("scenario_id") or "") != scenario_id:
+                        continue
+                elif incident.get("failure_class") != failure_class:
+                    continue
+                matches.append(incident)
                 continue
 
             if scenario_id and str(incident.get("scenario_id") or "") not in {"", scenario_id}:
@@ -370,6 +397,25 @@ class LiveMonitorAgent:
             return datetime.min.replace(tzinfo=timezone.utc)
 
         return max(matches, key=incident_timestamp)
+
+    def _is_recent_incident(self, incident: dict[str, Any], *, now: datetime) -> bool:
+        timestamp_text = str(
+            incident.get("resolved_at")
+            or incident.get("updated_at")
+            or incident.get("created_at")
+            or ""
+        )
+        if not timestamp_text:
+            return False
+
+        try:
+            timestamp = datetime.fromisoformat(timestamp_text.replace("Z", "+00:00"))
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+        except Exception:
+            return False
+
+        return (now - timestamp) <= timedelta(seconds=RECENT_INCIDENT_SUPPRESSION_SECONDS)
 
     def _has_explicit_scenario_signal(
         self,
@@ -404,6 +450,11 @@ class LiveMonitorAgent:
                 return True
             if "cpu-stress" in event_blob or "cpu-stress" in logs_blob:
                 return True
+            try:
+                if self._deployment_has_container(namespace=namespace, deployment=deployment, container_name="cpu-stress"):
+                    return True
+            except Exception:
+                pass
             try:
                 if self._pod_exists(namespace=namespace, pod_name="cpu-stress"):
                     return True
@@ -449,6 +500,34 @@ class LiveMonitorAgent:
                 timeout=10,
             )
             return probe.returncode == 0 and bool((probe.stdout or "").strip())
+        except Exception:
+            return False
+
+    def _deployment_has_container(self, *, namespace: str, deployment: str, container_name: str) -> bool:
+        if self.k8s_events.v1 is not None:
+            try:
+                deployment_obj = self.k8s_events.v1.read_namespaced_deployment(name=deployment, namespace=namespace)
+                containers = getattr(getattr(getattr(deployment_obj, "spec", None), "template", None), "spec", None)
+                containers = getattr(containers, "containers", None) or []
+                for container in containers:
+                    name = str(getattr(container, "name", "") or "")
+                    if name == container_name:
+                        return True
+            except Exception:
+                pass
+
+        try:
+            probe = subprocess.run(
+                ["kubectl", "get", "deployment", deployment, "-n", namespace, "-o", "json"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if probe.returncode != 0:
+                return False
+            payload = json.loads(probe.stdout or "{}")
+            containers = payload.get("spec", {}).get("template", {}).get("spec", {}).get("containers", [])
+            return any(str(container.get("name", "") or "") == container_name for container in containers)
         except Exception:
             return False
 
@@ -633,10 +712,11 @@ class LiveMonitorAgent:
             return self._create_incident_record(incident=incident, diagnosis=diagnosis), True
 
         merged_snapshot = self._merge_snapshot(existing.get("snapshot", {}), snapshot)
+        current_status = str(existing.get("status", "open"))
         existing.update(
             {
                 "service": incident.get("service", existing.get("service", "unknown")),
-                "status": "open",
+            "status": current_status,
                 "failure_class": merged_snapshot.get("failure_class", existing.get("failure_class", "unknown")),
                 "severity": incident.get("severity", existing.get("severity", "medium")),
                 "monitor_confidence": float(merged_snapshot.get("monitor_confidence", 0.0)),
@@ -673,6 +753,64 @@ class LiveMonitorAgent:
             db.close()
 
         return existing, False
+
+    def _refresh_plan_record(self, *, record: dict[str, Any], diagnosis: dict[str, Any]) -> tuple[str, str]:
+        previous_status = str(record.get("status", "open"))
+        # Preserve active lifecycle states; monitor re-checks should not regress them.
+        if previous_status in {"approved", "executing", "verifying", "resolved", "failed"}:
+            return previous_status, previous_status
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        context = dict(record.get("scope", {}))
+        context["dependency_graph_summary"] = str(record.get("dependency_graph_summary", ""))
+        context["has_rollback_revision"] = True
+
+        try:
+            plan_output = self.planner.run(
+                diagnosis=diagnosis,
+                snapshot={
+                    "dependency_graph_summary": context["dependency_graph_summary"],
+                    "has_rollback_revision": context["has_rollback_revision"],
+                },
+                context=context,
+            )
+            actions = [action.model_dump(mode="json") for action in plan_output.actions]
+        except Exception as exc:
+            print(f"WARN: planner run failed for {record.get('incident_id')}: {exc}")
+            return previous_status, previous_status
+
+        record["diagnosis"] = diagnosis
+        record["plan_json"] = {"actions": actions}
+        record["plan"] = record["plan_json"]
+        record["planned_at"] = now
+
+        if any(bool(action.get("approval_required")) for action in actions):
+            record["status"] = "pending_approval"
+        else:
+            record["status"] = "planned"
+
+        record["updated_at"] = now
+
+        db = get_db()
+        try:
+            db.execute(
+                """INSERT OR REPLACE INTO incidents (incident_id, service, status, failure_class, summary, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    record["incident_id"],
+                    record.get("service", "unknown"),
+                    record.get("status", "open"),
+                    record.get("failure_class", "unknown"),
+                    record.get("summary", "monitor detected anomaly"),
+                    record.get("created_at", now),
+                ),
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        return previous_status, str(record.get("status", "open"))
 
 
 LIVE_MONITOR_AGENT = LiveMonitorAgent()

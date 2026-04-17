@@ -106,6 +106,21 @@ export interface PlannerOutput {
   actions: PlannerAction[];
 }
 
+export interface ApprovalReplanPayload {
+  reason: string;
+  attempt: number;
+  plan: PlannerOutput;
+}
+
+export interface ApprovalResponse {
+  incident_id: string;
+  action_index?: number;
+  approved: boolean;
+  status: IncidentStatus;
+  message: string;
+  replan?: ApprovalReplanPayload;
+}
+
 export interface ExecutorResult {
   action: string;
   status: "success" | "sandbox_failed" | "production_failed" | "failed";
@@ -153,6 +168,7 @@ export interface IncidentDetail extends IncidentListItem {
   namespace: string;
   pod: string;
   scenario_id: string | null;
+  planned_at?: string | null;
   snapshot: IncidentSnapshot;
   diagnosis: DiagnosisPayload | null;
   plan: PlannerOutput | null;

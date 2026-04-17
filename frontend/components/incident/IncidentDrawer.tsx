@@ -78,7 +78,7 @@ export default function IncidentDrawer({ incidentId, onClose }: Props) {
             </h2>
             {incident && (
               <span className="drawer-subtitle">
-                {incident.service} · {incident.namespace} · {incident.failure_class}
+                {incident.service} · {incident.namespace} · {incident.failure_class} · {incident.status}
               </span>
             )}
           </div>
@@ -124,6 +124,10 @@ export default function IncidentDrawer({ incidentId, onClose }: Props) {
                 <PlannerPanel
                   plan={incident.plan}
                   incidentId={incidentId}
+                  incidentStatus={incident.status}
+                  plannedAt={(incident as any).planned_at ?? null}
+                  replanAttempts={(incident as any).replan_attempts}
+                  updatedAt={incident.updated_at}
                   onRefresh={refreshIncident}
                 />
               )}

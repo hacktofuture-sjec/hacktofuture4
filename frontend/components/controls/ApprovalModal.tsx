@@ -9,7 +9,7 @@ interface Props {
   actionIndex: number;
   incidentId: string;
   onClose: () => void;
-  onDone: () => void;
+  onDone: (result: { approved: boolean; message: string }) => void;
 }
 
 export default function ApprovalModal({
@@ -21,14 +21,30 @@ export default function ApprovalModal({
 }: Props) {
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   const submit = async (approved: boolean) => {
     setLoading(true);
+    setFeedback(null);
     try {
-      await api.approve(incidentId, actionIndex, approved, note);
-      onDone();
+      const approval = await api.approve(incidentId, actionIndex, approved, note);
+      if (approved) {
+        await api.execute(incidentId, actionIndex);
+        const message = "Action approved and execution started.";
+        setFeedback(message);
+        onDone({ approved: true, message });
+      } else {
+        const attempt = approval.replan?.attempt;
+        const message =
+          typeof attempt === "number"
+            ? `Action rejected. Revised plan generated (attempt ${attempt}).`
+            : "Action rejected. Revised plan generated.";
+        setFeedback(message);
+        onDone({ approved: false, message });
+      }
     } catch (error) {
       console.error("Failed to submit approval", error);
+      setFeedback("Failed to submit action. Check backend logs and retry.");
     } finally {
       setLoading(false);
     }
@@ -85,6 +101,8 @@ export default function ApprovalModal({
             rows={2}
           />
         </div>
+
+        {feedback && <p className="modal-feedback">{feedback}</p>}
 
         <div className="modal-actions">
           <button

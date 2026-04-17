@@ -1,4 +1,5 @@
 import {
+  ApprovalResponse,
   DiagnosisPayload,
   ExecutorResult,
   IncidentDetail,
@@ -85,13 +86,16 @@ export const api = {
   plan: (id: string) => apiFetch<PlannerOutput>(`/incidents/${id}/plan`, { method: "POST" }),
 
   approve: (id: string, action_index: number, approved: boolean, note?: string) =>
-    apiFetch<{ status: string; message: string }>(`/incidents/${id}/approve`, {
+    apiFetch<ApprovalResponse>(`/incidents/${id}/approve`, {
       method: "POST",
       body: JSON.stringify({ action_index, approved, operator_note: note ?? "" }),
     }),
 
-  execute: (id: string) =>
-    apiFetch<ExecutorResult>(`/incidents/${id}/execute`, { method: "POST" }),
+  execute: (id: string, action_index = 0) =>
+    apiFetch<ExecutorResult>(`/incidents/${id}/execute`, {
+      method: "POST",
+      body: JSON.stringify({ action_index }),
+    }),
 
   verify: (id: string) =>
     apiFetch<VerificationOutput>(`/incidents/${id}/verify`, { method: "POST" }),

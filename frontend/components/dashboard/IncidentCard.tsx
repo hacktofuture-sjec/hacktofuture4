@@ -30,11 +30,12 @@ export default function IncidentCard({ incident, isSelected, onClick }: Props) {
       <div className="card-header">
         <StatusDot status={incident.status} />
         <span className="service-name">{incident.service}</span>
+        <span className="status-label">{incident.status.replace(/_/g, " ")}</span>
         <Badge variant={incident.severity}>{incident.severity}</Badge>
       </div>
       <div className="card-body">
         <span className="failure-class">{incident.failure_class.replace(/_/g, " ")}</span>
-        <span className="confidence">Confidence: {Math.round(incident.monitor_confidence * 100)}%</span>
+        <span className="confidence">Monitor confidence: {Math.round(incident.monitor_confidence * 100)}%</span>
       </div>
       <div className="card-footer">
         <span className="incident-id">{incident.incident_id}</span>

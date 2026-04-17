@@ -25,7 +25,7 @@ class PlannerAgent:
             risk_level = self._to_risk_level(action.get("risk", "medium"))
 
             approval_required = bool(action.get("approval_required", False))
-            if risk_level == RiskLevel.HIGH:
+            if risk_level in {RiskLevel.MEDIUM, RiskLevel.HIGH}:
                 approval_required = True
 
             simulated_action = dict(action)
@@ -110,6 +110,6 @@ class PlannerAgent:
         value = str(raw).lower()
         if value == RiskLevel.LOW.value:
             return RiskLevel.LOW
-        if value == RiskLevel.HIGH.value:
+        if value in {RiskLevel.HIGH.value, "critical"}:
             return RiskLevel.HIGH
         return RiskLevel.MEDIUM

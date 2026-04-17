@@ -33,7 +33,7 @@ async def inject_fault(body: FaultInjectionRequest) -> FaultInjectionResponse:
         db.close()
 
     injector = FaultInjector([scenario])
-    effective_force = body.force or body.scenario_id == "cpu-spike-001"
+    effective_force = body.force
     try:
         injector.apply_fault(body.scenario_id, force=effective_force)
     except RuntimeError as exc:

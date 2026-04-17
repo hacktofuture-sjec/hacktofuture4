@@ -1,5 +1,8 @@
 from datetime import datetime, timezone
+import asyncio
+import json
 import math
+import subprocess
 from types import SimpleNamespace
 from typing import Any
 
@@ -21,6 +24,54 @@ router = APIRouter(prefix="/incidents", tags=["incidents"])
 planner_agent = PlannerAgent()
 executor_agent = ExecutorAgent(VClusterManager(), ActionRunner())
 recovery_checker = RecoveryChecker()
+
+
+async def _cleanup_injected_fault(incident: dict[str, Any]) -> None:
+    """
+    After successful execution, remove/undo the injected fault to prevent repeated detection.
+    Each scenario type has a different cleanup approach based on how it was injected.
+    Runs in the background and doesn't block execution flow.
+    """
+    scenario_id = str(incident.get("scenario_id", ""))
+    namespace = str(incident.get("namespace", "default"))
+    
+    # Get the scenario details from database to extract k8s_restore_hint
+    db = get_db()
+    try:
+        row = db.execute(
+            "SELECT scenario_json FROM scenarios WHERE scenario_id = ?",
+            (scenario_id,),
+        ).fetchone()
+        if not row:
+            return  # Scenario not found, skip cleanup
+        scenario = json.loads(row["scenario_json"])
+    finally:
+        db.close()
+    
+    restore_hint = scenario.get("k8s_restore_hint", "")
+    if not restore_hint:
+        return  # No restore hint, can't cleanup
+    
+    # Parse and execute the restore command
+    try:
+        # For compound commands (with &&), use shell=True
+        # We've already validated scenario_id from the database, so this is safe
+        result = subprocess.run(
+            restore_hint,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode == 0:
+            print(f"INFO: Cleaned up injected fault for {scenario_id}: {restore_hint}")
+        else:
+            stderr = (result.stderr or "").strip()
+            print(f"WARN: Fault cleanup failed for {scenario_id}: {stderr}")
+    except subprocess.TimeoutExpired:
+        print(f"WARN: Fault cleanup timed out for {scenario_id}")
+    except Exception as exc:
+        print(f"WARN: Exception during fault cleanup for {scenario_id}: {exc}")
 
 
 def _find_incident(incident_id: str) -> dict[str, Any]:
@@ -75,6 +126,25 @@ def _coerce_percent(value: Any, *, required: bool) -> str:
         return f"{math.floor(numeric)}%"
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="metric values must be valid percentages") from exc
+
+
+def _coerce_float(value: Any, *, default: float = 0.0) -> float:
+    if value is None:
+        return default
+    text = str(value).strip().lower()
+    if not text:
+        return default
+    for suffix in ("%", "x", "ms", "s"):
+        if text.endswith(suffix):
+            text = text[: -len(suffix)].strip()
+            break
+    try:
+        numeric = float(text)
+        if not math.isfinite(numeric):
+            return default
+        return numeric
+    except (TypeError, ValueError):
+        return default
 
 
 def _incident_snapshot_payload(incident: dict[str, Any]) -> dict[str, Any]:
@@ -132,6 +202,9 @@ def _build_verifier_snapshot(incident: dict[str, Any], payload: dict[str, Any]) 
             metrics=SimpleNamespace(
                 memory=_coerce_percent(memory, required=True),
                 cpu=_coerce_percent(cpu, required=True),
+                restart_count_delta_5m=float(request_metrics.get("restart_count_delta_5m", 0) or 0),
+                error_rate_rps=float(request_metrics.get("error_rate_rps", 0) or 0),
+                latency_p95_seconds=_coerce_float(request_metrics.get("latency_p95_seconds", 0.0), default=0.0),
             )
         )
 
@@ -148,6 +221,12 @@ def _build_verifier_snapshot(incident: dict[str, Any], payload: dict[str, Any]) 
         metrics=SimpleNamespace(
             memory=_coerce_percent(memory, required=False),
             cpu=_coerce_percent(cpu, required=False),
+            restart_count_delta_5m=_coerce_float(snapshot_metrics.get("restart_count_delta_5m", 0.0), default=0.0),
+            error_rate_rps=_coerce_float(snapshot_metrics.get("error_rate_rps", 0.0), default=0.0),
+            latency_p95_seconds=_coerce_float(
+                snapshot_metrics.get("latency_p95_seconds", snapshot_metrics.get("latency_delta", 0.0)),
+                default=0.0,
+            ),
         )
     )
 
@@ -439,9 +518,15 @@ def simulate_incident_action(incident_id: str, payload: dict[str, Any] | None = 
 
 
 @router.post("/{incident_id}/approve")
-async def approve_incident_action(incident_id: str) -> dict:
-    """Mark the incident as approved so the next execution stage can proceed."""
+async def approve_incident_action(incident_id: str, payload: dict[str, Any] | None = None) -> dict:
+    """Handle human approval or rejection and loop back to planning on rejection."""
     incident = _find_incident(incident_id)
+    body = payload or {}
+
+    approved = bool(body.get("approved", True))
+    operator_note = str(body.get("operator_note", "") or "").strip()
+    operator_id = str(body.get("operator_id", "operator") or "operator")
+    action_index = _parse_action_index(body)
 
     if incident.get("status") not in {"planned", "pending_approval"}:
         raise HTTPException(
@@ -450,7 +535,79 @@ async def approve_incident_action(incident_id: str) -> dict:
         )
 
     previous_status = incident.get("status", "open")
-    incident["status"] = "approved"
+
+    # Operator approves: proceed to execution stage.
+    if approved:
+        incident["status"] = "approved"
+        incident["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        await BROADCASTER.broadcast(
+            {
+                "type": "status_change",
+                "incident_id": incident_id,
+                "previous_status": previous_status,
+                "new_status": incident["status"],
+                "timestamp": incident["updated_at"],
+            }
+        )
+
+        return {
+            "incident_id": incident_id,
+            "action_index": action_index,
+            "approved": True,
+            "status": incident["status"],
+            "message": "Approval accepted. Execute the approved action next.",
+        }
+
+    # Operator rejects: re-run planner with rejection context and stay in HITL loop.
+    current_plan = incident.get("plan_json", {}) or {}
+    current_actions = current_plan.get("actions", []) if isinstance(current_plan, dict) else []
+    rejected_action = ""
+    if 0 <= action_index < len(current_actions):
+        rejected_action = str(current_actions[action_index].get("action", "") or "")
+
+    feedback = {
+        "operator_id": operator_id,
+        "operator_note": operator_note,
+        "rejected_action_index": action_index,
+        "rejected_action": rejected_action,
+        "feedback_type": "human_rejection",
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    incident.setdefault("approval_feedback", []).append(feedback)
+
+    context = dict(incident.get("scope", {}))
+    context["dependency_graph_summary"] = incident.get("dependency_graph_summary", "")
+    context["has_rollback_revision"] = True
+    context["previous_plan"] = current_plan
+    context["replan_reason"] = "operator_rejected"
+    context["operator_feedback"] = operator_note
+
+    snapshot = incident.get("snapshot") or collect_monitor_snapshot()
+    diagnosis = incident.get("diagnosis") or diagnose_snapshot(snapshot)
+    incident["snapshot"] = snapshot
+    incident["diagnosis"] = diagnosis
+
+    plan_output = planner_agent.run(
+        diagnosis=diagnosis,
+        snapshot={
+            "dependency_graph_summary": context["dependency_graph_summary"],
+            "has_rollback_revision": context["has_rollback_revision"],
+        },
+        context=context,
+    )
+
+    actions = [action.model_dump(mode="json") for action in plan_output.actions]
+    incident["plan_json"] = {"actions": actions}
+    incident["plan"] = incident["plan_json"]
+    incident["planned_at"] = datetime.now(timezone.utc).isoformat()
+    incident["replan_attempts"] = int(incident.get("replan_attempts", 0)) + 1
+
+    if any(action.get("approval_required") for action in actions):
+        incident["status"] = "pending_approval"
+    else:
+        incident["status"] = "planned"
+
     incident["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     await BROADCASTER.broadcast(
@@ -462,11 +619,25 @@ async def approve_incident_action(incident_id: str) -> dict:
             "timestamp": incident["updated_at"],
         }
     )
+    await BROADCASTER.broadcast(
+        {
+            "type": "plan_ready",
+            "incident_id": incident_id,
+            "plan": incident["plan_json"],
+        }
+    )
 
     return {
         "incident_id": incident_id,
+        "action_index": action_index,
+        "approved": False,
         "status": incident["status"],
-        "message": "Approval accepted. Execute the approved action next.",
+        "message": "Action rejected. A revised plan is ready.",
+        "replan": {
+            "reason": "operator_rejected",
+            "attempt": incident["replan_attempts"],
+            "plan": incident["plan_json"],
+        },
     }
 
 
@@ -475,6 +646,7 @@ async def execute_incident_action(incident_id: str, payload: dict[str, Any] | No
     """Execute an approved action through sandbox and production flow."""
     incident = _find_incident(incident_id)
     body = payload or {}
+    auto_verify = bool(body.get("auto_verify", True))
 
     if incident.get("status") != "approved":
         raise HTTPException(status_code=400, detail="Incident must be approved before execution")
@@ -507,12 +679,55 @@ async def execute_incident_action(incident_id: str, payload: dict[str, Any] | No
     execution_result = await executor_agent.execute(incident_id=incident_id, action_command=command)
     incident["execution"] = execution_result.model_dump(mode="json")
 
+    replanned: dict[str, Any] | None = None
     if execution_result.status.value == "success":
+        # Clean up the injected fault in the background (don't block execution flow)
+        # The fault deletion doesn't need to complete before we mark resolved
+        try:
+            asyncio.create_task(_cleanup_injected_fault(incident))
+        except Exception:
+            pass  # Cleanup failure doesn't stop the flow
+        
         incident["status"] = "verifying"
+        incident["updated_at"] = datetime.now(timezone.utc).isoformat()
     else:
-        incident["status"] = "failed"
+        # Re-enter planner stage when execution fails so the loop can continue.
+        context = dict(incident.get("scope", {}))
+        context["dependency_graph_summary"] = incident.get("dependency_graph_summary", "")
+        context["has_rollback_revision"] = True
 
-    incident["updated_at"] = datetime.now(timezone.utc).isoformat()
+        snapshot = incident.get("snapshot") or collect_monitor_snapshot()
+        diagnosis = incident.get("diagnosis") or diagnose_snapshot(snapshot)
+        incident["snapshot"] = snapshot
+        incident["diagnosis"] = diagnosis
+
+        plan_output = planner_agent.run(
+            diagnosis=diagnosis,
+            snapshot={
+                "dependency_graph_summary": context["dependency_graph_summary"],
+                "has_rollback_revision": context["has_rollback_revision"],
+            },
+            context=context,
+        )
+
+        actions = [action.model_dump(mode="json") for action in plan_output.actions]
+        incident["plan_json"] = {"actions": actions}
+        incident["plan"] = incident["plan_json"]
+        incident["planned_at"] = datetime.now(timezone.utc).isoformat()
+        incident["execution_attempts"] = int(incident.get("execution_attempts", 0)) + 1
+
+        if any(action.get("approval_required") for action in actions):
+            incident["status"] = "pending_approval"
+        else:
+            incident["status"] = "planned"
+
+        incident["updated_at"] = datetime.now(timezone.utc).isoformat()
+        replanned = {
+            "status": incident["status"],
+            "plan": incident["plan_json"],
+            "reason": "execution_failed_replanned",
+            "attempt": incident["execution_attempts"],
+        }
 
     await BROADCASTER.broadcast(
         {
@@ -531,11 +746,71 @@ async def execute_incident_action(incident_id: str, payload: dict[str, Any] | No
         }
     )
 
-    return {
+    if replanned is not None:
+        await BROADCASTER.broadcast(
+            {
+                "type": "plan_ready",
+                "incident_id": incident_id,
+                "plan": incident["plan_json"],
+            }
+        )
+
+    if incident["status"] == "verifying" and auto_verify:
+        window_seconds = _parse_window_seconds(body)
+        snapshot = _build_verifier_snapshot(incident, body)
+        verification = await recovery_checker.check_recovery(
+            snapshot=snapshot,
+            window_seconds=window_seconds,
+        )
+
+        incident["verification"] = verification.model_dump(mode="json")
+        incident["verified_at"] = datetime.now(timezone.utc).isoformat()
+        previous_status = incident["status"]
+        if verification.recovered:
+            incident["status"] = "resolved"
+            incident["resolved_at"] = incident["verified_at"]
+        else:
+            incident["status"] = "failed"
+        incident["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        await BROADCASTER.broadcast(
+            {
+                "type": "status_change",
+                "incident_id": incident_id,
+                "previous_status": previous_status,
+                "new_status": incident["status"],
+                "timestamp": incident["updated_at"],
+            }
+        )
+
+        if incident["status"] == "resolved":
+            await BROADCASTER.broadcast(
+                {
+                    "type": "incident_resolved",
+                    "incident_id": incident_id,
+                    "verification": incident["verification"],
+                    "token_summary": incident.get("token_summary")
+                    or {
+                        "total_input_tokens": 0,
+                        "total_output_tokens": 0,
+                        "total_ai_calls": 0,
+                        "total_actual_cost_usd": 0.0,
+                        "rule_only_resolution": True,
+                        "fallback_triggered": False,
+                    },
+                }
+            )
+
+    response = {
         "incident_id": incident_id,
         "status": incident["status"],
         "execution": incident["execution"],
     }
+    if incident.get("verification") is not None:
+        response["verification"] = incident["verification"]
+    if replanned is not None:
+        response["replan"] = replanned
+    return response
 
 
 @router.post("/{incident_id}/verify")
