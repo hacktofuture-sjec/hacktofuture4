@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Annapurneshwari Canteen - Experience the Flavors of Annapurneshwari Canteen!</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        heading: ['Outfit', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            400: '#fca5a5',
+                            500: '#ef4444',
+                            600: '#dc2626',
+                            900: '#450a0a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        .glass-panel {
+            background: rgba(20, 20, 20, 0.7);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .fade-in {
+            animation: fadeIn 1s ease-out forwards;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        .fade-in-delay-1 { animation-delay: 0.2s; }
+        .fade-in-delay-2 { animation-delay: 0.4s; }
+        .fade-in-delay-3 { animation-delay: 0.6s; }
+
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .bg-pattern {
+            background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ef4444' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+        }
+    </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 font-sans antialiased bg-pattern">
+
+    <!-- Navbar -->
+    <nav class="fixed w-full z-50 glass-panel border-b border-white/5 transition-all duration-300">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="text-2xl font-heading font-bold bg-gradient-to-r from-brand-400 to-brand-600 bg-clip-text text-transparent">
+                Annapurneshwari Canteen
+            </div>
+            <div class="hidden md:flex space-x-8 text-sm font-medium text-zinc-400">
+                <a href="#about" class="hover:text-white transition-colors">Our Story</a>
+                <a href="#menu" class="hover:text-white transition-colors">Menu</a>
+                <a href="#contact" class="hover:text-white transition-colors">Contact</a>
+            </div>
+            <!-- CTA -->
+            <a href="#contact" class="px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-full text-sm font-semibold transition-all transform hover:scale-105 shadow-[0_0_20px_rgba(239,68,68,0.3)]">
+                Book a Table
+            </a>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
+        <!-- Abstract gradient blobs -->
+        <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-brand-600/20 rounded-full blur-[100px] pointer-events-none"></div>
+        <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-orange-600/10 rounded-full blur-[100px] pointer-events-none"></div>
+
+        <div class="max-w-7xl mx-auto px-6 relative z-10 text-center">
+            <div class="inline-flex items-center space-x-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 mb-8 fade-in">
+                <span class="text-yellow-500 font-bold">★ 3.6</span>
+                <span class="text-zinc-400 text-sm">Top Rated (291 Reviews)</span>
+            </div>
+            <h1 class="text-5xl md:text-7xl font-heading font-extrabold tracking-tight mb-6 fade-in fade-in-delay-1 leading-tight">
+                Experience the Flavors of Annapurneshwari Canteen!
+            </h1>
+            <p class="text-lg md:text-2xl text-zinc-400 max-w-2xl mx-auto mb-10 fade-in fade-in-delay-2">
+                Discover why our clients love us - modern and delicious cuisine.
+            </p>
+            <div class="flex flex-col sm:flex-row justify-center gap-4 fade-in fade-in-delay-3">
+                <a href="#menu" class="px-8 py-4 bg-white text-zinc-950 rounded-full font-semibold hover:bg-zinc-200 transition-colors">
+                    Explore Menu
+                </a>
+                <a href="#contact" class="px-8 py-4 glass-panel text-white border border-white/10 rounded-full font-semibold hover:bg-white/10 transition-colors">
+                    Find Us
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- About Section -->
+    <section id="about" class="py-24 border-t border-white/5 relative">
+        <div class="max-w-7xl mx-auto px-6 grid md:grid-cols-2 gap-16 items-center">
+            <div>
+                <h2 class="text-base text-brand-500 font-bold uppercase tracking-wider mb-2">Our Story</h2>
+                <h3 class="text-4xl font-heading font-bold mb-6">A Taste of Perfection</h3>
+                <p class="text-zinc-400 text-lg leading-relaxed mb-6">
+                    Annapurneshwari Canteen boasts a impressive 3.6 star rating based on 291 reviews. Known for its unique blend of flavors and warm hospitality, we are the perfect choice for a memorable dining experience.
+                </p>
+                <p class="text-zinc-500 leading-relaxed border-l-2 border-brand-500 pl-4">
+                    "Every dish tells a story of passion, quality ingredients, and unmatched culinary dedication."
+                </p>
+            </div>
+            <div class="relative">
+                <div class="absolute -inset-4 bg-gradient-to-tr from-brand-600/20 to-transparent blur-2xl rounded-3xl"></div>
+                <!-- Placeholder aesthetic image from unspalsh -->
+                <img src="https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&q=80&w=1000" alt="Restaurant Interior" class="relative rounded-3xl object-cover h-[500px] w-full shadow-2xl border border-white/10 transform transition hover:scale-[1.02] duration-500">
+            </div>
+        </div>
+    </section>
+
+    <!-- Menu / Services Section -->
+    <section id="menu" class="py-24 bg-zinc-900/50 border-t border-white/5 relative">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="text-center mb-16">
+                <h2 class="text-base text-brand-500 font-bold uppercase tracking-wider mb-2">Discover</h2>
+                <h3 class="text-4xl font-heading font-bold">Signature Offerings</h3>
+            </div>
+            
+            <div class="grid md:grid-cols-3 gap-8">
+                
+                <div class="glass-panel p-8 rounded-3xl hover:-translate-y-2 transition-transform duration-300 group">
+                    <div class="w-12 h-12 bg-zinc-800 rounded-2xl flex items-center justify-center mb-6 text-2xl group-hover:bg-brand-500 transition-colors">
+                        ✨
+                    </div>
+                    <h4 class="text-xl font-heading font-bold mb-3">Custom Menu Design</h4>
+                    <p class="text-zinc-400">Tailor your menu to stand out from the competition.</p>
+                </div>
+                
+                <div class="glass-panel p-8 rounded-3xl hover:-translate-y-2 transition-transform duration-300 group">
+                    <div class="w-12 h-12 bg-zinc-800 rounded-2xl flex items-center justify-center mb-6 text-2xl group-hover:bg-brand-500 transition-colors">
+                        ✨
+                    </div>
+                    <h4 class="text-xl font-heading font-bold mb-3">Website Build & Design</h4>
+                    <p class="text-zinc-400">Create a stunning online presence to attract more customers.</p>
+                </div>
+                
+                <div class="glass-panel p-8 rounded-3xl hover:-translate-y-2 transition-transform duration-300 group">
+                    <div class="w-12 h-12 bg-zinc-800 rounded-2xl flex items-center justify-center mb-6 text-2xl group-hover:bg-brand-500 transition-colors">
+                        ✨
+                    </div>
+                    <h4 class="text-xl font-heading font-bold mb-3">SEO & Digital Marketing</h4>
+                    <p class="text-zinc-400">Boost your visibility with our expert SEO strategies and digital marketing services.</p>
+                </div>
+                
+            </div>
+        </div>
+    </section>
+
+    <!-- Contact & Footer -->
+    <section id="contact" class="py-24 border-t border-white/5">
+        <div class="max-w-4xl mx-auto px-6 text-center">
+            <h2 class="text-4xl font-heading font-bold mb-8">Ready to experience Annapurneshwari Canteen?</h2>
+            <p class="text-zinc-400 mb-10">We're waiting to serve you the best.</p>
+            <button class="px-10 py-5 bg-brand-600 text-white rounded-full font-bold text-lg hover:bg-brand-500 transition-colors shadow-[0_0_30px_rgba(239,68,68,0.4)]">
+                Contact Us Now
+            </button>
+        </div>
+    </section>
+
+    <footer class="py-8 text-center text-zinc-500 text-sm border-t border-white/10 glass-panel">
+        <p>&copy; 2026 Annapurneshwari Canteen. All rights reserved.</p>
+        <p class="mt-2 text-xs">Generated by Web Agency Platform Engine.</p>
+    </footer>
+
+</body>
+</html>
