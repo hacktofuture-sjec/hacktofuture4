@@ -1,86 +1,40 @@
-# Visionaries
+# 🌌 Agentic K8s Control Center
 
-Welcome to your official HackToFuture 4 repository.
+Welcome to the future of autonomous infrastructure. This hackathon project demonstrates a **Self-Healing Neural Network** that proactively monitors, predicts, and resolves Kubernetes cluster degradation.
 
-This repository template will be used for development, tracking progress, and final submission of your project. Ensure that all work is committed here within the allowed hackathon duration.
+## 🚀 Features
+- **AI Prediction Engine**: Predicts pod saturation before it happens by analyzing traffic velocity metrics.
+- **Autonomous Healing**: Intercepts critical loads and dynamically injects `HPA` overrides or provisions replica sets to restore cluster health.
+- **Dual-Engine Backend**: 
+  - *Simulation Mode*: Runs entirely locally with dynamic generative scenarios if no active cluster is present (perfect for offline presentations).
+  - *Live Mode*: Connects via `@kubernetes/client-node` and executes real `kubectl` actions to manage physical pods.
+- **Real-Time Web UI**: A stunning, hardware-accelerated dashboard built with Vanilla CSS glassmorphism, Chart.js integrations, and seamless API polling.
 
----
+## 🏗️ Architecture
 
-### Instructions for the teams:
-
-- Fork the Repository and name the forked repo in this convention: hacktofuture4-team_id (for eg: hacktofuture4-A01)
-
----
-
-## Rules
-
-- Work must be done ONLY in the forked repository
-- Only Four Contributors are allowed.
-- After 36 hours, Please make PR to the Main Repository. A Form will be sent to fill the required information.
-- Do not copy code from other teams
-- All commits must be from individual GitHub accounts
-- Please provide meaningful commits for tracking.
-- Do not share your repository with other teams
-- Final submission must be pushed before the deadline
-- Any violation may lead to disqualification
-
----
-
-# The Final README Template 
-
-## Problem Statement / Idea
-
-Clearly describe the problem you are solving.
-
-- What is the problem?
-- Why is it important?
-- Who are the target users?
-
----
-
-## Proposed Solution
-
-Explain your approach:
-
-- What are you building?
-- How does it solve the problem?
-- What makes your solution unique?
-
----
-
-## Features
-
-List the core features of your project:
-
-- Feature 1
-- Feature 2
-- Feature 3
-
----
-
-## Tech Stack
-
-Mention all technologies used:
-
-- Frontend:
-- Backend:
-- Database:
-- APIs / Services:
-- Tools / Libraries:
-
----
-
-## Project Setup Instructions
-
-Provide clear steps to run your project:
-
-```bash
-# Clone the repository
-git clone <repo-link>
-
-# Install dependencies
-...
-
-# Run the project
-...
+```mermaid
+graph LR
+    UI[Frontend Dashboard] ---|REST API / JSON| API[Node.js Express Server]
+    API -->|Live Mode| K8s[Kubernetes Cluster]
+    API -->|Simulation Mode| SIM[Simulation Engine]
 ```
+
+## 🛠️ How to Run Locally
+
+### Approach 1: Instant Start (Windows)
+Simply double-click the `start.bat` file in the root directory. 
+It will automatically spin up the Node server on `http://localhost:3000`.
+
+### Approach 2: Docker / Containerized
+We have included a `docker-compose.yml` and `Dockerfile` for seamless container execution.
+```bash
+docker-compose up --build
+```
+Navigate to `http://localhost:3000`
+
+## 🗂️ Project Structure
+- `index.html`: The monolithic SPA frontend.
+- `server.js`: The backend controller bridging the UI and the Cluster.
+- `deployment.yaml` & `service.yaml`: Kubernetes manifests representing the application that the Ai manages.
+
+*Built for Hackathons. Built for the Future.*

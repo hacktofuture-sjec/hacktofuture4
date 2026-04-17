@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: self-healing-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: self-healing-app
+  template:
+    metadata:
+      labels:
+        app: self-healing-app
+    spec:
+      containers:
+      - name: app-container
+        image: self-healing-ui
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 80
+
+        # 🔥 Resource limits (used for "self-healing idea")
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+
+        # 🚀 Health checks (VERY IMPORTANT for self-healing)
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
