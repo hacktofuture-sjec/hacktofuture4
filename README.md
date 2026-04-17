@@ -139,4 +139,8 @@ flutter run -d chrome
 
 (This setup allows you to run both admin and user dashboards simultaneously.)
 
+## Final Outcome
 
+CyberSentinel changes authentication from a one-time login step into something that keeps running in the background for the entire session. It doesn’t focus on obvious attacks like brute-force attempts, but looks at stealth-based situations where an attacker uses stolen access and behaves like a normal user. The system keeps an eye on patterns like typing style, location, and network changes to understand what is typical for each user.
+
+Instead of reacting instantly to every small change, it takes a more balanced approach by observing how behavior evolves over time. This helps it catch things like session misuse, credential sharing, or insider activity without disturbing genuine users unnecessarily. In the end, it’s about making sure trust isn’t assumed once at login, but continuously checked as the user continues to interact with the system.
