@@ -21,9 +21,15 @@ export const chatApi = {
       `/chat/sessions/${id}/messages/`
     ),
 
-  /** Non-streaming fallback. */
-  send: (id: string, body: { message: string }) =>
-    apiPost<ChatMessage>(`/chat/sessions/${id}/send/`, body),
+  /**
+   * Send a message; Django stores user + assistant rows after calling the agent.
+   * Body must use `content` (alias `message` also accepted server-side).
+   */
+  send: (id: string, body: { content: string }) =>
+    apiPost<{
+      user_message: ChatMessage;
+      assistant_message: ChatMessage;
+    }>(`/chat/sessions/${id}/send/`, body),
 
   /**
    * Server-Sent Events streaming sender. The backend is documented to return

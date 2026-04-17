@@ -7,8 +7,8 @@
  *   GET  /chat/sessions/{id}/messages/
  *   POST /chat/sessions/{id}/send/     — SSE-capable
  *
- * We attempt the SSE stream first; if the backend returns plain JSON we fall
- * back to a one-shot message.
+ * Django proxies to the FastAPI `/pipeline/action` endpoint and returns both
+ * persisted messages (no SSE until the backend implements it).
  */
 import { useEffect, useRef, useState } from 'react';
 import { Bot, Loader2, MessageSquare, Plus, Send, Trash2 } from 'lucide-react';
@@ -35,7 +35,6 @@ export default function ChatPage() {
 
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
-  const [streaming, setStreaming] = useState('');
   const [sendError, setSendError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -83,7 +82,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streaming]);
+  }, [messages]);
 
   const createSession = async () => {
     try {
@@ -109,65 +108,14 @@ export default function ChatPage() {
     const text = draft.trim();
     if (!text || !activeId || sending) return;
     setSending(true);
-    setStreaming('');
     setSendError(null);
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `local-${Date.now()}`,
-        session_id: activeId,
-        role: 'user',
-        content: text,
-        created_at: new Date().toISOString(),
-      },
-    ]);
     setDraft('');
 
     try {
-      let buffer = '';
-      await chatApi.sendStream(
-        activeId,
-        { message: text },
-        (chunk) => {
-          // SSE events carry JSON frames (reasoning_step / final_answer) or
-          // plain text tokens. We try JSON first, fall back to raw text.
-          try {
-            const evt = JSON.parse(chunk) as {
-              event?: string;
-              content?: string;
-              delta?: string;
-            };
-            const piece = evt.content ?? evt.delta ?? '';
-            if (piece) {
-              buffer += piece;
-              setStreaming(buffer);
-            }
-          } catch {
-            buffer += chunk;
-            setStreaming(buffer);
-          }
-        }
-      );
-      // Finalize the assistant message.
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `asst-${Date.now()}`,
-          session_id: activeId,
-          role: 'assistant',
-          content: buffer,
-          created_at: new Date().toISOString(),
-        },
-      ]);
-      setStreaming('');
-    } catch (streamErr) {
-      // Fall back to JSON endpoint.
-      try {
-        const res = await chatApi.send(activeId, { message: text });
-        setMessages((prev) => [...prev, res]);
-      } catch (err) {
-        setSendError(extractError(err) || extractError(streamErr));
-      }
+      const res = await chatApi.send(activeId, { content: text });
+      setMessages((prev) => [...prev, res.user_message, res.assistant_message]);
+    } catch (err) {
+      setSendError(extractError(err));
     } finally {
       setSending(false);
     }
@@ -283,17 +231,6 @@ export default function ChatPage() {
                       </div>
                     </div>
                   ))
-                )}
-
-                {streaming && (
-                  <div className="flex gap-2.5 justify-start">
-                    <div className="w-7 h-7 rounded-lg bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center shrink-0 mt-0.5">
-                      <Bot className="w-3.5 h-3.5 text-indigo-300 animate-pulse" />
-                    </div>
-                    <div className="max-w-[80%] px-3.5 py-2.5 rounded-2xl text-sm bg-white/[0.04] border border-white/[0.06] text-gray-300 rounded-bl-md whitespace-pre-wrap">
-                      {streaming}
-                    </div>
-                  </div>
                 )}
 
                 {sendError && <ErrorBanner message={sendError} />}

@@ -182,6 +182,12 @@ cd frontend && npm install && cp .env.example .env
 make frontend
 ```
 
+**One-shot full stack (`make dev`)** — starts Postgres + Redis via Docker, runs migrations, purges stale Celery queues, runs the full test suite, then launches Django (:8000), FastAPI (:8001), Celery worker + beat, and Vite (:5173) in parallel with labelled logs. **Free ports 8000, 8001, and 5173 first** (stop any previous `runserver`, `uvicorn`, or `vite`). On WSL, the frontend script invokes Vite through `node` so the `vite` CLI is never executed without `+x` on `node_modules/.bin`.
+
+```bash
+make dev
+```
+
 ---
 
 ## 🧪 Testing Coverage & Linting

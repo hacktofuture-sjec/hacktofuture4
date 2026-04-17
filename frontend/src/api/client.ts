@@ -174,6 +174,48 @@ export async function apiDelete<T = void>(
   return data;
 }
 
+/** Normalise a single DRF / serializer error item to a string. */
+function normalizeErrorItem(item: unknown): string {
+  if (typeof item === 'string') return item;
+  if (item && typeof item === 'object' && 'string' in item) {
+    return String((item as { string: string }).string);
+  }
+  return String(item);
+}
+
+/**
+ * Parse Django REST Framework validation errors `{ field: string[] | ErrorDetail[] }`.
+ * Returns `null` if the body is not a field-error map (e.g. only `{ detail: "..." }`).
+ */
+export function parseDrfFieldErrors(err: unknown): Record<string, string[]> | null {
+  if (!axios.isAxiosError(err) || err.response?.status !== 400) return null;
+  const raw = err.response?.data;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  const out: Record<string, string[]> = {};
+  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+    if (key === 'detail') continue;
+    if (Array.isArray(val)) {
+      const msgs = val.map(normalizeErrorItem).filter(Boolean);
+      if (msgs.length) out[key] = msgs;
+    } else if (typeof val === 'string' && val) {
+      out[key] = [val];
+    }
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/** Thrown from auth flows when the API fails; may include DRF `fieldErrors` for HTTP 400. */
+export class ApiRequestError extends Error {
+  readonly fieldErrors: Record<string, string[]> | null;
+
+  constructor(message: string, fieldErrors: Record<string, string[]> | null = null) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.fieldErrors = fieldErrors;
+  }
+}
+
 // Human-readable API error message extractor for toasts/UI.
 export function extractError(err: unknown): string {
   if (axios.isAxiosError(err)) {
@@ -181,16 +223,34 @@ export function extractError(err: unknown): string {
       | { detail?: string; error?: string; [k: string]: unknown }
       | undefined;
     if (typeof data === 'string') return data;
-    if (data?.detail) return String(data.detail);
+    if (data?.detail !== undefined && data?.detail !== null) {
+      const d = data.detail;
+      if (typeof d === 'string') return d;
+      if (Array.isArray(d)) {
+        const parts = d.map(normalizeErrorItem).filter(Boolean);
+        if (parts.length) return parts.join(' · ');
+      }
+    }
     if (data?.error) return String(data.error);
     if (data && typeof data === 'object') {
-      // DRF validation errors typically come as { field: ["msg"] }
-      const first = Object.entries(data)[0];
-      if (first) {
-        const [field, msgs] = first;
-        const msg = Array.isArray(msgs) ? msgs[0] : msgs;
-        return `${field}: ${String(msg)}`;
+      // DRF validation: include every field and every message (not just the first).
+      const lines: string[] = [];
+      for (const [field, msgs] of Object.entries(data)) {
+        if (field === 'detail' && typeof msgs === 'string') {
+          lines.push(msgs);
+          continue;
+        }
+        if (Array.isArray(msgs)) {
+          const parts = msgs.map(normalizeErrorItem).filter(Boolean);
+          if (parts.length) {
+            const label = field === 'non_field_errors' ? 'Error' : field.replace(/_/g, ' ');
+            lines.push(`${label}: ${parts.join(' · ')}`);
+          }
+        } else if (typeof msgs === 'string' && msgs) {
+          lines.push(`${field.replace(/_/g, ' ')}: ${msgs}`);
+        }
       }
+      if (lines.length) return lines.join('\n');
     }
     return err.message || 'Request failed';
   }

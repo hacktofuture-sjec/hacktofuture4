@@ -7,7 +7,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { authApi, type LoginPayload, type RegisterPayload } from '../api/auth';
-import { extractError, tokenStore } from '../api/client';
+import { ApiRequestError, extractError, parseDrfFieldErrors, tokenStore } from '../api/client';
 import type { UserProfile } from '../api/types';
 
 interface AuthContextValue {
@@ -55,7 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         tokenStore.set(tokens.access, tokens.refresh);
         await refreshProfile();
       } catch (err) {
-        throw new Error(extractError(err));
+        throw new ApiRequestError(extractError(err), parseDrfFieldErrors(err));
       }
     },
     [refreshProfile]
@@ -68,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         tokenStore.set(res.access, res.refresh);
         await refreshProfile();
       } catch (err) {
-        throw new Error(extractError(err));
+        throw new ApiRequestError(extractError(err), parseDrfFieldErrors(err));
       }
     },
     [refreshProfile]

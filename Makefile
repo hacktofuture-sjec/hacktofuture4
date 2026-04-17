@@ -1,4 +1,4 @@
-.PHONY: help setup install backend agent jira hubspot frontend frontend-install frontend-build frontend-typecheck frontend-lint docker-up docker-down deps-up deps-down lint lint-py lint-frontend format fl type-check test test-backend test-agent test-frontend test-cov dev clean migrate makemigrations shell superuser celery-worker celery-beat
+.PHONY: help setup install backend agent jira hubspot frontend frontend-install frontend-build frontend-typecheck frontend-lint docker-up docker-down deps-up deps-down dev-check-ports lint lint-py lint-frontend format fl type-check test test-backend test-agent test-frontend test-cov dev clean migrate makemigrations shell superuser celery-worker celery-beat
 
 # ── Tooling paths ─────────────────────────────────────────────────────────────
 UV            := $(shell command -v uv 2> /dev/null || echo $(CURDIR)/.venv/bin/uv)
@@ -155,34 +155,36 @@ frontend-lint:
 
 # Docker
 docker-up:
-	sudo docker compose up -d
+	docker compose up -d
 
 docker-down:
-	sudo docker compose down
+	docker compose down
 
 docker-logs:
-	sudo docker compose logs -f
+	docker compose logs -f
 
 # Only the stateful dependencies (Postgres + Redis) — used by `make dev` so
 # we can hot-reload backend/agent/celery/frontend locally without conflicting
 # with the containerized copies of those services.
 deps-up:
 	@echo "Starting Postgres + Redis via Docker..."
-	sudo docker compose up -d postgres redis
+	docker compose up -d postgres redis
 	@echo "Waiting for dependencies to become healthy..."
-	@for i in $$(seq 1 30); do \
-		if sudo docker compose exec -T postgres pg_isready -U $${POSTGRES_USER:-postgres} >/dev/null 2>&1; then \
+	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+		if docker compose exec -T postgres pg_isready -U $${POSTGRES_USER:-postgres} >/dev/null 2>&1; then \
 			echo "Postgres ready."; break; \
-		fi; \
-		if [ $$i -eq 30 ]; then \
-			echo "ERROR: Postgres did not become ready in time. Run 'sudo docker compose logs postgres' to check."; exit 1; \
 		fi; \
 		sleep 1; \
 	done
 
 deps-down:
 	@echo "Stopping Postgres + Redis..."
-	sudo docker compose stop postgres redis
+	docker compose stop postgres redis
+
+# Fail fast if dev ports are taken (avoids half-started stack + confusing logs).
+dev-check-ports:
+	@echo "Checking dev ports 8000 / 8001 / 5173..."
+	@$(PYTHON) scripts/check_dev_ports.py
 
 # ── make dev ────────────────────────────────────────────────────────────────
 # Full stack dev loop:
@@ -195,10 +197,13 @@ deps-down:
 #      them all down via `trap 'kill 0'`.
 #
 # Requires: docker, uv-managed venv (.venv), frontend/node_modules.
-dev: deps-up
+dev: deps-up dev-check-ports
 	@echo ""
 	@echo "==> Applying database migrations..."
 	$(MAKE) migrate
+	@echo ""
+	@echo "==> Purging Celery broker queues (clears stale tasks that reference old DB rows)..."
+	@cd backend && $(PYTHON) -m celery -A backend purge -f 2>/dev/null || true
 	@echo ""
 	@echo "==> Verifying every app via full test suite..."
 	$(MAKE) test
