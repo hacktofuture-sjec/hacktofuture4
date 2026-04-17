@@ -76,12 +76,14 @@ class UnifiedTicketListSerializer(serializers.ModelSerializer):
     assignee_name = serializers.CharField(
         source="assignee.display_name", read_only=True
     )
+    provider = serializers.CharField(source="integration.provider", read_only=True)
 
     class Meta:
         model = UnifiedTicket
         fields = [
             "id",
             "external_ticket_id",
+            "provider",
             "title",
             "normalized_status",
             "normalized_type",
@@ -102,6 +104,7 @@ class UnifiedTicketDetailSerializer(serializers.ModelSerializer):
     outgoing_links = TicketLinkSerializer(many=True, read_only=True)
     assignee = ExternalIdentitySerializer(read_only=True)
     reporter = ExternalIdentitySerializer(read_only=True)
+    provider = serializers.CharField(source="integration.provider", read_only=True)
 
     class Meta:
         model = UnifiedTicket
@@ -109,6 +112,7 @@ class UnifiedTicketDetailSerializer(serializers.ModelSerializer):
             "id",
             "external_ticket_id",
             "integration",
+            "provider",
             "title",
             "description",
             "normalized_status",
