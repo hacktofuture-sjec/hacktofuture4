@@ -75,10 +75,112 @@ DevOps Agent is an autonomous CI/CD pipeline monitor, PR reviewer, and issue fix
 ## Architecture Overview
 
 Our autonomous LangGraph agent maps GitHub/CD webhook events to targeted workflows:
-1. **CI Webhooks**: On failure, the system reads repo RSI, diagnoses the trace, and opens a new PR with a fix.
+1. **CI Webhooks**: On failure...
+2. **PR Webhooks**: Upon PR creation/update...
+3. **CD Failure Hooks**: Detects deployment anomalies...
 
-2. **PR Webhooks**: Upon PR creation/update, the review agent calculates a comprehensive score and coordinates GitHub Commit Statuses and Telegram gates.
-3. **CD Failure Hooks**: Detects deployment anomalies, pulling provider specific logs and prompting an LLM diagnosis, taking predefined rollback steps if severe.
+### High-Level System Architecture
+
+```mermaid
+graph TD
+    classDef external fill:#f9f9f9,stroke:#333,stroke-width:2px;
+    classDef core fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
+    classDef agent fill:#e8f5e9,stroke:#388e3c,stroke-width:2px;
+    classDef db fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
+
+    subgraph External[External Platforms]
+        GH[GitHub]:::external
+        CD[Cloud Providers<br>AWS/GCP/Azure]:::external
+        TG[Telegram]:::external
+    end
+
+    subgraph Backend[Backend - FastAPI]
+        WH[Webhook & Event Receiver]:::core
+        Adapter[CD Adapters]:::core
+        SS[SSE Event Stream]:::core
+        DB[(PostgreSQL + pgvector<br>RSI & Memory)]:::db
+    end
+
+    subgraph Agents[LangGraph Agents]
+        CA[CI Fix Agent]:::agent
+        PRA[PR Review Agent]:::agent
+        CDA[CD Anomaly Agent]:::agent
+        RSI[RSI Ingestion Pipeline]:::agent
+    end
+
+    %% Event Ingestion
+    GH -- Webhooks<br>Push/PR/Status --> WH
+    CD -- Deployment hooks<br>Failures/Metrics --> WH
+    TG -- Reviews<br>Approvals/Rejections --> WH
+
+    WH --> Adapter
+    WH --> CA
+    WH --> PRA
+    Adapter --> CDA
+
+    %% Agent Interactions with DB
+    CA <--> DB
+    PRA <--> DB
+    CDA <--> DB
+    RSI <--> DB
+
+    %% Agent Outputs
+    CA -- Creates Fix PR --> GH
+    PRA -- Updates Commit Status --> GH
+    PRA -- Notifications & Gates --> TG
+    CDA -- Initiates Rollbacks --> CD
+    
+    %% Real-time logging
+    CA -.-> SS
+    PRA -.-> SS
+    CDA -.-> SS
+    Auth[Frontend Client<br>React] -. Listens to Logs .-> SS
+```
+
+### Agent Workflow Dynamics
+
+Our agent orchestrates multiple distinct operational flows simultaneously based on real-time triggers.
+
+```mermaid
+stateDiagram-v2
+    [*] --> EventRouter
+
+    state EventRouter {
+        [*] --> CI_Failure: GitHub (check_run)
+        [*] --> PR_Action: GitHub (pull_request)
+        [*] --> CD_Anomaly: Cloud Webhook
+    }
+
+    state CI_Failure {
+        AnalyzeTrace --> FetchRSIContext: Extract Failed Specs
+        FetchRSIContext --> QueryMemory: Semantic Search (pgvector)
+        QueryMemory --> GenerateFix: Inject Context + Past Fixes
+        GenerateFix --> SubmitPR: LangGraph Node
+    }
+
+    state PR_Action {
+        ReviewCode --> CalculateScore: Analyze Diffs
+        CalculateScore --> ScoreGated: Score >= 75
+        ScoreGated --> AutoMerge
+        CalculateScore --> ScoreWarning: Score 50-74
+        ScoreWarning --> RequestTelegramApproval: Gate CI/CD
+        CalculateScore --> ScoreFailed: Score < 50
+        ScoreFailed --> BlockStatus
+        ScoreFailed --> TriggerFixAgent: Suggest Improvements
+    }
+    
+    state CD_Anomaly {
+        NormalizeMetrics --> HealthCheck: CD Adapters
+        HealthCheck --> RootCauseAnalysis: LLM Diagnosis
+        RootCauseAnalysis --> EvaluateRisk
+        EvaluateRisk --> ExecuteRollback: Severe Anomaly
+        EvaluateRisk --> AlertEngine: Minor Anomaly
+    }
+
+    CI_Failure --> [*]
+    PR_Action --> [*]
+    CD_Anomaly --> [*]
+```
 
 ## 🧠 Agent Episodic Memory
 
