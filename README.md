@@ -4,12 +4,12 @@ DevOps Agent is an autonomous CI/CD pipeline monitor, PR reviewer, and issue fix
 
 ## Features
 
-- **Autonomous CI Fixer**: Automatically detects CI workflow failures via GitHub webhooks, triggers an AI agent (GPT-4o) to trace the root cause using the Repository Structure Index (RSI), and generates a fix Pull Request autonomously.
+- **Autonomous CI Fixer**: Automatically detects CI workflow failures via GitHub webhooks, triggers an AI agent to trace the root cause using the Repository Structure Index (RSI) and PR diffs, and generates a fix Pull Request autonomously.
 - **Intelligent PR Reviews**: Three-tier quality gate for Pull Requests:
-  - **Score ≥ 75**: Auto-merges successful, clean code.
+  - **Score ≥ 75**: Clear to merge, clean code.
   - **Score 50–74**: Triggers manual Telegram approval before merging.
   - **Score < 50**: Blocks CI/CD and triggers an automated fix agent to suggest improvements based on review findings.
-- **CD Pipeline Monitoring**: Monitors deployment pipelines across AWS, GCP, Azure, and custom providers. It aggregates metrics (Deployment Health, Error Rate, Latency) and automates rollbacks and anomaly detection.
+- **CD Pipeline Monitoring**: Monitors deployment pipelines across AWS, GCP, Azure, and custom providers. It aggregates metrics (Deployment Health, Error Rate, Latency) and automates anomaly detection and sends report directly to telegram bot.
 - **RSI (Repository Structure Index)**: An intelligent codebase ingestion pipeline that maps the structure of a repository, enabling the AI to precisely fetch code context dynamically.
 - **Telegram Moderation**: Deep integration with Telegram for real-time pipeline notifications, PR review summaries, and fast manual approvals via interactive buttons.
 - **Multi-Tenant OAuth**: Secure, per-user GitHub OAuth token integration for handling GitHub MCP operations and repository webhooks in isolation.
@@ -94,9 +94,9 @@ stateDiagram-v2
     }
 
     state PR_Action {
-        ReviewCode --> CalculateScore: Analyze Diffs
+        ReviewCode --> CalculateScore: Analyze Diffs + RSI Context
         CalculateScore --> ScoreGated: Score >= 75
-        ScoreGated --> AutoMerge
+        ScoreGated --> Clear to merge
         CalculateScore --> ScoreWarning: Score 50-74
         ScoreWarning --> RequestTelegramApproval: Gate CI/CD
         CalculateScore --> ScoreFailed: Score < 50
@@ -129,7 +129,7 @@ A major feature of this project is its robust abstraction layer for Continuous D
 
 - **Unified Interface:** We use an adapter pattern (`cd_providers.get_cd_adapter()`) that dynamically parses failures based on the exact deployment target.
 - **Normalized Context:** Whether the failure comes from AWS (CloudWatch/CodeDeploy), GCP (Cloud Logging), Azure (Monitor), or a custom internal webhook, it undergoes normalization into a standardized `CDFailureContext`. 
-- **LLM Agnostic Diagnosis:** Because the AI agent only interfaces with the abstracted `CDFailureContext` to diagnose errors and recommend rollbacks, teams can migrate across cloud providers without changing their root-cause analysis pipelines.
+- **LLM Agnostic Diagnosis:** Because the AI agent only interfaces with the abstracted `CDFailureContext` to diagnose errors and generate root cause report, teams can migrate across cloud providers without changing their root-cause analysis pipelines.
 
 ## RSI (Repository Structure Index) Schema
 
