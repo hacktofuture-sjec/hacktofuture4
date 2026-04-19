@@ -15,7 +15,7 @@ DevOps Agent is an autonomous CI/CD pipeline monitor, PR reviewer, and issue fix
 - **Multi-Tenant OAuth**: Secure, per-user GitHub OAuth token integration for handling GitHub MCP operations and repository webhooks in isolation.
 
 ## Architecture
-<img width="6548" height="2766" alt="fossflow-export-2026-04-16T17_33_18 977Z" src="https://github.com/user-attachments/assets/88bad79f-94b5-40d3-89a1-820b7f0eb261" />
+<img width="6548" height="1000" alt="fossflow-export-2026-04-16T17_33_18 977Z" src="https://github.com/user-attachments/assets/88bad79f-94b5-40d3-89a1-820b7f0eb261" />
 
 
 ## Technology Stack
