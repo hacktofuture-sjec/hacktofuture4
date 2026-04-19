@@ -78,7 +78,7 @@ Our agent orchestrates multiple distinct operational flows simultaneously based 
 
 ```mermaid
 stateDiagram-v2
-    [*] --> EventRouter
+    START --> EventRouter
 
     state EventRouter {
         [*] --> CI_Failure: GitHub (check_run)
@@ -108,13 +108,12 @@ stateDiagram-v2
         NormalizeMetrics --> HealthCheck: CD Adapters
         HealthCheck --> RootCauseAnalysis: LLM Diagnosis
         RootCauseAnalysis --> EvaluateRisk
-        EvaluateRisk --> ExecuteRollback: Severe Anomaly
-        EvaluateRisk --> AlertEngine: Minor Anomaly
+        EvaluateRisk --> SendTelegramReport
     }
 
-    CI_Failure --> [*]
-    PR_Action --> [*]
-    CD_Anomaly --> [*]
+    CI_Failure --> END
+    PR_Action --> END
+    CD_Anomaly --> END
 ```
 
 ## 🧠 Agent Episodic Memory
