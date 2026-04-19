@@ -10,7 +10,7 @@ DevOps Agent is an autonomous CI/CD pipeline monitor, PR reviewer, and issue fix
   - **Score 50–74**: Triggers manual Telegram approval before merging.
   - **Score < 50**: Blocks CI/CD and triggers an automated fix agent to suggest improvements based on review findings.
 - **CD Pipeline Monitoring**: Monitors deployment pipelines across AWS, GCP, Azure, and custom providers. It aggregates metrics (Deployment Health, Error Rate, Latency) and automates rollbacks and anomaly detection.
-- **RSI (Repository Structure Index)**: An intelligent codebase ingestion pipeline that maps the structure of a repository, enabling the AI to precisely fetch code context dynamically using RAG.
+- **RSI (Repository Structure Index)**: An intelligent codebase ingestion pipeline that maps the structure of a repository, enabling the AI to precisely fetch code context dynamically.
 - **Telegram Moderation**: Deep integration with Telegram for real-time pipeline notifications, PR review summaries, and fast manual approvals via interactive buttons.
 - **Multi-Tenant OAuth**: Secure, per-user GitHub OAuth token integration for handling GitHub MCP operations and repository webhooks in isolation.
 
