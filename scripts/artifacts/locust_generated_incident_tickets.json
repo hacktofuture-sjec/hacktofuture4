@@ -1,0 +1,33 @@
+[
+  {
+    "ticket_file": "data/incidents/incident-2026-04-17-locust-rate-limit.json",
+    "ticket_id": "INC-2026-04-17-LOCUST-001",
+    "title": "Severe rate limiting on GET /api/projects during load test",
+    "severity": "SEV-1",
+    "derived_from": [
+      "scripts/artifacts/locust_incident_demo_stats.csv",
+      "scripts/artifacts/locust_incident_demo_failures.csv"
+    ]
+  },
+  {
+    "ticket_file": "data/incidents/incident-2026-04-17-locust-latency-regression.json",
+    "ticket_id": "INC-2026-04-17-LOCUST-002",
+    "title": "Health endpoint latency regression under concurrent user ramp",
+    "severity": "SEV-2",
+    "derived_from": [
+      "scripts/artifacts/locust_incident_demo_stats.csv",
+      "scripts/artifacts/locust_incident_demo_stats_history.csv"
+    ]
+  },
+  {
+    "ticket_file": "data/incidents/incident-2026-04-17-locust-capacity-saturation.json",
+    "ticket_id": "INC-2026-04-17-LOCUST-003",
+    "title": "Platform saturation risk detected at 80 simulated users",
+    "severity": "SEV-2",
+    "derived_from": [
+      "scripts/artifacts/locust_incident_demo_stats.csv",
+      "scripts/artifacts/locust_incident_demo_stats_history.csv",
+      "scripts/artifacts/locust_incident_demo_exceptions.csv"
+    ]
+  }
+]

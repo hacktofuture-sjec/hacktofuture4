@@ -1,0 +1,58 @@
+{
+  "id": "INC-2026-04-17-LOCUST-003",
+  "source_system": "locust",
+  "case_id": "LT-2026-04-17-003",
+  "service": "platform-edge",
+  "severity": "SEV-2",
+  "summary": "Platform saturation risk detected at 80 simulated users",
+  "short_description": "Aggregated load test metrics show high tail latency and high failure throughput while user count remained at 80.",
+  "status": "open",
+  "tags": [
+    "load-test",
+    "capacity",
+    "saturation",
+    "performance-regression"
+  ],
+  "metrics": {
+    "total_request_count": 24775,
+    "total_failure_count": 19295,
+    "overall_failure_rate_percent": 77.9,
+    "total_avg_response_ms": 314.81,
+    "total_p95_response_ms": 460,
+    "total_p99_response_ms": 740,
+    "total_max_response_ms": 6422.06,
+    "peak_requests_per_second": 148.6,
+    "peak_failures_per_second": 117.0
+  },
+  "evidence": {
+    "stats_file": "scripts/artifacts/locust_incident_demo_stats.csv",
+    "history_file": "scripts/artifacts/locust_incident_demo_stats_history.csv",
+    "exceptions_file": "scripts/artifacts/locust_incident_demo_exceptions.csv",
+    "user_count_plateau": 80
+  },
+  "timeline": [
+    {
+      "timestamp_epoch": 1776382064,
+      "event": "Traffic ramps and first non-zero failures appear",
+      "requests_per_second": 26.888889,
+      "failures_per_second": 0.0
+    },
+    {
+      "timestamp_epoch": 1776382076,
+      "event": "Failure rate increases rapidly during sustained load",
+      "requests_per_second": 142.1,
+      "failures_per_second": 99.6
+    },
+    {
+      "timestamp_epoch": 1776382161,
+      "event": "System remains near throughput ceiling with persistent errors",
+      "requests_per_second": 147.0,
+      "failures_per_second": 116.1
+    }
+  ],
+  "recommended_actions": [
+    "Run endpoint-specific soak tests after introducing backpressure and queue limits.",
+    "Validate autoscaling thresholds against 80+ concurrent user scenarios.",
+    "Add per-endpoint budget alerts for 429 rate and p99 latency simultaneously."
+  ]
+}

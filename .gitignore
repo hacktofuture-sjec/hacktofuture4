@@ -1,0 +1,30 @@
+# Node / frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/coverage/
+
+# Python / backend
+backend/.venv/
+backend/__pycache__/
+**/__pycache__/
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/*.pyc
+*.pyc
+backend/.uniops/
+
+# Env and local state
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+
+# Local third-party checkout
+.vendor/
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json

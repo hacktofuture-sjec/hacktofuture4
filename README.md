@@ -1,86 +1,115 @@
-# HackToFuture 4.0 — Template
+# hacktofuture4 — D07
 
-Welcome to your official HackToFuture 4 repository.
+Monorepo scaffold for the HackToFuture 4 (D07) build, designed for fast parallel development across frontend and backend.
 
-This repository template will be used for development, tracking progress, and final submission of your project. Ensure that all work is committed here within the allowed hackathon duration.
+## Repository Structure
 
----
+```text
+.
+├── frontend/                # Next.js app
+│   ├── app/
+│   ├── components/
+│   ├── lib/
+│   └── tests/
+├── backend/                 # FastAPI API + orchestration
+│   ├── app/
+│   │   └── api/routes/
+│   ├── src/
+│   │   ├── controller/
+│   │   ├── swarms/
+│   │   ├── gates/
+│   │   ├── memory/
+│   │   └── tools/
+│   └── tests/
+├── shared/
+│   └── contracts/           # Shared integration boundary
+├── data/                    # Sample/source data
+│   ├── confluence/
+│   ├── runbooks/
+│   ├── incidents/
+│   ├── github/
+│   └── slack/
+├── infra/
+│   └── docker-compose.yml
+├── scripts/
+└── docs/
+    ├── UniOps PRD.md
+    └── ways-of-working/
+```
 
-### Instructions for the teams:
+## Quick Start
 
-- Fork the Repository and name the forked repo in this convention: hacktofuture4-team_id (for eg: hacktofuture4-A01)
+### Option A: Docker Compose (recommended)
 
----
-
-## Rules
-
-- Work must be done ONLY in the forked repository
-- Only Four Contributors are allowed.
-- After 36 hours, Please make PR to the Main Repository. A Form will be sent to fill the required information.
-- Do not copy code from other teams
-- All commits must be from individual GitHub accounts
-- Please provide meaningful commits for tracking.
-- Do not share your repository with other teams
-- Final submission must be pushed before the deadline
-- Any violation may lead to disqualification
-
----
-
-# The Final README Template 
-
-## Problem Statement / Idea
-
-Clearly describe the problem you are solving.
-
-- What is the problem?
-- Why is it important?
-- Who are the target users?
-
----
-
-## Proposed Solution
-
-Explain your approach:
-
-- What are you building?
-- How does it solve the problem?
-- What makes your solution unique?
-
----
-
-## Features
-
-List the core features of your project:
-
-- Feature 1
-- Feature 2
-- Feature 3
-
----
-
-## Tech Stack
-
-Mention all technologies used:
-
-- Frontend:
-- Backend:
-- Database:
-- APIs / Services:
-- Tools / Libraries:
-
----
-
-## Project Setup Instructions
-
-Provide clear steps to run your project:
+From the repository root:
 
 ```bash
-# Clone the repository
-git clone <repo-link>
-
-# Install dependencies
-...
-
-# Run the project
-...
+make up
 ```
+
+- Frontend: http://localhost:3000
+- Backend health: http://localhost:8000/health
+- Milvus: localhost:19530
+
+### Option B: Run services separately
+
+Frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Backend:
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+## Current MVP Scaffold
+
+- FastAPI app with `/health` and `POST /api/chat`
+- Next.js app shell
+- Shared chat contract: `shared/contracts/chat.contract.json`
+- Sample data folders for Confluence, runbooks, incidents, GitHub, and Slack
+
+## Vector DB (Milvus)
+
+Retrieval behavior is controlled by `RETRIEVAL_MODE`:
+
+- `keyword`: keyword-only retrieval (no vector indexing)
+- `semantic`: Milvus semantic retrieval (falls back to keyword when unavailable)
+- `hybrid`: semantic-first with keyword backfill
+
+Example `.env` values:
+
+```bash
+RETRIEVAL_MODE=hybrid
+MILVUS_HOST=localhost
+MILVUS_PORT=19530
+MILVUS_COLLECTION_NAME=uniops_documents
+EMBEDDING_PROVIDER=deterministic
+EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
+```
+
+Vector endpoints:
+
+- `GET /api/vector/status`
+- `POST /api/vector/rebuild`
+
+## Working Agreements (parallel build)
+
+- Frontend work stays in `frontend/**`
+- Backend work stays in `backend/**`
+- Shared areas (`shared/**`, `infra/**`, docs) should be changed with extra care to avoid conflicts
+
+See:
+- `docs/ways-of-working/OWNERSHIP.md`
+- `docs/ways-of-working/BRANCHING.md`
+- `docs/ways-of-working/INTEGRATION_RULES.md`
+- `docs/ways-of-working/TASK_SPLIT_24H.md`

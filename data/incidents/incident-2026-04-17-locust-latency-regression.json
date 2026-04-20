@@ -1,0 +1,53 @@
+{
+  "id": "INC-2026-04-17-LOCUST-002",
+  "source_system": "locust",
+  "case_id": "LT-2026-04-17-002",
+  "service": "health-monitoring-path",
+  "severity": "SEV-2",
+  "summary": "Health endpoint latency regression under concurrent user ramp",
+  "short_description": "GET /health remained successful but showed tail latency spikes indicating capacity stress.",
+  "status": "open",
+  "tags": [
+    "load-test",
+    "latency",
+    "tail-latency",
+    "health-endpoint"
+  ],
+  "metrics": {
+    "request_count": 4980,
+    "failure_count": 0,
+    "failure_rate_percent": 0.0,
+    "median_response_ms": 280,
+    "avg_response_ms": 312.96,
+    "p95_response_ms": 440,
+    "p99_response_ms": 800,
+    "max_response_ms": 6304.33
+  },
+  "evidence": {
+    "stats_file": "scripts/artifacts/locust_incident_demo_stats.csv",
+    "endpoint": "GET /health",
+    "observation": "No hard failures but high tail latency and >6s max response time under load."
+  },
+  "timeline": [
+    {
+      "timestamp_epoch": 1776382060,
+      "event": "First extreme latency spike observed during ramp",
+      "p95_ms": 6300
+    },
+    {
+      "timestamp_epoch": 1776382071,
+      "event": "Tail latency remains elevated while traffic increases",
+      "p95_ms": 4000
+    },
+    {
+      "timestamp_epoch": 1776382120,
+      "event": "Latency partially recovers but remains above low-load baseline",
+      "p95_ms": 570
+    }
+  ],
+  "recommended_actions": [
+    "Profile health handler dependencies and reduce synchronous blocking calls.",
+    "Add connection pool and thread/worker telemetry to correlate spikes.",
+    "Define and enforce a p95 health latency SLO during load tests."
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "skills": {
+    "deep-research": {
+      "source": "199-biotechnologies/claude-deep-research-skill",
+      "sourceType": "github",
+      "computedHash": "685efecf2091dccf219506641671acc3c0c31ecb83f54b8473b9d399ba0337b8"
+    },
+    "permission-auditor": {
+      "source": "useai-pro/openclaw-skills-security",
+      "sourceType": "github",
+      "computedHash": "2f8fe0661725ce237c15060619a32c93eec22120c91a06b665f1515e2f1bcdce"
+    },
+    "swarm-advanced": {
+      "source": "ruvnet/ruflo",
+      "sourceType": "github",
+      "computedHash": "7150c0772cffbd1039d2d89e5ca492d3714620f2666eff50933b3e1e6942209d"
+    }
+  }
+}
