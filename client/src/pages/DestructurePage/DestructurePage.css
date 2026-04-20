@@ -1,0 +1,215 @@
+@reference "../../styles/globals.css";
+
+.dest-page {
+  @apply relative min-h-screen w-full overflow-hidden bg-background cursor-default pb-24;
+}
+
+.dest-page__bg-grid {
+  @apply absolute inset-0 bg-grid-overlay pointer-events-none z-0;
+}
+
+.dest-page__glow-1 {
+  @apply absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary opacity-20 blur-[150px] rounded-full pointer-events-none;
+}
+
+.dest-page__glow-2 {
+  @apply absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-tertiary-fixed opacity-15 blur-[120px] rounded-full pointer-events-none;
+}
+
+.dest-nav {
+  @apply relative z-10 flex items-center justify-between px-8 py-8 max-w-7xl mx-auto;
+}
+
+.dest-nav__brand {
+  @apply flex items-center gap-5 cursor-pointer hover:opacity-80 transition-opacity;
+}
+
+.dest-nav__logo-container {
+  @apply w-12 h-12 flex items-center justify-center;
+}
+
+.dest-nav__logo {
+  @apply w-full h-full object-contain scale-150 transform-gpu;
+}
+
+.dest-nav__title {
+  @apply font-headline font-extrabold tracking-tighter text-2xl text-on-surface;
+}
+
+.dest-nav__btn {
+  @apply px-4 py-2 border border-outline-variant text-on-surface-variant rounded font-bold tracking-widest text-xs uppercase hover:bg-surface-container-high transition-colors cursor-pointer;
+}
+
+.dest-hero {
+  @apply relative z-10 pt-20 pb-16 px-6 max-w-5xl mx-auto flex w-full justify-center text-center;
+}
+
+.dest-hero__content {
+  @apply flex flex-col items-center;
+}
+
+.dest-hero__badge {
+  @apply inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-surface-container-high border border-outline-variant text-[11px] font-bold tracking-[0.2em] uppercase text-primary mb-8;
+}
+
+.dest-hero__badge-dot {
+  @apply w-2 h-2 rounded-full bg-primary animate-pulse;
+}
+
+.dest-hero__title {
+  @apply font-headline font-black text-5xl md:text-7xl tracking-tighter text-on-surface leading-tight mb-8;
+}
+
+.dest-hero__subtitle {
+  @apply font-body text-lg md:text-xl text-on-surface-variant max-w-2xl leading-relaxed;
+}
+
+.dest-tabs-section {
+  @apply relative z-10 px-6 max-w-7xl mx-auto mt-16;
+}
+
+.dest-tabs-container {
+  @apply flex justify-center mb-20;
+}
+
+.dest-tabs {
+  @apply inline-flex gap-4 p-2.5 rounded-2xl bg-surface-container-lowest border border-outline-variant/50 shadow-xl shadow-black/5;
+}
+
+.dest-tab {
+  @apply relative px-10 py-5 rounded-xl transition-all duration-300 font-headline font-bold text-sm tracking-widest flex items-center gap-3;
+  @apply text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high;
+}
+
+.dest-tab--active {
+  @apply bg-primary/10 text-primary shadow-lg shadow-primary/5;
+}
+
+.dest-tab__icon {
+  @apply text-xl;
+}
+
+.dest-tab__indicator {
+  @apply absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-1 bg-primary rounded-t-full;
+}
+
+.dest-viewer {
+  @apply w-full pt-4;
+}
+
+.dest-content {
+  @apply flex flex-col gap-12;
+}
+
+.dest-section-header {
+  @apply mb-16 text-center flex flex-col items-center;
+}
+
+.dest-section-title {
+  @apply font-headline font-black text-4xl tracking-tighter text-on-surface mb-6;
+}
+
+.dest-section-desc {
+  @apply text-on-surface-variant text-lg max-w-4xl leading-relaxed text-center;
+}
+
+.dest-workflow-box {
+  @apply bg-surface-container-high/40 border border-outline-variant rounded-2xl p-8 mb-12 text-left max-w-3xl mx-auto;
+}
+
+.dest-workflow-title {
+  @apply font-headline font-black text-2xl tracking-[0.1em] text-on-surface mb-8 uppercase;
+}
+
+.dest-workflow-list {
+  @apply flex flex-col gap-8;
+}
+
+.dest-workflow-list li {
+  @apply text-sm text-on-surface-variant leading-relaxed;
+}
+
+.dest-workflow-step-title {
+  @apply block font-headline font-black text-lg text-primary mb-2 uppercase tracking-tight;
+  /* Making it orange */
+  color: #ff6b00; 
+}
+
+.dest-grid {
+  @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6;
+}
+
+.dest-card {
+  @apply bg-surface-container-lowest border border-outline-variant/50 rounded-2xl p-8 relative overflow-hidden transition-all duration-500 hover:border-primary/40 hover:-translate-y-2;
+}
+
+.dest-card__num {
+  @apply absolute -top-4 -right-2 font-headline font-black text-6xl text-primary/5;
+}
+
+.dest-card__title {
+  @apply font-headline text-xl font-bold tracking-tight text-on-surface mb-3;
+}
+
+.dest-card__text {
+  @apply text-sm text-on-surface-variant leading-relaxed;
+}
+
+.dest-row-grid {
+  @apply flex flex-col gap-6;
+}
+
+.dest-wide-card {
+  @apply bg-surface-container-lowest border border-outline-variant/50 rounded-2xl p-8 flex items-start gap-8 transition-all hover:bg-surface-container-high hover:border-primary/30;
+}
+
+.dest-wide-card__icon {
+  @apply w-16 h-16 rounded-2xl bg-surface-container-high flex items-center justify-center text-primary shrink-0;
+}
+
+.dest-wide-card__icon span {
+  @apply text-3xl;
+}
+
+.dest-wide-card__title {
+  @apply font-headline text-2xl font-black tracking-tight text-on-surface mb-2;
+}
+
+.dest-wide-card__text {
+  @apply text-on-surface-variant leading-relaxed max-w-3xl;
+}
+
+.dest-info-box {
+  @apply p-8 rounded-2xl bg-surface-container-high/50 border border-outline-variant border-dashed;
+}
+
+.dest-info-box__header {
+  @apply flex items-center gap-3 font-headline font-black tracking-widest text-sm mb-4;
+}
+
+.dest-info-box__text {
+  @apply text-on-surface-variant leading-loose;
+}
+
+/* CD Visual Frame */
+.dest-cd-frame {
+  @apply w-full bg-surface-container-lowest border border-outline-variant rounded-3xl overflow-hidden shadow-2xl relative transition-all duration-500 hover:border-primary/50;
+}
+
+.dest-cd-img {
+  @apply w-full h-auto object-contain transition-transform duration-700 hover:scale-[1.01];
+}
+
+.dest-cd-overlay {
+  @apply absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-300;
+  @apply text-white font-headline font-black text-xs tracking-[0.3em] gap-3;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}

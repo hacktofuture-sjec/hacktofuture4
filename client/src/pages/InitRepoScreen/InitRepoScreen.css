@@ -1,0 +1,125 @@
+@reference "../../styles/globals.css";
+
+.init-page {
+  @apply flex h-screen overflow-hidden bg-background;
+}
+
+.init-page__main {
+  @apply flex-1 relative bg-dot-pattern overflow-y-auto;
+}
+
+.init-content {
+  @apply px-8 py-12;
+}
+
+.init-content--centered {
+  @apply max-w-5xl mx-auto flex flex-col items-center gap-12 min-h-[calc(100vh-64px)] justify-center;
+}
+
+/* ── Hero icon area ─────────────────────────────── */
+
+.init-hero {
+  @apply flex flex-col items-center gap-4;
+}
+
+.init-icon-container {
+  @apply relative w-36 h-36;
+}
+
+.init-icon-ring {
+  @apply absolute inset-0 border-2 border-dashed border-primary/20 rounded-full animate-pulse;
+}
+
+.init-icon-solid {
+  @apply absolute inset-4 border-2 border-primary/40 rounded-full;
+}
+
+.init-icon-inner {
+  @apply absolute inset-0 flex items-center justify-center;
+}
+
+.init-icon {
+  @apply text-5xl text-primary;
+  font-variation-settings: 'FILL' 1;
+}
+
+.init-status {
+  @apply space-y-2 text-center flex flex-col items-center;
+}
+
+.init-status__badge {
+  @apply px-3 py-1 bg-tertiary-container text-white text-[10px] font-bold tracking-widest uppercase rounded-full;
+}
+
+.init-status__text {
+  @apply text-xs text-on-surface-variant font-medium italic m-0;
+}
+
+/* ── Search block ───────────────────────────────── */
+
+.init-search-block {
+  @apply w-full max-w-4xl flex flex-col gap-8 bg-surface-container-low p-12 rounded-3xl border border-outline-variant shadow-2xl;
+}
+
+.init-search-block__title {
+  @apply text-5xl font-black text-on-surface tracking-tighter m-0 text-center uppercase;
+}
+
+
+.init-title__highlight {
+  @apply text-primary;
+}
+
+.init-search-block__subtitle {
+  @apply text-on-surface-variant leading-relaxed text-center text-base m-0 px-8;
+}
+
+.init-error-banner {
+  @apply bg-error-container text-on-error-container p-3 rounded-lg border border-error/20 flex gap-2 items-center text-sm font-medium;
+}
+
+/* ── Search input ───────────────────────────────── */
+
+.init-search {
+  @apply relative w-full flex items-center border-2 border-outline-variant rounded-xl bg-surface-container-lowest focus-within:border-primary transition-all focus-within:shadow-[0_0_0_4px_rgba(197,91,0,0.12)] h-16;
+}
+
+.init-search__icon {
+  @apply pl-5 text-primary text-2xl flex-shrink-0;
+}
+
+.init-search__check {
+  @apply pr-5 text-primary text-2xl flex-shrink-0;
+}
+
+.init-search__input {
+  @apply flex-1 bg-transparent border-none px-6 py-0 text-on-surface outline-none font-mono text-xl placeholder-on-surface-variant/50 h-full;
+}
+
+
+.init-search__results {
+  @apply absolute top-full left-0 right-0 z-20 mt-2 bg-surface-container-highest border border-outline-variant rounded-xl shadow-2xl overflow-hidden max-h-64 overflow-y-auto p-0 list-none;
+}
+
+.init-search__result-item {
+  @apply flex items-center gap-3 px-5 py-3.5 cursor-pointer hover:bg-primary/10 text-on-surface text-sm font-mono border-b border-outline-variant/20 last:border-none transition-colors;
+}
+
+.init-search__result-item--selected {
+  @apply bg-primary/15 text-primary font-bold;
+}
+
+/* ── CTA button ─────────────────────────────────── */
+
+.init-btn-primary {
+  @apply w-full flex items-center justify-between bg-primary text-white px-8 py-5 rounded-2xl font-black hover:bg-primary-container transition-all active:scale-[0.98] border-2 border-primary/20 cursor-pointer shadow-xl shadow-primary/25 disabled:opacity-60 disabled:cursor-not-allowed;
+  font-size: 14px;
+}
+
+.init-btn-primary__content {
+  @apply flex items-center gap-3 uppercase tracking-tighter;
+}
+
+.init-btn-primary__icon {
+  @apply group-hover:rotate-12 transition-transform;
+}

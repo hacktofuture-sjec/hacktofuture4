@@ -1,0 +1,200 @@
+@reference "../../styles/globals.css";
+
+.about-page {
+  @apply relative min-h-screen w-full overflow-hidden bg-background cursor-default pb-24;
+}
+
+.about-page__bg-grid {
+  @apply absolute inset-0 bg-grid-overlay pointer-events-none z-0;
+}
+
+.about-page__glow-1 {
+  @apply absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary opacity-20 blur-[150px] rounded-full pointer-events-none;
+}
+
+.about-page__glow-2 {
+  @apply absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-tertiary-fixed opacity-15 blur-[120px] rounded-full pointer-events-none;
+}
+
+.about-nav {
+  @apply relative z-10 flex items-center justify-between px-8 py-8 max-w-7xl mx-auto;
+}
+
+.about-nav__brand {
+  @apply flex items-center gap-5 cursor-pointer hover:opacity-80 transition-opacity;
+}
+
+.about-nav__logo-container {
+  @apply w-12 h-12 flex items-center justify-center;
+}
+
+.about-nav__logo {
+  @apply w-full h-full object-contain scale-150 transform-gpu;
+}
+
+.about-nav__title {
+  @apply font-headline font-extrabold tracking-tighter text-2xl text-on-surface;
+}
+
+.about-nav__home-btn {
+  @apply px-4 py-2 border border-outline-variant text-on-surface-variant rounded font-bold tracking-widest text-xs uppercase hover:bg-surface-container-high transition-colors cursor-pointer;
+}
+
+.about-hero {
+  @apply relative z-10 pt-20 pb-16 px-6 max-w-5xl mx-auto flex w-full justify-center text-center;
+}
+
+.about-hero__content {
+  @apply flex flex-col items-center;
+}
+
+.about-hero__badge {
+  @apply inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-surface-container-high border border-outline-variant text-[11px] font-bold tracking-[0.2em] uppercase text-primary mb-8;
+}
+
+.about-hero__badge-dot {
+  @apply w-2 h-2 rounded-full bg-primary animate-pulse;
+}
+
+.about-hero__title {
+  @apply font-headline font-black text-5xl md:text-7xl tracking-tighter text-on-surface leading-tight mb-8;
+}
+
+.about-hero__subtitle {
+  @apply font-body text-lg md:text-xl text-on-surface-variant max-w-2xl leading-relaxed;
+}
+
+.about-details {
+  @apply relative z-10 px-6 max-w-6xl mx-auto;
+}
+
+.about-grid {
+  @apply grid grid-cols-1 md:grid-cols-3 gap-8 mt-12 pb-8;
+}
+
+.about-card {
+  @apply relative p-8 rounded-2xl bg-surface-container-lowest border border-outline-variant/50 hover:border-primary/50 transition-colors duration-300 overflow-hidden;
+}
+
+.about-card::before {
+  content: "";
+  @apply absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100;
+}
+
+.about-card__icon {
+  @apply w-14 h-14 rounded-xl bg-surface-container-high flex items-center justify-center text-primary mb-6 transition-transform duration-300 group-hover:scale-110 group-hover:-translate-y-1 group-hover:shadow-lg group-hover:shadow-primary/20;
+}
+
+.about-card__icon span {
+  @apply text-3xl;
+}
+
+.about-card__title {
+  @apply font-headline text-2xl font-bold tracking-tighter text-on-surface mb-4 group-hover:text-primary transition-colors;
+}
+
+.about-card__desc {
+  @apply text-on-surface-variant text-[15px] leading-relaxed;
+}
+
+/* Feature Section Styles Migrated from Landing Page */
+
+.feature-section {
+  @apply relative z-10 px-6 max-w-7xl mx-auto pb-40;
+}
+
+.feature-section__grid {
+  @apply grid grid-cols-1 md:grid-cols-12 gap-6 h-auto md:h-[600px];
+}
+
+.featured-card {
+  @apply md:col-span-7 relative overflow-hidden rounded-xl bg-surface-container-lowest border border-outline-variant;
+}
+
+.featured-card__img {
+  @apply absolute inset-0 w-full h-full object-cover transition-transform duration-700 hover:scale-105 opacity-80;
+}
+
+.featured-card__gradient {
+  @apply absolute inset-0 bg-linear-to-t from-background via-transparent to-transparent;
+}
+
+.featured-card__content {
+  @apply absolute bottom-0 left-0 p-8;
+}
+
+.featured-card__badge {
+  @apply flex items-center gap-2 mb-2;
+}
+
+.featured-card__badge-icon {
+  @apply text-primary;
+}
+
+.featured-card__badge-text {
+  @apply font-bold tracking-widest text-xs text-primary uppercase;
+}
+
+.featured-card__title {
+  @apply text-3xl font-black text-on-surface tracking-tighter mb-4;
+}
+
+.featured-card__desc {
+  @apply font-medium text-on-surface-variant max-w-lg leading-relaxed text-sm;
+}
+
+.sidebar-cards {
+  @apply md:col-span-5 flex flex-col gap-6;
+}
+
+.resource-card {
+  @apply flex-1 bg-surface-container-lowest border border-outline-variant rounded-xl p-8 flex flex-col justify-between;
+}
+
+.resource-card__icon {
+  @apply text-tertiary mb-4 text-3xl;
+}
+
+.resource-card__title {
+  @apply text-xl font-bold text-on-surface tracking-tight mb-2;
+}
+
+.resource-card__text {
+  @apply text-sm text-on-surface-variant leading-relaxed;
+}
+
+.resource-card__footer {
+  @apply flex items-center justify-between pt-6 border-t border-outline-variant/30;
+}
+
+.resource-card__metric {
+  @apply text-2xl font-black text-tertiary;
+}
+
+.resource-card__metric-label {
+  @apply text-[10px] font-bold uppercase tracking-widest text-on-surface-variant;
+}
+
+.security-card {
+  @apply bg-primary/5 border border-primary/20 rounded-xl p-6 flex flex-col justify-center gap-4 flex-1;
+}
+
+.security-card__icon-wrapper {
+  @apply flex items-center gap-4;
+}
+
+.security-card__icon {
+  @apply w-12 h-12 rounded bg-primary flex items-center justify-center text-white shrink-0;
+}
+
+.security-card__label {
+  @apply text-xs font-bold text-primary uppercase tracking-tighter mb-1;
+}
+
+.security-card__title {
+  @apply text-xl font-black text-on-surface tracking-tighter;
+}
+
+.security-card__desc {
+  @apply text-sm text-on-surface-variant leading-relaxed;
+}
