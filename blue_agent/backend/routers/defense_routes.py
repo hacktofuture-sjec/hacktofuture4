@@ -1,5 +1,7 @@
 """Defense endpoints for the Blue Agent."""
 
+from typing import List
+
 from fastapi import APIRouter
 
 from blue_agent.backend.schemas.blue_schemas import (
@@ -29,6 +31,6 @@ async def isolate_host(request: IsolateHostRequest) -> DefenseResult:
     return await blue_service.isolate_host(request)
 
 
-@router.get("/recent", response_model=list[ToolCall])
-async def recent_actions(limit: int = 20) -> list[ToolCall]:
+@router.get("/recent", response_model=List[ToolCall])
+async def recent_actions(limit: int = 20) -> List[ToolCall]:
     return await blue_service.recent_tool_calls(category="defend", limit=limit)

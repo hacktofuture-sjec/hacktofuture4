@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Request / response models for the Red Agent backend."""
 
 from datetime import datetime
@@ -23,12 +24,12 @@ class ToolCall(BaseModel):
     status: ToolStatus = ToolStatus.PENDING
     params: dict[str, Any] = Field(default_factory=dict)
     result: dict[str, Any] | None = None
-    started_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: datetime = Field(default_factory=datetime.now)
     finished_at: datetime | None = None
 
 
 class LogEntry(BaseModel):
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=datetime.now)
     level: str = "INFO"
     message: str
     tool_id: str | None = None
@@ -81,3 +82,30 @@ class StrategyPlan(BaseModel):
     tool_call: ToolCall
     steps: list[str] = Field(default_factory=list)
     rationale: str | None = None
+
+
+# ── Mission (orchestrator) ──
+
+
+class MissionPhase(str, Enum):
+    IDLE = "IDLE"
+    RECON = "RECON"
+    ANALYZE = "ANALYZE"
+    PLAN = "PLAN"
+    EXPLOIT = "EXPLOIT"
+    REPORT = "REPORT"
+    DONE = "DONE"
+    FAILED = "FAILED"
+    PAUSED = "PAUSED"
+
+
+class MissionStartRequest(BaseModel):
+    target: str = Field(..., examples=["192.168.1.100"])
+
+
+class MissionStatus(BaseModel):
+    id: str
+    target: str
+    phase: MissionPhase = MissionPhase.IDLE
+    created_at: datetime = Field(default_factory=datetime.now)
+    error: str | None = None

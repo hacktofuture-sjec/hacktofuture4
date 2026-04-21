@@ -1,5 +1,1 @@
-"""Cloud environment scanner."""
-
-
-class CloudScanner:
-    pass
+class CloudScanner: pass

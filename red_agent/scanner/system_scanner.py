@@ -1,5 +1,1 @@
-"""Host/system level scanner."""
-
-
-class SystemScanner:
-    pass
+class SystemScanner: pass

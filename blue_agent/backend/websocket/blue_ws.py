@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from typing import Set
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -40,28 +41,35 @@ class BlueConnectionManager:
 
 manager = BlueConnectionManager()
 
+# Register the broadcast callback so service layer can push events in real-time
+blue_service.set_broadcast_callback(manager.broadcast)
+
 
 @router.websocket("/ws/blue")
 async def blue_log_stream(ws: WebSocket) -> None:
-    """Streams `{type, payload}` envelopes to the Blue dashboard.
-
-    Envelope types:
-      - `log`        : a LogEntry
-      - `tool_call`  : a ToolCall snapshot
-      - `heartbeat`  : keepalive ping
-    """
+    """Streams {type, payload} envelopes to the Blue dashboard in real-time."""
     await manager.connect(ws)
     try:
-        for call in await blue_service.recent_tool_calls(limit=20):
-            await ws.send_json({"type": "tool_call", "payload": call.model_dump(mode="json")})
-        for entry in await blue_service.recent_logs(limit=50):
-            await ws.send_json({"type": "log", "payload": entry.model_dump(mode="json")})
+        # Wipe backend history so reload always starts clean
+        blue_service.clear_history()
+        # Signal the frontend to clear all existing state (fresh session)
+        await ws.send_json({"type": "session_start", "payload": {"session_id": str(uuid.uuid4())}})
 
+        # Periodic status updates
+        tick = 0
         while True:
-            await asyncio.sleep(15)
-            await ws.send_json({"type": "heartbeat", "payload": {}})
-    except WebSocketDisconnect:
+            await asyncio.sleep(5)
+            tick += 1
+
+            status = await blue_service.get_agent_status()
+            await ws.send_json({"type": "agent_status", "payload": status.model_dump(mode="json")})
+
+            if tick % 3 == 0:
+                scan_stats = blue_service.get_ssh_scan_stats()
+                await ws.send_json({"type": "scan_stats", "payload": scan_stats})
+                await ws.send_json({"type": "heartbeat", "payload": {}})
+
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    finally:
         await manager.disconnect(ws)
-    except Exception:
-        await manager.disconnect(ws)
-        raise

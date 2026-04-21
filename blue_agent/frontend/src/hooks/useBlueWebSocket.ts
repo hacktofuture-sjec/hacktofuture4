@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import type { LogEntry, ToolCall, WsEnvelope } from "@/types/blue.types";
+import type {
+  AgentStatus,
+  LogEntry,
+  ToolCall,
+  WsEnvelope,
+} from "@/types/blue.types";
 
 const BLUE_WS_URL =
   import.meta.env.VITE_BLUE_WS_URL ?? "ws://localhost:8002/ws/blue";
@@ -8,15 +13,17 @@ interface BlueWsState {
   connected: boolean;
   toolCalls: ToolCall[];
   logs: LogEntry[];
+  agentStatus: AgentStatus | null;
 }
 
-const MAX_TOOL_CALLS = 50;
-const MAX_LOGS = 200;
+const MAX_TOOL_CALLS = 100;
+const MAX_LOGS = 500;
 
 export function useBlueWebSocket(): BlueWsState {
   const [connected, setConnected] = useState(false);
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<number | null>(null);
 
@@ -46,6 +53,8 @@ export function useBlueWebSocket(): BlueWsState {
             });
           } else if (env.type === "log") {
             setLogs((prev) => [...prev, env.payload].slice(-MAX_LOGS));
+          } else if (env.type === "agent_status") {
+            setAgentStatus(env.payload as AgentStatus);
           }
         } catch (err) {
           console.error("[blue ws] bad payload", err);
@@ -61,5 +70,5 @@ export function useBlueWebSocket(): BlueWsState {
     };
   }, []);
 
-  return { connected, toolCalls, logs };
+  return { connected, toolCalls, logs, agentStatus };
 }

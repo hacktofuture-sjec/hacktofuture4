@@ -1,5 +1,1 @@
-"""Web application scanner."""
-
-
-class WebScanner:
-    pass
+class WebScanner: pass

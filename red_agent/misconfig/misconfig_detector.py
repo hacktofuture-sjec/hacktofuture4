@@ -1,5 +1,1 @@
-"""Detects misconfigurations across services."""
-
-
-class MisconfigDetector:
-    pass
+class MisconfigDetector: pass

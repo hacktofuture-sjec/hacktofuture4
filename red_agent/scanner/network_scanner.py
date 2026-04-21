@@ -1,5 +1,1 @@
-"""Network port and service scanner."""
-
-
-class NetworkScanner:
-    pass
+class NetworkScanner: pass

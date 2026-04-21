@@ -6,15 +6,26 @@ the Red Team dashboard.
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env from project root so AZURE_OPENAI_API_KEY etc. are available
+_env_path = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(_env_path, override=True)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from red_agent.backend.routers import (
+    chat_routes,
+    cve_routes,
     exploit_routes,
+    mission_routes,
     scan_routes,
     strategy_routes,
 )
+from red_agent.backend.routers import report_routes
 from red_agent.backend.websocket import red_ws
 
 RED_API_PORT = 8001
@@ -22,9 +33,24 @@ RED_API_PORT = 8001
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: place to wire up the RedController, event bus, CVE feed, etc.
+    import asyncio
+    red_ws.manager.bind_loop(asyncio.get_event_loop())
+
+    # ── Start real-time CVE feed ──────────────────────────────────────
+    from core.cve_feed import cve_feed
+
+    async def _broadcast_cve_alert(new_cves: list[dict]) -> None:
+        from red_agent.backend.websocket.red_ws import manager
+        for cve in new_cves:
+            await manager.broadcast({"type": "cve_alert", "payload": cve})
+
+    cve_feed.on_new_cves(_broadcast_cve_alert)
+    await cve_feed.start()
+    # ─────────────────────────────────────────────────────────────────
+
     yield
-    # Shutdown: close any open resources here.
+
+    await cve_feed.stop()
 
 
 app = FastAPI(
@@ -42,9 +68,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(chat_routes.router, tags=["chat"])
+app.include_router(mission_routes.router)
 app.include_router(scan_routes.router, prefix="/scan", tags=["scan"])
 app.include_router(exploit_routes.router, prefix="/exploit", tags=["exploit"])
+app.include_router(report_routes.router, prefix="/report", tags=["report"])
 app.include_router(strategy_routes.router, prefix="/strategy", tags=["strategy"])
+app.include_router(cve_routes.router)
 app.include_router(red_ws.router, tags=["websocket"])
 
 
