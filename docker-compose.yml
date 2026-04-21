@@ -1,0 +1,71 @@
+# HTF — Docker-compose for Blue Agent
+#
+# Usage:
+#   docker-compose up --build              # build & run everything
+#   docker-compose up -d                   # detached
+#   docker-compose down                    # tear everything down
+#   docker-compose logs -f blue-backend    # tail a single service
+#
+# Prerequisite: copy .env.example -> .env
+#   cp .env.example .env
+#
+# Dev mode: the frontend services use `target: build` so they run the Vite
+# dev server with hot reload against mounted source files. Switch to prod
+# by removing `target:`, the volume mounts, and the `command:` override.
+
+services:
+  blue-backend:
+    container_name: htf-blue-backend
+    build:
+      context: .
+      dockerfile: blue_agent/backend/Dockerfile
+    image: htf/blue-backend:dev
+    ports:
+      - "8002:8002"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - ./blue_agent:/app/blue_agent
+      - ./core:/app/core
+      - ./shared:/app/shared
+      - ./config:/app/config
+    command: >
+      uvicorn blue_agent.backend.main:app
+      --host 0.0.0.0 --port 8002 --reload
+    networks:
+      - htf-network
+
+  blue-frontend:
+    container_name: htf-blue-frontend
+    build:
+      context: ./blue_agent/frontend
+      dockerfile: Dockerfile
+      target: build
+    image: htf/blue-frontend:dev
+    ports:
+      - "3002:3002"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      VITE_BLUE_API_URL: http://localhost:8002
+      VITE_BLUE_WS_URL: ws://localhost:8002/ws/blue
+    volumes:
+      - ./blue_agent/frontend/src:/app/src
+      - ./blue_agent/frontend/public:/app/public
+      - ./blue_agent/frontend/index.html:/app/index.html
+      - ./blue_agent/frontend/vite.config.ts:/app/vite.config.ts
+      - ./blue_agent/frontend/tsconfig.json:/app/tsconfig.json
+    command: npm run dev -- --host 0.0.0.0 --port 3002
+    depends_on:
+      - blue-backend
+    networks:
+      - htf-network
+
+networks:
+  htf-network:
+    driver: bridge
+    name: htf-network
