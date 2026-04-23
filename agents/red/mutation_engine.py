@@ -10,7 +10,7 @@ from .response_analyzer import AttackResponse
 # Configure Gemini API
 # If your key is in an environment variable named GOOGLE_API_KEY, just use genai.Client()
 # If you must hardcode it (not recommended for security), pass it to api_key="YOUR_KEY"
-client = genai.Client(api_key="AIzaSyBuGSEy55r9uBVlCFDeXr5hzku1Up5WZXQ")
+client = genai.Client(api_key="")
 
 # ─── Tier 1: Syntactic Mutation Tables ───────────────────────────────────────
 
