@@ -8,11 +8,14 @@ PipelineMedic — intended flow:
 Env: GROQ_API_KEY, TELEGRAM_*, GITHUB_* (token required for real PRs).
 Optional: LANGFUSE_* for LLM observability and cost tracking (Groq generations).
 CI: POST { "repository", "log" | "log_text" } to /webhook.
+GitHub: configure a repo Webhook (push) → POST /github/webhook for Telegram push alerts.
 """
 
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -1340,6 +1343,19 @@ def tg_send_with_buttons(
     )
 
 
+def tg_send_html(chat_id: int | str, text: str) -> dict[str, Any]:
+    """Plain Telegram message (no inline keyboard), HTML parse mode."""
+    return _tg_request(
+        "sendMessage",
+        {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        },
+    )
+
+
 def tg_edit_message(
     chat_id: int | str,
     message_id: int,
@@ -2307,6 +2323,139 @@ def rollback_pull_request(incident: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# --- GitHub repository Webhooks (push → Telegram) ------------------------------
+
+def _github_webhook_signature_ok(body: bytes, signature_header: str | None) -> bool:
+    """Validate ``X-Hub-Signature-256`` when ``GITHUB_WEBHOOK_SECRET`` is set."""
+    secret = os.getenv("GITHUB_WEBHOOK_SECRET", "").strip()
+    if not secret:
+        return True
+    if not signature_header or not signature_header.startswith("sha256="):
+        return False
+    mac = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    expected = f"sha256={mac}"
+    return hmac.compare_digest(signature_header.strip(), expected)
+
+
+def _github_push_skip_reason(payload: dict[str, Any]) -> str | None:
+    """Return a machine-readable skip reason, or None to deliver Telegram."""
+    ref = str(payload.get("ref") or "")
+    if ref.startswith("refs/tags/"):
+        return "tag_push"
+    branch = ref.removeprefix("refs/heads/") if ref.startswith("refs/heads/") else ref
+    raw = os.getenv(
+        "GITHUB_PUSH_SKIP_BRANCH_PREFIXES",
+        "pipelinemedic/autofix-,dependabot/",
+    ).strip()
+    for p in raw.split(","):
+        p = p.strip()
+        if p and branch.startswith(p):
+            return f"branch_prefix:{p}"
+    return None
+
+
+def build_github_push_telegram_message(payload: dict[str, Any]) -> str:
+    """HTML body for a GitHub ``push`` event (web commit, git push, merge)."""
+    repo = (payload.get("repository") or {}).get("full_name") or "unknown/repo"
+    ref = str(payload.get("ref") or "")
+    branch = (
+        ref.removeprefix("refs/heads/")
+        if ref.startswith("refs/heads/")
+        else ref or "—"
+    )
+    pusher = (payload.get("pusher") or {}).get("name") or "—"
+    sender = (payload.get("sender") or {}).get("login")
+    by_line = _h(pusher)
+    if sender and sender != pusher:
+        by_line = f"{by_line} · @{_h(sender)}"
+
+    commits = list(payload.get("commits") or [])
+    head = payload.get("head_commit") or {}
+    if not commits and head.get("id"):
+        commits = [head]
+    n = len(commits)
+
+    lines: list[str] = [
+        "📌 <b>PipelineMedic · GitHub push</b>",
+        "",
+        f"Repo · <code>{_h(repo)}</code>",
+        f"Branch · <code>{_h(branch)}</code>",
+        f"By · {by_line}",
+        f"Commits · {n}",
+        "",
+    ]
+    for c in commits[:5]:
+        msg_raw = str((c or {}).get("message") or "").strip()
+        msg_lines = msg_raw.splitlines()
+        msg = (msg_lines[0] if msg_lines else "")[:120]
+        cid = str((c or {}).get("id") or "")[:7]
+        if cid:
+            lines.append(f"• <code>{_h(cid)}</code> {_h(msg) if msg else '—'}")
+        elif msg:
+            lines.append(f"• {_h(msg)}")
+    if len(commits) > 5:
+        lines.append(f"• … and {len(commits) - 5} more")
+
+    compare = str(payload.get("compare") or "").strip()
+    if compare:
+        safe_url = compare.replace("&", "&amp;")
+        lines.extend(["", f'<a href="{safe_url}">Open compare on GitHub</a>'])
+
+    return "\n".join(lines)
+
+
+async def handle_github_repo_webhook(request: Request) -> JSONResponse:
+    """GitHub ``push`` deliveries → Telegram (configure per-repo in GitHub UI)."""
+    if os.getenv("GITHUB_PUSH_NOTIFY_DISABLED", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        return JSONResponse({"ok": True, "skipped": "disabled_by_env"})
+
+    body_bytes = await request.body()
+    sig = request.headers.get("x-hub-signature-256") or request.headers.get(
+        "X-Hub-Signature-256"
+    )
+    if not _github_webhook_signature_ok(body_bytes, sig):
+        return JSONResponse(status_code=401, content={"detail": "invalid signature"})
+
+    try:
+        payload = json.loads(body_bytes.decode("utf-8") or "{}")
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return JSONResponse(status_code=400, content={"detail": "invalid json"})
+
+    event = (
+        request.headers.get("x-github-event")
+        or request.headers.get("X-GitHub-Event")
+        or ""
+    ).strip()
+
+    if event == "ping":
+        return JSONResponse({"ok": True, "message": "pong"})
+
+    if event != "push":
+        return JSONResponse({"ok": True, "ignored_event": event or "unknown"})
+
+    skip = _github_push_skip_reason(payload)
+    if skip:
+        return JSONResponse({"ok": True, "skipped": skip})
+
+    if not _telegram_configured():
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "telegram not configured"},
+        )
+
+    text = build_github_push_telegram_message(payload)
+    sent = 0
+    for chat_id in _telegram_chat_ids():
+        resp = tg_send_html(chat_id, text)
+        if (resp or {}).get("ok"):
+            sent += 1
+    return JSONResponse({"ok": True, "telegram_messages": sent})
+
+
 # --- FastAPI --------------------------------------------------------------------
 
 app = FastAPI(title="PipelineMedic", version="1.0.0")
@@ -2325,7 +2474,7 @@ def health_payload() -> dict[str, Any]:
     return {
         "status": "ok",
         "service": "pipelinemedic",
-        "version": "1.4.0",
+        "version": "1.4.1",
         "groq_configured": bool(os.getenv("GROQ_API_KEY", "").strip()),
         "telegram_configured": bool(
             os.getenv("TELEGRAM_BOT_TOKEN", "").strip() and _telegram_chat_ids()
@@ -2344,6 +2493,9 @@ def health_payload() -> dict[str, Any]:
                 and os.getenv("VERCEL_PROJECT_ID", "").strip()
             )
             else "none"
+        ),
+        "github_push_webhook_secret_configured": bool(
+            os.getenv("GITHUB_WEBHOOK_SECRET", "").strip()
         ),
     }
 
@@ -2622,6 +2774,12 @@ async def telegram_webhook(request: Request):
     if "callback_query" in body:
         return await handle_telegram_callback(body)
     return JSONResponse({"ok": True})
+
+
+@app.post("/github/webhook")
+@app.post("/api/github/webhook")
+async def github_repo_webhook_route(request: Request):
+    return await handle_github_repo_webhook(request)
 
 
 @app.get("/incidents/{token}")
