@@ -2374,14 +2374,27 @@ def build_github_push_telegram_message(payload: dict[str, Any]) -> str:
     if not commits and head.get("id"):
         commits = [head]
     n = len(commits)
+    is_merge = any("merge" in str((c or {}).get("message") or "").lower() for c in commits)
+    header = "🔀 <b>PipelineMedic · GitHub merge push</b>" if is_merge else "📌 <b>PipelineMedic · GitHub push</b>"
+    distinct_authors: set[str] = set()
+    files_changed = 0
+    for c in commits:
+        author_name = str(((c or {}).get("author") or {}).get("name") or "").strip()
+        if author_name:
+            distinct_authors.add(author_name)
+        files_changed += len((c or {}).get("added") or [])
+        files_changed += len((c or {}).get("modified") or [])
+        files_changed += len((c or {}).get("removed") or [])
 
     lines: list[str] = [
-        "📌 <b>PipelineMedic · GitHub push</b>",
+        header,
         "",
         f"Repo · <code>{_h(repo)}</code>",
         f"Branch · <code>{_h(branch)}</code>",
         f"By · {by_line}",
         f"Commits · {n}",
+        f"Authors · {len(distinct_authors) or 1}",
+        f"Files changed · {files_changed}",
         "",
     ]
     for c in commits[:5]:
@@ -2474,7 +2487,7 @@ def health_payload() -> dict[str, Any]:
     return {
         "status": "ok",
         "service": "pipelinemedic",
-        "version": "1.4.1",
+        "version": "1.4.2",
         "groq_configured": bool(os.getenv("GROQ_API_KEY", "").strip()),
         "telegram_configured": bool(
             os.getenv("TELEGRAM_BOT_TOKEN", "").strip() and _telegram_chat_ids()
@@ -2795,7 +2808,7 @@ async def get_incident_status(token: str):
     return safe
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":   
     import uvicorn
 
     uvicorn.run("main:app", host="127.0.0.1", port=8000)
