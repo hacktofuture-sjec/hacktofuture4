@@ -1,0 +1,58 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environments
+venv/
+env/
+.env
+.env.local
+.venv/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Node
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Scratch & Logs
+dashboard/scratch/
+scratch/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Models (optional, but often large)
+# models/*.keras (keeping if user wants them in git)
+# models/*.keras.bak
+# models/*.pkl
+*.bak
+
+# IDEs
+.vscode/
+.idea/

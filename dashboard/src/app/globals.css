@@ -1,0 +1,105 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+:root {
+  --bg-neo: #E8EDF2;
+  --neo-shadow: 6px 6px 12px #c5cad0, -6px -6px 12px #ffffff;
+  --neo-shadow-inset: inset 4px 4px 8px #c5cad0, inset -4px -4px 8px #ffffff;
+  --neo-shadow-pressed: 2px 2px 4px #c5cad0, -2px -2px 4px #ffffff;
+  
+  --coral: #FF6B6B;
+  --teal: #4ECDC4;
+  --amber: #FFE66D;
+  --purple: #A855F7;
+  --green: #22C55E;
+  
+  --text-primary: #2D3748;
+  --text-secondary: #718096;
+}
+
+body {
+  background-color: var(--bg-neo);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, sans-serif;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+.neo-bg { background-color: var(--bg-neo); }
+.neo-card {
+  background-color: var(--bg-neo);
+  box-shadow: var(--neo-shadow);
+  border-radius: 16px;
+  border: none;
+}
+.neo-card-interactive {
+  transition: box-shadow 0.3s ease; cursor: pointer;
+}
+.neo-card-interactive:active { box-shadow: var(--neo-shadow-pressed); }
+.neo-inset {
+  background-color: var(--bg-neo);
+  box-shadow: var(--neo-shadow-inset);
+  border-radius: 16px;
+  border: none;
+}
+.neo-pill {
+  background-color: var(--bg-neo);
+  box-shadow: var(--neo-shadow);
+  border-radius: 9999px;
+  border: none;
+}
+.neo-inset-pill {
+  background-color: var(--bg-neo);
+  box-shadow: var(--neo-shadow-inset);
+  border-radius: 9999px;
+  border: none;
+}
+.neo-text-primary { color: var(--text-primary); }
+.neo-text-secondary { color: var(--text-secondary); }
+
+::selection { background: var(--coral); color: white; }
+
+.leaflet-container {
+  background-color: var(--bg-neo) !important;
+  border-radius: 16px;
+}
+
+@keyframes typeWriter {
+  from { width: 0; }
+  to { width: 100%; }
+}
+.typewriter-text {
+  display: inline-block; overflow: hidden; white-space: nowrap; animation: typeWriter 3s steps(60, end) forwards;
+}
+
+@keyframes pulseRing {
+  0% { transform: scale(0.9); opacity: 1; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+.animate-pulse-ring { animation: pulseRing 1s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+@keyframes dashLine { to { stroke-dashoffset: -20; } }
+.animate-dash-line { stroke-dasharray: 10, 10; animation: dashLine 0.5s linear infinite; }
+
+@keyframes radarSweep { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.animate-radar { animation: radarSweep 2s linear infinite; transform-origin: center; }
+
+@keyframes emergencyPulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.35); }
+  100% { box-shadow: 0 0 0 18px rgba(255, 107, 107, 0); }
+}
+
+.emergency-banner {
+  background: linear-gradient(120deg, #ff6b6b 0%, #ff8e53 100%);
+  animation: emergencyPulse 1.8s ease-out infinite;
+}
+
+.emergency-sitrep {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 107, 107, 0.14);
+  color: #7f1d1d;
+  font-weight: 700;
+}
