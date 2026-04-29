@@ -1,6 +1,9 @@
 import json
 import os
 from mistralai.client import Mistral
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Import all prediction functions
 import sys
@@ -11,7 +14,10 @@ from predict.predict_survivor import predict_survivor
 from predict.predict_validator import predict_validator
 
 # Setup Mistral
-client = Mistral(api_key="H2z0gd6ieaMgUAAByONNnDtnmwLtonuW")
+api_key = os.getenv('MISTRAL_API_KEY')
+if not api_key:
+    raise ValueError('MISTRAL_API_KEY not found in environment variables')
+client = Mistral(api_key=api_key)
 
 def run_all_models(raw_sensor_data):
     """

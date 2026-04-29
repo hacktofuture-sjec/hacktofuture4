@@ -26,8 +26,8 @@ export default function NeuroMeshCommand() {
   useEffect(() => {
     async function fetchWeather() {
       try {
-        const wApi = "6311d9af91289e9cbf78c0226c26d116";
-        const fApi = "5a3065934a0eee350c66e4de29bf0143";
+        const wApi = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY || "6311d9af91289e9cbf78c0226c26d116";
+        const fApi = process.env.NEXT_PUBLIC_OPENWEATHER_FLOOD_API_KEY || "5a3065934a0eee350c66e4de29bf0143";
         const [wRes, fRes] = await Promise.all([
           fetch(`https://api.openweathermap.org/data/2.5/weather?lat=12.9141&lon=74.8560&appid=${wApi}&units=metric`),
           fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=12.9141&lon=74.8560&appid=${fApi}&units=metric`)

@@ -1,7 +1,11 @@
 import numpy as np
 import requests
+import os
 from pipeline.state import NeuroMeshState
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 def get_road_network_simple(lat: float, lng: float, radius: int = 1000) -> dict:
     """
@@ -9,7 +13,7 @@ def get_road_network_simple(lat: float, lng: float, radius: int = 1000) -> dict:
     Returns road segments as simple dict.
     No osmnx needed — raw Overpass query.
     """
-    overpass_url = "http://overpass-api.de/api/interpreter"
+    overpass_url = os.getenv('OVERPASS_API_URL', 'http://overpass-api.de/api/interpreter')
     query = f"""
     [out:json][timeout:10];
     (

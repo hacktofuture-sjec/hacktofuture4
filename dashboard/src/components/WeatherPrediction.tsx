@@ -9,7 +9,7 @@ export default function WeatherPrediction({ lat = 12.914, lng = 74.856 }) {
   useEffect(() => {
     async function fetchData() {
       try {
-        const weatherApi = "6311d9af91289e9cbf78c0226c26d116";
+        const weatherApi = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY || "6311d9af91289e9cbf78c0226c26d116";
         const wRes = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${weatherApi}&units=metric`);
         const wData = await wRes.json();
         setWeather(wData);
