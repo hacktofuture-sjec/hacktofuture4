@@ -1,0 +1,1 @@
+# Demo: intentionally missing `requests` so the first CI run fails with ModuleNotFoundError.
