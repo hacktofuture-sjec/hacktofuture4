@@ -1,0 +1,16 @@
+@reference "../../styles/globals.css";
+
+.dashboard-layout {
+  @apply flex min-h-screen bg-background;
+}
+
+.dashboard-layout__content {
+  @apply flex-1 transition-[margin] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)];
+  margin-left: var(--sidebar-width);
+}
+
+@media (max-width: 1024px) {
+  .dashboard-layout__content {
+    margin-left: 0;
+  }
+}

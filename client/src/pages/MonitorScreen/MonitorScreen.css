@@ -1,0 +1,170 @@
+@reference "../../styles/globals.css";
+
+.monitor-page {
+  @apply flex h-screen overflow-hidden bg-background;
+}
+
+.monitor-main {
+  @apply flex-1 p-10 flex flex-col min-h-0;
+}
+
+.monitor-header {
+  @apply shrink-0 mb-10;
+}
+
+.monitor-header__content {
+  @apply flex justify-between items-end;
+}
+
+.monitor-header__title-group {
+  @apply flex items-center gap-3 mb-2;
+}
+
+.monitor-header__badge {
+  @apply bg-tertiary-container text-white px-2 py-0.5 text-[10px] font-bold tracking-widest uppercase rounded;
+}
+
+.monitor-header__title {
+  @apply text-3xl font-extrabold tracking-tighter text-on-surface m-0;
+}
+
+.monitor-header__desc {
+  @apply text-on-surface-variant max-w-2xl leading-relaxed m-0;
+}
+
+.monitor-header__score-group {
+  @apply flex flex-col items-end;
+}
+
+.monitor-header__score-label {
+  @apply text-[10px] font-bold text-outline uppercase tracking-tighter mb-1;
+}
+
+.monitor-header__score {
+  @apply flex items-baseline gap-1;
+}
+
+.monitor-header__score-value {
+  @apply text-5xl font-black text-primary italic;
+}
+
+.monitor-header__score-max {
+  @apply text-xl font-bold text-outline;
+}
+
+.monitor-grid {
+  @apply grid grid-cols-12 gap-8 flex-1 min-h-0;
+}
+
+.monitor-logs {
+  @apply col-span-12 lg:col-span-8 flex flex-col min-h-0;
+}
+
+.log-panel {
+  @apply bg-surface-container-high text-on-surface rounded-xl overflow-hidden border border-outline-variant shadow-lg flex flex-col flex-1 min-h-0;
+}
+
+
+.log-panel__header {
+  @apply bg-surface-container-highest px-4 py-2 flex justify-between items-center border-b border-outline-variant;
+}
+
+
+.log-panel__controls {
+  @apply flex items-center gap-4;
+}
+
+.log-panel__dots {
+  @apply flex gap-1.5;
+}
+
+.log-panel__dot1 {
+  @apply w-2.5 h-2.5 rounded-full bg-error;
+}
+
+.log-panel__dot2 {
+  @apply w-2.5 h-2.5 rounded-full bg-secondary-container;
+}
+
+.log-panel__dot3 {
+  @apply w-2.5 h-2.5 rounded-full bg-tertiary;
+}
+
+.log-panel__title {
+  @apply text-[11px] font-bold tracking-widest uppercase opacity-90;
+}
+
+.log-panel__status {
+  @apply flex items-center gap-3;
+}
+
+.log-panel__pulse-group {
+  @apply flex h-2 w-2 relative;
+}
+
+.log-panel__pulse-ping {
+  @apply animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75;
+}
+
+.log-panel__pulse-dot {
+  @apply relative inline-flex rounded-full h-2 w-2 bg-primary;
+}
+
+.log-panel__status-text {
+  @apply text-[10px] font-mono opacity-80;
+}
+
+.log-panel__list {
+  @apply p-6 flex-1 overflow-y-auto font-mono text-xs leading-relaxed space-y-3;
+}
+
+.monitor-sidebar {
+  @apply col-span-12 lg:col-span-4 flex flex-col min-h-0 overflow-y-auto gap-6;
+}
+
+.stats-card {
+  @apply bg-surface-container-low p-7 border border-outline-variant rounded-xl;
+}
+
+.stats-card__title {
+  @apply text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-6 m-0;
+}
+
+.stats-card__content {
+  @apply space-y-6;
+}
+
+/* ── New live-data classes ───────────────────────────────────────────── */
+
+.monitor-stats-bar {
+  @apply flex flex-wrap gap-4 mb-8;
+}
+
+.monitor-stat-chip {
+  @apply flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-container-low border border-outline-variant text-xs font-semibold text-on-surface-variant;
+}
+
+.monitor-stat-chip__dot {
+  @apply w-2 h-2 rounded-full bg-outline;
+}
+
+.monitor-repo-item {
+  @apply flex items-center gap-3 py-2 border-b border-outline-variant/30 last:border-none;
+}
+
+.monitor-repo-item__info {
+  @apply flex-1 min-w-0;
+}
+
+.monitor-repo-item__name {
+  @apply text-sm font-mono font-semibold text-on-surface truncate m-0;
+}
+
+.monitor-repo-item__meta {
+  @apply text-[10px] text-on-surface-variant m-0;
+}
+
+.monitor-repo-item__remove {
+  @apply flex items-center justify-center w-6 h-6 text-on-surface-variant hover:text-error hover:bg-error/10 rounded transition-colors border-none bg-transparent cursor-pointer flex-shrink-0;
+}
+

@@ -1,0 +1,182 @@
+@import "tailwindcss";
+
+/* =========================================================
+   DESIGN TOKENS — Material Design 3 Color System
+   All components reference these variables exclusively.
+   ========================================================= */
+@theme {
+  /* Primary */
+  --color-primary:              #c55b00;
+  --color-primary-container:    #bd5700;
+  --color-primary-fixed:        #ffdbc9;
+  --color-primary-fixed-dim:    #ffb68c;
+  --color-on-primary:           #ffffff;
+  --color-on-primary-container: #fffbff;
+  --color-on-primary-fixed:     #321200;
+  --color-on-primary-fixed-variant: #763400;
+  --color-inverse-primary:      #ffb68c;
+
+  /* Secondary */
+  --color-secondary:             #875131;
+  --color-secondary-container:   #fdb78f;
+  --color-secondary-fixed:       #ffdbc9;
+  --color-secondary-fixed-dim:   #fdb78f;
+  --color-on-secondary:          #ffffff;
+  --color-on-secondary-container:#784626;
+  --color-on-secondary-fixed:    #321200;
+  --color-on-secondary-fixed-variant: #6a3a1c;
+
+  /* Tertiary */
+  --color-tertiary:              #005da8;
+  --color-tertiary-container:    #0076d2;
+  --color-tertiary-fixed:        #d4e3ff;
+  --color-tertiary-fixed-dim:    #a4c9ff;
+  --color-on-tertiary:           #ffffff;
+  --color-on-tertiary-container: #fdfcff;
+  --color-on-tertiary-fixed:     #001c39;
+  --color-on-tertiary-fixed-variant: #004883;
+
+  /* Surface */
+  --color-surface:                    #fff8f6;
+  --color-surface-dim:                #ebd6cc;
+  --color-surface-bright:             #fff8f6;
+  --color-surface-variant:            #f3ded4;
+  --color-surface-tint:               #c55b00;
+  --color-surface-container-lowest:   #ffffff;
+  --color-surface-container-low:      #fff1eb;
+  --color-surface-container:          #ffeae0;
+  --color-surface-container-high:     #f9e4da;
+  --color-surface-container-highest:  #f3ded4;
+  --color-on-surface:                 #241913;
+  --color-on-surface-variant:         #574237;
+
+  /* Background */
+  --color-background:     #fff8f6;
+  --color-on-background:  #241913;
+
+  /* Error */
+  --color-error:            #ba1a1a;
+  --color-error-container:  #ffdad6;
+  --color-on-error:         #ffffff;
+  --color-on-error-container: #93000a;
+
+  /* Outline */
+  --color-outline:         #8a7265;
+  --color-outline-variant: #dec1b2;
+
+  /* Inverse */
+  --color-inverse-surface:    #3a2e27;
+  --color-inverse-on-surface: #ffede5;
+
+  /* Typography */
+  --font-sans: 'Inter', sans-serif;
+  --font-headline: 'Inter', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Radius */
+  --radius-sm:   0.375rem;
+  --radius-md:   0.375rem;
+  --radius-lg:   0.5rem;
+  --radius-xl:   0.75rem;
+  --radius-full: 9999px;
+}
+
+/* =========================================================
+   BASE RESET & TYPOGRAPHY
+   ========================================================= */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-med:  300ms ease;
+  --transition-slow: 700ms ease;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-background);
+  color: var(--color-on-surface);
+  line-height: 1.6;
+}
+
+::selection {
+  background-color: var(--color-primary-fixed);
+  color: var(--color-on-primary-fixed);
+}
+
+/* =========================================================
+   CUSTOM SCROLLBAR
+   ========================================================= */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: var(--color-outline-variant); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-outline); }
+
+/* =========================================================
+   ICON FONT (Material Symbols)
+   ========================================================= */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+.icon-filled {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* =========================================================
+   SHARED BACKGROUND EFFECTS
+   ========================================================= */
+@utility bg-grid-overlay {
+  background-image:
+    linear-gradient(to right, rgba(135, 81, 49, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(135, 81, 49, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+@utility bg-dot-pattern {
+  background-image: radial-gradient(var(--color-outline-variant) 0.5px, transparent 0.5px);
+  background-size: 24px 24px;
+}
+
+@utility cinematic-glow {
+  box-shadow: 0 0 50px -12px rgba(197, 91, 0, 0.25);
+}
+
+/* =========================================================
+   FONT UTILITIES
+   ========================================================= */
+.font-mono { font-family: var(--font-mono); }
+.font-sans { font-family: var(--font-sans); }
+
+@keyframes pulse-glow {
+  0%   { box-shadow: 0 0 0 0 rgba(197, 91, 0, 0.4); }
+  70%  { box-shadow: 0 0 0 20px rgba(197, 91, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(197, 91, 0, 0); }
+}
+@keyframes progress-slide {
+  0%   { left: -30%; }
+  100% { left: 100%; }
+}
+@keyframes fade-text {
+  from { opacity: 0.5; }
+  to   { opacity: 1; }
+}
+
+@keyframes progress-pulse {
+  0%   { width: 15%; opacity: 0.6; }
+  50%  { width: 45%; opacity: 1; }
+  100% { width: 15%; opacity: 0.6; }
+}
