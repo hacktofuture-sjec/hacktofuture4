@@ -1,0 +1,61 @@
+{
+  "name": "JanSetu - Smart Governance & Grievance Platform",
+  "short_name": "JanSetu",
+  "description": "AI-Powered Smart City Grievance Redressal & Field Inspection Matrix",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "categories": ["government", "utilities", "productivity"],
+  "icons": [
+    {
+      "src": "/JanSetuLogo.jpeg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "/JanSetuLogo.jpeg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "/JanSetuLogo.jpeg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Raise Grievance",
+      "short_name": "Report",
+      "description": "Report a civic problem with GPS and photo evidence",
+      "url": "/report",
+      "icons": [{ "src": "/JanSetuLogo.jpeg", "sizes": "192x192" }]
+    },
+    {
+      "name": "My Citizen Portal",
+      "short_name": "Portal",
+      "description": "View active and resolved complaints",
+      "url": "/citizen",
+      "icons": [{ "src": "/JanSetuLogo.jpeg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Department Hub",
+      "short_name": "Department",
+      "description": "Official municipal workforce feed",
+      "url": "/department/login",
+      "icons": [{ "src": "/JanSetuLogo.jpeg", "sizes": "192x192" }]
+    }
+  ]
+}
