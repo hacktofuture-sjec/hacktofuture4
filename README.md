@@ -1,9 +1,7 @@
-<<<<<<< HEAD
 SHECODES
 =======
-#SheCodes
-# HackToFuture 4.0 — Template
->>>>>>> 76a8c92793877c61d8ad7cfa4401659e91cd5af8
+# HackToFuture 4.0
+ 76a8c92793877c61d8ad7cfa4401659e91cd5af8
 
 # HackToFuture 4.0 — Decision-Driven Autonomous Recovery for Kubernetes Systems  
 
