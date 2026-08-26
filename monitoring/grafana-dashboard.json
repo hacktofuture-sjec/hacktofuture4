@@ -1,0 +1,13 @@
+{
+  "title": "Autonomous Recovery Dashboard",
+  "panels": [
+    {
+      "title": "CPU Usage",
+      "type": "graph"
+    },
+    {
+      "title": "Memory Usage",
+      "type": "graph"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+requests
+google-generativeai
+python-dotenv
+kubernetes
+redis
+streamlit
